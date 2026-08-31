@@ -36,7 +36,7 @@ export function CommandCenterPage() {
       )}
 
       <div>
-        <h2 className="text-xl font-bold text-slate-900">Performance overview</h2>
+        <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Performance overview</h2>
         <p className="text-sm text-slate-500">Kashmir Cooking Oil · live Retail Command Center</p>
       </div>
 
@@ -50,7 +50,7 @@ export function CommandCenterPage() {
       <div className="grid gap-5 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader title="Engagement Trend" subtitle="Last 7 days" />
-          <div className="h-64">
+          <div className="h-52 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={engagementSeries}>
                 <defs>
@@ -71,7 +71,7 @@ export function CommandCenterPage() {
 
         <Card>
           <CardHeader title="Live Store Map" subtitle="Performance pins" />
-          <div className="relative h-64 overflow-hidden rounded-xl bg-gradient-to-br from-slate-100 via-brand-50 to-slate-200">
+          <div className="relative h-52 overflow-hidden rounded-xl bg-gradient-to-br from-slate-100 via-brand-50 to-slate-200 sm:h-64">
             <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(#94a3b8_1px,transparent_1px),linear-gradient(90deg,#94a3b8_1px,transparent_1px)] [background-size:36px_36px]" />
             {mapPins.map((pin) => (
               <div

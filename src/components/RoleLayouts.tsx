@@ -32,9 +32,9 @@ export function BaShell() {
   const navigate = useNavigate()
   const { brand } = useBrand()
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="flex min-h-[100dvh] flex-col bg-slate-50">
       <RoleSync role="ba" />
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-3">
+      <header className="safe-top sticky top-0 z-20 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-[10px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
@@ -51,11 +51,11 @@ export function BaShell() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 overflow-auto pb-24">
+      <main className="mx-auto w-full max-w-lg flex-1 overflow-x-hidden overflow-y-auto px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-24">
         <Outlet />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
+      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto grid max-w-lg grid-cols-4">
           {baTabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink
@@ -103,11 +103,11 @@ export function ShopperShell() {
   const hideChrome = pathname === '/shopper' || pathname === '/shopper/spin'
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-[100dvh] flex-col bg-white">
       <RoleSync role="shopper" />
       {!hideChrome && (
-        <header className="sticky top-0 z-20 border-b border-slate-100 bg-white">
-          <div className="mx-auto flex max-w-lg items-center gap-3 px-4 py-3">
+        <header className="safe-top sticky top-0 z-20 border-b border-slate-100 bg-white">
+          <div className="mx-auto flex max-w-lg items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
             {backTo ? (
               <Link to={backTo} className="rounded-lg p-1 text-slate-500 hover:bg-slate-50">
                 <ArrowLeft size={18} />
@@ -133,7 +133,7 @@ export function ShopperShell() {
           </div>
         </header>
       )}
-      <main className="mx-auto w-full max-w-lg flex-1">
+      <main className="mx-auto w-full max-w-lg flex-1 overflow-x-hidden pb-[env(safe-area-inset-bottom)]">
         <Outlet />
       </main>
     </div>

@@ -11,6 +11,7 @@ import {
   ScoreBars,
   SearchInput,
   StatusBadge,
+  TableScroll,
   Tabs,
 } from '../../components/ui'
 import { Check } from 'lucide-react'
@@ -50,7 +51,8 @@ export function AmbassadorsPage() {
         <Tabs tabs={['All', 'Certified', 'Training', 'Deployed', 'Pending']} value={tab} onChange={setTab} />
       </div>
       <Card padding={false}>
-        <table className="w-full text-left text-sm">
+        <TableScroll>
+          <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">BA</th>
@@ -79,6 +81,7 @@ export function AmbassadorsPage() {
             ))}
           </tbody>
         </table>
+        </TableScroll>
       </Card>
     </div>
   )
@@ -244,7 +247,8 @@ export function CandidatesPage() {
         />
       </div>
       <Card padding={false}>
-        <table className="w-full text-left text-sm">
+        <TableScroll>
+          <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">Candidate</th>
@@ -275,6 +279,7 @@ export function CandidatesPage() {
             ))}
           </tbody>
         </table>
+        </TableScroll>
       </Card>
     </div>
   )
@@ -294,10 +299,10 @@ export function CandidateDetailPage() {
         <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
           AI Certification Assessment
         </div>
-        <h2 className="mt-2 text-2xl font-bold">{c.name}</h2>
-        <div className="mt-4 flex items-center gap-6">
+        <h2 className="mt-2 text-xl font-bold sm:text-2xl">{c.name}</h2>
+        <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
           <ProgressRing value={c.score || 0} size={120} stroke={10} label="Overall" />
-          <div>
+          <div className="text-center sm:text-left">
             <div className="text-3xl font-bold">{c.score || 0} / 100</div>
             <StatusBadge status={certified ? 'Certified' : c.status} />
           </div>

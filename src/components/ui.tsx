@@ -27,7 +27,7 @@ export function Card({
     <div
       className={cn(
         'rounded-2xl border border-slate-100 bg-white shadow-sm',
-        padding && 'p-5',
+        padding && 'p-4 sm:p-5',
         className,
       )}
     >
@@ -46,12 +46,12 @@ export function CardHeader({
   action?: ReactNode
 }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div>
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
         <h3 className="font-semibold text-slate-900">{title}</h3>
         {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }
@@ -187,7 +187,7 @@ export function KpiCard({
   return (
     <Card className="animate-fade-up">
       <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</div>
-      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
+      <div className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
       {delta && <div className="mt-1 text-xs font-medium text-success">{delta}</div>}
       {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
     </Card>
@@ -292,7 +292,7 @@ export function Modal({
     <ModalContext.Provider value={{ open, setOpen: onClose }}>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <button className="absolute inset-0 bg-navy-950/50" onClick={onClose} aria-label="Close" />
-        <div className="relative z-10 w-full max-w-lg animate-fade-up rounded-2xl bg-white p-5 shadow-2xl">
+      <div className="relative z-10 w-full max-w-lg animate-fade-up rounded-2xl bg-white p-4 shadow-2xl sm:p-5 max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
             <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
@@ -320,12 +320,29 @@ export function PageHeader({
   actions?: ReactNode
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3 sm:mb-6">
+      <div className="min-w-0">
+        <h2 className="text-lg font-bold text-slate-900 sm:text-xl">{title}</h2>
         {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap gap-2 sm:w-auto">{actions}</div>}
+    </div>
+  )
+}
+
+/** Horizontal scroll wrapper for data tables. */
+export function TableScroll({
+  children,
+  minWidth = 640,
+  className,
+}: {
+  children: ReactNode
+  minWidth?: number
+  className?: string
+}) {
+  return (
+    <div className={cn('overflow-x-auto', className)}>
+      <div style={{ minWidth }}>{children}</div>
     </div>
   )
 }

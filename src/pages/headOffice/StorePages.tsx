@@ -17,6 +17,7 @@ import {
   ProgressBar,
   Select,
   StatusBadge,
+  TableScroll,
   Tabs,
 } from '../../components/ui'
 import { CalendarClock, Plus, QrCode, Sparkles } from 'lucide-react'
@@ -38,7 +39,8 @@ export function StoresPage() {
         }
       />
       <Card padding={false}>
-        <table className="w-full text-left text-sm">
+        <TableScroll minWidth={680}>
+          <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">Store</th>
@@ -76,6 +78,7 @@ export function StoresPage() {
             ))}
           </tbody>
         </table>
+        </TableScroll>
       </Card>
     </div>
   )
@@ -435,7 +438,8 @@ function SchedulerPanel() {
           </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-7 gap-2">
+        <div className="mb-4 overflow-x-auto">
+          <div className="grid min-w-[560px] grid-cols-7 gap-2">
           {scheduleDays.map((d) => {
             const count = schedule.filter((s) => s.day === d.key).length
             const open = schedule.filter((s) => s.day === d.key && s.status === 'Open').length
@@ -459,6 +463,7 @@ function SchedulerPanel() {
               </button>
             )
           })}
+          </div>
         </div>
 
         <div className="mb-3 text-sm font-semibold text-slate-800">
@@ -473,7 +478,7 @@ function SchedulerPanel() {
             </button>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-100">
+          <TableScroll minWidth={720}>
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
                 <tr>
@@ -542,7 +547,7 @@ function SchedulerPanel() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
       </Card>
 

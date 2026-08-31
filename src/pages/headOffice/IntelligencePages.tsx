@@ -9,6 +9,7 @@ import {
   ProgressBar,
   Select,
   StatusBadge,
+  TableScroll,
 } from '../../components/ui'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 
@@ -23,7 +24,7 @@ export function ConsumersPage() {
       <div className="flex flex-wrap gap-2">
         {['City', 'Store', 'Age Group', 'Family Size', 'Current Brand', 'Purchase Frequency', 'Price Sensitivity', 'SKU'].map(
           (f) => (
-            <Select key={f} defaultValue="">
+            <Select key={f} defaultValue="" className="w-full min-w-[8rem] flex-1 sm:w-auto sm:flex-none">
               <option value="">{f}</option>
               <option>All</option>
             </Select>
@@ -132,7 +133,8 @@ export function LeaderboardPage() {
         </div>
       </Card>
       <Card padding={false}>
-        <table className="w-full text-left text-sm">
+        <TableScroll minWidth={720}>
+          <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">Rank</th>
@@ -165,6 +167,7 @@ export function LeaderboardPage() {
             })}
           </tbody>
         </table>
+        </TableScroll>
       </Card>
     </div>
   )
@@ -190,7 +193,7 @@ export function ReportPage() {
       />
       <Card>
         <div className="text-xs tracking-[0.2em] text-brand-600 uppercase">Executive Intelligence Report</div>
-        <h2 className="mt-2 text-3xl font-bold text-black">Kashmir Cooking Oil</h2>
+        <h2 className="mt-2 text-2xl font-bold text-black sm:text-3xl">Kashmir Cooking Oil</h2>
         <p className="mt-1 text-slate-500">Campaign Performance · Aug–Sep 2026</p>
       </Card>
 

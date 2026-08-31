@@ -63,13 +63,13 @@ export function ScreenHub() {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
-      <div className="mx-auto max-w-4xl px-6 py-16">
+    <div className="min-h-[100dvh] bg-surface">
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
         <BrandMark variant="dark" />
         <p className="mt-6 text-xs font-semibold tracking-[0.18em] text-brand-600 uppercase">
           Experience portal
         </p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">Choose a role to enter</h1>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Choose a role to enter</h1>
         <p className="mt-2 max-w-2xl text-slate-500">
           Each role opens its own dedicated experience — desktop for Head Office, Admin, and Manager,
           and full-screen apps for BA and Shopper.

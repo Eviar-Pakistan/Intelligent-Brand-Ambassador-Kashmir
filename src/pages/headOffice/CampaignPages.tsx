@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { campaign, campaigns, cities } from '../../data/mock'
 import { useDemo } from '../../context/AppContext'
-import { Button, Card, PageHeader, ProgressBar, StatusBadge } from '../../components/ui'
+import { Button, Card, PageHeader, ProgressBar, StatusBadge, TableScroll } from '../../components/ui'
 
 export function CampaignsPage() {
   return (
@@ -47,7 +47,7 @@ export function CampaignOverviewPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <StatusBadge status={campaign.status} />
-            <h2 className="mt-3 text-2xl font-bold text-slate-900">{campaign.name}</h2>
+            <h2 className="mt-3 text-xl font-bold text-slate-900 sm:text-2xl">{campaign.name}</h2>
             <p className="mt-1 text-sm text-slate-500">
               Duration: {campaign.start} — {campaign.end}
             </p>
@@ -79,7 +79,7 @@ export function CampaignOverviewPage() {
 
       <Card>
         <h3 className="mb-4 font-semibold text-slate-900">Cities</h3>
-        <div className="overflow-hidden rounded-xl border border-slate-100">
+        <TableScroll>
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
@@ -98,7 +98,7 @@ export function CampaignOverviewPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </Card>
     </div>
   )

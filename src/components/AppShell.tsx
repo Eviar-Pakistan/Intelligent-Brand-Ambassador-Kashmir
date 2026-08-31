@@ -16,6 +16,8 @@ import {
   Sparkles,
   ChevronDown,
   Banknote,
+  Menu,
+  X,
   type LucideIcon,
 } from 'lucide-react'
 import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
@@ -141,12 +143,19 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
   const navigate = useNavigate()
   const [roleOpen, setRoleOpen] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const meta = roleMeta[role]
   const navGroups = groupNav(cfg.nav)
 
   useEffect(() => {
     setRole(cfg.role)
   }, [cfg.role, setRole])
+
+  useEffect(() => {
+    setSidebarOpen(false)
+    setRoleOpen(false)
+    setBellOpen(false)
+  }, [pathname])
 
   const title =
     titles[pathname] ??
@@ -168,9 +177,25 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
   const desktopRoles: Role[] = ['headOffice', 'admin', 'storeManager', 'ba', 'shopper']
 
   return (
-    <div className="flex min-h-screen bg-surface">
+    <div className="flex min-h-[100dvh] bg-surface">
       <RoleSync role={cfg.role} />
-      <aside className="relative sticky top-0 z-20 flex h-screen w-[272px] shrink-0 flex-col overflow-hidden bg-navy-950 text-white">
+
+      {/* Mobile sidebar backdrop */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-30 bg-navy-950/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 flex h-dvh w-[min(272px,88vw)] shrink-0 flex-col overflow-hidden bg-navy-950 text-white transition-transform duration-300 ease-out lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:w-[272px] lg:translate-x-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
         {/* Soft CSS atmosphere — no photo background */}
         <div
           aria-hidden
@@ -182,14 +207,22 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
         />
 
         {/* Brand lockup */}
-        <div className="relative z-[1] px-4 pt-5 pb-4">
-          <div className="rounded-2xl bg-white p-3.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/40">
+        <div className="relative z-[1] flex items-center justify-between px-4 pt-5 pb-4">
+          <div className="min-w-0 flex-1 rounded-2xl bg-white p-3 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/40 sm:p-3.5">
             <img
               src={brand.logo}
               alt={brand.productName}
-              className="mx-auto h-14 w-auto max-w-full object-contain sm:h-16"
+              className="mx-auto h-12 w-auto max-w-full object-contain sm:h-14 lg:h-16"
             />
           </div>
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setSidebarOpen(false)}
+            className="ml-2 rounded-xl p-2 text-white/70 hover:bg-white/10 lg:hidden"
+          >
+            <X size={20} />
+          </button>
           {/* <div className="mt-3.5 px-1">
             <div className="text-[10px] font-semibold tracking-[0.2em] text-gold-400 uppercase">
               {cfg.brand}
@@ -212,6 +245,7 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
                     key={to}
                     to={to}
                     end={end}
+                    onClick={() => setSidebarOpen(false)}
                     className={({ isActive }) =>
                       cn(
                         // Keep a constant transparent border so active/inactive don't shift layout.
@@ -262,17 +296,27 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[72px] items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-bold tracking-wide text-slate-800 uppercase">
-              Intelligent Brand Ambassador Ecosystem
+        <header className="sticky top-0 z-20 flex min-h-[56px] items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2.5 sm:gap-4 sm:px-4 lg:h-[72px] lg:px-6 lg:py-0">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              aria-label="Open menu"
+              onClick={() => setSidebarOpen(true)}
+              className="shrink-0 rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 lg:hidden"
+            >
+              <Menu size={18} />
+            </button>
+            <div className="min-w-0">
+              <div className="truncate text-xs font-bold tracking-wide text-slate-800 uppercase sm:text-sm">
+                Intelligent Brand Ambassador Ecosystem
+              </div>
+              <div className="hidden truncate text-[11px] font-medium tracking-wide text-slate-500 uppercase sm:block">
+                AI-Powered In-Store Engagement
+              </div>
+              <div className="truncate text-[10px] text-slate-400 sm:text-[11px]">{title}</div>
             </div>
-            <div className="truncate text-[11px] font-medium tracking-wide text-slate-500 uppercase">
-              AI-Powered In-Store Engagement
-            </div>
-            <div className="truncate text-[10px] text-slate-400">{title}</div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <div className="relative">
               <button
                 onClick={() => setBellOpen((v) => !v)}
@@ -284,7 +328,7 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
                 )}
               </button>
               {bellOpen && (
-                <div className="absolute right-0 z-20 mt-2 w-80 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl">
+                <div className="absolute right-0 z-20 mt-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-100 bg-white p-3 shadow-xl">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-sm font-semibold">Notifications</div>
                     <button
@@ -327,7 +371,7 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
                 <ChevronDown size={14} className="text-slate-400" />
               </button>
               {roleOpen && (
-                <div className="absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
+                <div className="absolute right-0 z-20 mt-2 w-[min(15rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
                   {desktopRoles.map((r) => (
                     <button
                       key={r}
@@ -351,7 +395,7 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
             </div>
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 lg:p-6">
           <Outlet />
         </main>
       </div>

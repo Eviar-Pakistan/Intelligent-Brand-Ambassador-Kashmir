@@ -22,8 +22,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="relative hidden overflow-hidden bg-black p-12 text-white lg:flex lg:flex-col lg:justify-between">
+    <div className="grid min-h-[100dvh] lg:grid-cols-2">
+      <div className="relative hidden overflow-hidden bg-black p-8 text-white xl:p-12 lg:flex lg:flex-col lg:justify-between">
         <img
           src={brand.sidebar}
           alt=""
@@ -32,7 +32,7 @@ export function LoginPage() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/40" />
         <div className="relative">
           <img src={brand.logo} alt={brand.productName} className="h-16 w-auto object-contain" />
-          <h1 className="mt-8 max-w-md text-4xl font-bold leading-tight">
+          <h1 className="mt-8 max-w-md text-3xl font-bold leading-tight xl:text-4xl">
             Intelligent Brand Ambassador Ecosystem
           </h1>
           <p className="mt-4 max-w-sm text-white/75">
@@ -49,16 +49,16 @@ export function LoginPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center bg-surface px-6 py-12">
+      <div className="safe-bottom flex items-center justify-center bg-surface px-4 py-8 sm:px-6 sm:py-12">
         <div className="w-full max-w-md">
-          <div className="mb-6 lg:hidden">
-            <img src={brand.logo} alt={brand.productName} className="h-12 w-auto object-contain" />
+          <div className="mb-4 lg:mb-6 lg:hidden">
+            <img src={brand.logo} alt={brand.productName} className="h-10 w-auto object-contain sm:h-12" />
           </div>
 
           <Link to="/portal" className="inline-block text-xs font-medium text-slate-500 hover:text-brand-600 hover:underline">
             Browse all experiences →
           </Link>
-          <h2 className="mt-4 text-2xl font-bold text-slate-900">Sign in</h2>
+          <h2 className="mt-4 text-xl font-bold text-slate-900 sm:text-2xl">Sign in</h2>
           <p className="mt-1 text-sm text-slate-500">
             {brand.productName} · Or jump straight into a role experience
           </p>
@@ -97,7 +97,7 @@ export function LoginPage() {
                 key={r}
                 type="button"
                 onClick={() => enter(r)}
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:border-brand-500/40 hover:bg-brand-50"
+                className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:border-brand-500/40 hover:bg-brand-50 sm:flex-row sm:items-center sm:justify-between"
               >
                 <span className="font-medium text-slate-800">{roleMeta[r].label}</span>
                 <span className="text-[11px] text-slate-400">{roleMeta[r].tone}</span>

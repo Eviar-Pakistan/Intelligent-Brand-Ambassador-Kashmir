@@ -7,6 +7,7 @@ import {
   Modal,
   PageHeader,
   StatusBadge,
+  TableScroll,
   Tabs,
 } from '../../components/ui'
 import {
@@ -126,7 +127,8 @@ export function IncentivesPage() {
       </div>
 
       <Card padding={false}>
-        <table className="w-full text-left text-sm">
+        <TableScroll minWidth={800}>
+          <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">Rank</th>
@@ -202,6 +204,7 @@ export function IncentivesPage() {
             })}
           </tbody>
         </table>
+        </TableScroll>
       </Card>
 
       <Modal

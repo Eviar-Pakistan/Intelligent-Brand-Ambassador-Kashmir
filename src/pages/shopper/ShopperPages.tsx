@@ -272,8 +272,8 @@ export function ShopperAiPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col">
-      <div className="flex-1 space-y-3 overflow-auto p-4">
+    <div className="flex min-h-[calc(100dvh-4rem)] flex-col">
+      <div className="flex-1 space-y-3 overflow-auto p-3 sm:p-4">
         {messages.map((m, i) => (
           <Bubble key={i} side={m.side}>
             {m.text}
@@ -294,15 +294,15 @@ export function ShopperAiPage() {
         )}
       </div>
       <div className="border-t border-slate-100 p-3">
-        <div className="mb-2 flex gap-2">
+        <div className="mb-2 flex min-w-0 gap-2">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send(input)}
-            className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none"
+            className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none"
             placeholder="Ask something..."
           />
-          <Button onClick={() => send(input)}>Send</Button>
+          <Button className="shrink-0" onClick={() => send(input)}>Send</Button>
         </div>
         <Link to="/shopper/survey" className="block text-center text-xs font-semibold text-brand-600">
           Continue to consumer questions →
@@ -333,7 +333,7 @@ export function ShopperSurveyPage() {
   const step = 2
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col p-5">
+    <div className="flex min-h-[calc(100dvh-4rem)] flex-col p-4 sm:p-5">
       <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
         Question {step} of 5
       </div>
@@ -462,7 +462,7 @@ export function ShopperFeedbackPage() {
               <div className="text-center text-[11px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
                 Rate your visit
               </div>
-              <div className="mt-4 grid grid-cols-5 gap-2">
+              <div className="mt-4 grid grid-cols-5 gap-1.5 sm:gap-2">
                 {[1, 2, 3, 4, 5].map((n) => {
                   const active = rating === n
                   return (

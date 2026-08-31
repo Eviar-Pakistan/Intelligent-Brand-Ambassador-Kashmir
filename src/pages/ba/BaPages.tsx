@@ -29,7 +29,7 @@ export function BaHomePage() {
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <h3 className="text-sm font-bold text-slate-900">Today&apos;s Shift</h3>
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-100 to-brand-200 text-sm font-bold text-brand-700 ring-2 ring-white">
             AK
           </div>
@@ -50,7 +50,7 @@ export function BaHomePage() {
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <h3 className="text-sm font-bold text-slate-900">Today&apos;s Goals</h3>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+        <div className="mt-4 grid grid-cols-3 gap-1.5 text-center sm:gap-2">
           <BaGoalStat label="Engagement" value="25/30" />
           <BaGoalStat label="Conversions" value="80%" />
           <BaGoalStat label="Conversations" value="40/50" />
