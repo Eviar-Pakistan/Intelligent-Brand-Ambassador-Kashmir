@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@theme {
+  /* Kashmir Cooking Oil — forest green chrome (maps onto existing navy-* classes) */
+  --color-navy-950: #001a0e;
+  --color-navy-900: #004d26;
+  --color-navy-800: #0a5c32;
+  --color-navy-700: #127040;
+
+  /* Primary action green (maps onto existing brand-* classes) */
+  --color-brand-50: #e8f6ee;
+  --color-brand-100: #d1eddc;
+  --color-brand-400: #2f9d5c;
+  --color-brand-500: #0b7a3e;
+  --color-brand-600: #096835;
+  --color-brand-700: #054d28;
+
+  /* Oil gold accents */
+  --color-gold-400: #ffc933;
+  --color-gold-500: #f9b000;
+  --color-gold-600: #d99800;
+
+  --color-success: #0b7a3e;
+  --color-warning: #f9b000;
+  --color-danger: #dc2626;
+  --color-surface: #f5f7f5;
+  --color-card: #ffffff;
+  --font-sans: "Segoe UI", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Segoe UI Semibold", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-surface);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin-wheel {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(1440deg);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.35s ease-out both;
+}
+
+.animate-spin-wheel {
+  animation: spin-wheel 2.4s cubic-bezier(0.15, 0.7, 0.1, 1) forwards;
+}
+
+/* Soft gold oil swirl accents for branded panels */
+.kashmir-glow {
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(249, 176, 0, 0.28), transparent 42%),
+    radial-gradient(circle at 85% 75%, rgba(11, 122, 62, 0.35), transparent 45%);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #b7cfc0;
+  border-radius: 999px;
+}
