@@ -134,7 +134,6 @@ function ChartCard({ title, children }: { title: string; children: ReactNode }) 
 }
 
 export function BaPerformanceDashboardPage() {
-  const { brand } = useBrand()
   const [town, setTown] = useState('Faisalabad')
   const [month, setMonth] = useState('August')
   const [store, setStore] = useState<string | null>(null)
