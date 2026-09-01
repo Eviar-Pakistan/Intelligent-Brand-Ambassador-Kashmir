@@ -15,7 +15,6 @@ import {
   YAxis,
 } from 'recharts'
 import { RotateCcw, Search } from 'lucide-react'
-import { useBrand } from '../../context/BrandContext'
 import {
   aggregateBaPerformance,
   baPerformanceMonths,
