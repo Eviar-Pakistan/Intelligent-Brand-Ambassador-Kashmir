@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "parse:ba-performance": "python scripts/parse-ba-performance.py",
     "preview": "vite preview"
   },
   "dependencies": {

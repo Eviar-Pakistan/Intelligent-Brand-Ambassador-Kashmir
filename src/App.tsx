@@ -6,6 +6,7 @@ import { BaShell, ShopperShell } from './components/RoleLayouts'
 import { ScreenHub } from './pages/ScreenHub'
 import { LoginPage } from './pages/LoginPage'
 import { CommandCenterPage, OptimizationPage } from './pages/headOffice/CommandCenterPage'
+import { BaPerformanceDashboardPage } from './pages/headOffice/BaPerformanceDashboardPage'
 import { CampaignOverviewPage, CampaignsPage } from './pages/headOffice/CampaignPages'
 import {
   AmbassadorProfilePage,
@@ -47,6 +48,7 @@ const hoPages = (
   <>
     <Route index element={<Navigate to="dashboard" replace />} />
     <Route path="dashboard" element={<CommandCenterPage />} />
+    <Route path="ba-performance" element={<BaPerformanceDashboardPage />} />
     <Route path="ambassadors" element={<AmbassadorsPage />} />
     <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
     <Route path="candidates" element={<CandidatesPage />} />

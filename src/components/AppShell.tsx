@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
+  BarChart3,
   Bell,
   LayoutDashboard,
   Megaphone,
@@ -36,6 +37,7 @@ type NavItem = {
 
 const headOfficeNav: NavItem[] = [
   { to: '/ho/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, section: 'Command' },
+  { to: '/ho/ba-performance', label: 'BA Performance', icon: BarChart3, section: 'Command' },
   { to: '/ho/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
   { to: '/ho/candidates', label: 'Candidates', icon: UserPlus, section: 'Operations' },
   { to: '/ho/stores', label: 'Stores', icon: Store, section: 'Operations' },
@@ -91,6 +93,7 @@ const shellConfig: Record<
 
 const titles: Record<string, string> = {
   '/ho/dashboard': 'Command Center',
+  '/ho/ba-performance': 'BA Performance Dashboard',
   '/ho/ambassadors': 'Ambassadors',
   '/ho/candidates': 'AI Recruitment & Certification',
   '/ho/stores': 'Store Management',
