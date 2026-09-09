@@ -96,13 +96,12 @@ export function BaShell() {
 
 const shopperSteps = [
   '/shopper',
-  '/shopper/product',
-  '/shopper/learn',
-  '/shopper/spin',
-  '/shopper/ai',
   '/shopper/survey',
+  '/shopper/product',
+  '/shopper/spin',
   '/shopper/reward',
   '/shopper/feedback',
+  '/shopper/thanks',
 ]
 
 export function ShopperShell() {
@@ -115,7 +114,8 @@ export function ShopperShell() {
   )
   const progress = ((stepIndex + 1) / shopperSteps.length) * 100
   const backTo = stepIndex > 0 ? shopperSteps[stepIndex - 1] : null
-  const hideChrome = pathname === '/shopper' || pathname === '/shopper/spin'
+  const hideChrome =
+    pathname === '/shopper' || pathname === '/shopper/spin' || pathname === '/shopper/thanks'
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-white">

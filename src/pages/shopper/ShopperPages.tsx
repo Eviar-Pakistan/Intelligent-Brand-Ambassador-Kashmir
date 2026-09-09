@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, type ReactNode } from 'react'
 import { Button } from '../../components/ui'
 import { useDemo } from '../../context/AppContext'
@@ -35,7 +35,7 @@ export function ShopperLandingPage() {
           />
         </div>
 
-        <Link to="/shopper/product" className="mt-2 w-full shrink-0">
+        <Link to="/shopper/survey" className="mt-2 w-full shrink-0">
           <button
             type="button"
             className="w-full rounded-full bg-navy-900 py-3.5 text-[1.05rem] font-semibold text-gold-500 shadow-[0_10px_24px_rgba(0,77,38,0.28)] transition hover:bg-brand-600 active:scale-[0.99]"
@@ -234,12 +234,12 @@ export function ShopperSpinPage() {
               {spin.promoCode}
             </div>
           </div>
-          <Link to="/shopper/ai" className="mt-5 block w-full">
+          <Link to="/shopper/reward" className="mt-5 block w-full">
             <button
               type="button"
               className="w-full rounded-full bg-gradient-to-b from-[#ffe066] via-gold-500 to-[#d99800] py-3.5 text-base font-extrabold text-navy-900 shadow-[0_10px_24px_rgba(249,176,0,0.35)]"
             >
-              Claim & Ask AI
+              Claim Reward
             </button>
           </Link>
         </div>
@@ -378,7 +378,7 @@ export function ShopperSurveyPage() {
             <span key={n} className={`h-2 w-2 rounded-full ${n <= step ? 'bg-brand-500' : 'bg-slate-200'}`} />
           ))}
         </div>
-        <Link to={selected && consent ? '/shopper/reward' : '#'}>
+        <Link to={selected && consent ? '/shopper/product' : '#'}>
           <Button className="w-full" disabled={!selected || !consent}>
             Continue
           </Button>
@@ -419,7 +419,7 @@ export function ShopperRewardPage() {
           type="button"
           className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition hover:bg-brand-600 active:scale-[0.99]"
         >
-          Leave quick feedback
+          Share your experience
         </button>
       </Link>
     </div>
@@ -429,7 +429,6 @@ export function ShopperRewardPage() {
 export function ShopperFeedbackPage() {
   const demo = useDemo()
   const navigate = useNavigate()
-  const [sent, setSent] = useState(false)
   const [rating, setRating] = useState<number | null>(null)
   const [comment, setComment] = useState('')
 
@@ -438,101 +437,112 @@ export function ShopperFeedbackPage() {
   function finish() {
     if (rating == null) return
     demo.completeShopperSession()
-    setSent(true)
+    navigate('/shopper/thanks', { state: { rating, label: labels[rating - 1] } })
   }
 
   return (
     <div className="flex min-h-[calc(100dvh-4rem)] flex-col bg-[#f7f4ec]">
-      {!sent ? (
-        <div className="flex flex-1 flex-col px-5 pb-6 pt-6">
-          <div className="mx-auto w-full max-w-sm flex-1">
-            <div className="text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-navy-900 shadow-md shadow-navy-900/20">
-                <Sparkles className="text-gold-400" size={22} />
-              </div>
-              <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">
-                How was your experience?
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                One tap closes the loop back to the Command Center.
-              </p>
+      <div className="flex flex-1 flex-col px-5 pb-6 pt-6">
+        <div className="mx-auto w-full max-w-sm flex-1">
+          <div className="text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-navy-900 shadow-md shadow-navy-900/20">
+              <Sparkles className="text-gold-400" size={22} />
             </div>
-
-            <div className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <div className="text-center text-[11px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
-                Rate your visit
-              </div>
-              <div className="mt-4 grid grid-cols-5 gap-1.5 sm:gap-2">
-                {[1, 2, 3, 4, 5].map((n) => {
-                  const active = rating === n
-                  return (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setRating(n)}
-                      className={`flex flex-col items-center rounded-2xl border py-3 transition active:scale-[0.97] ${
-                        active
-                          ? 'border-navy-900 bg-navy-900 text-white shadow-md shadow-navy-900/25'
-                          : 'border-slate-200 bg-[#f7f4ec] text-slate-800 hover:border-brand-400'
-                      }`}
-                    >
-                      <span className="text-lg font-bold">{n}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="mt-3 text-center text-xs font-medium text-slate-500">
-                {rating != null ? labels[rating - 1] : 'Tap a score from 1–5'}
-              </p>
-
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                className="mt-5 min-h-28 w-full resize-none rounded-2xl border border-slate-200 bg-[#f7f4ec]/70 px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20"
-                placeholder="Optional comment..."
-              />
-            </div>
+            <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">
+              How was your experience?
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Tell us about your visit — it helps improve the in-store experience.
+            </p>
           </div>
 
-          <button
-            type="button"
-            onClick={finish}
-            disabled={rating == null}
-            className="mx-auto mt-6 w-full max-w-sm rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 enabled:active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Submit & sync session
-          </button>
+          <div className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+            <div className="text-center text-[11px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
+              Rate your visit
+            </div>
+            <div className="mt-4 grid grid-cols-5 gap-1.5 sm:gap-2">
+              {[1, 2, 3, 4, 5].map((n) => {
+                const active = rating === n
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setRating(n)}
+                    className={`flex flex-col items-center rounded-2xl border py-3 transition active:scale-[0.97] ${
+                      active
+                        ? 'border-navy-900 bg-navy-900 text-white shadow-md shadow-navy-900/25'
+                        : 'border-slate-200 bg-[#f7f4ec] text-slate-800 hover:border-brand-400'
+                    }`}
+                  >
+                    <span className="text-lg font-bold">{n}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-3 text-center text-xs font-medium text-slate-500">
+              {rating != null ? labels[rating - 1] : 'Tap a score from 1–5'}
+            </p>
+
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="mt-5 min-h-28 w-full resize-none rounded-2xl border border-slate-200 bg-[#f7f4ec]/70 px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20"
+              placeholder="Optional comment..."
+            />
+          </div>
         </div>
-      ) : (
-        <div className="animate-fade-up flex flex-1 flex-col items-center justify-center px-6 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-navy-900 shadow-lg shadow-navy-900/25">
-            <Sparkles className="text-gold-400" size={28} />
-          </div>
-          <h2 className="mt-5 text-2xl font-bold text-slate-900">Thanks!</h2>
-          <p className="mt-2 max-w-xs text-sm text-slate-500">
-            Session synced to Head Office — shoppers +1, conversion updated.
-          </p>
-          {rating != null && (
-            <div className="mt-5 rounded-2xl border border-amber-200 bg-[#fff8eb] px-5 py-3 text-sm font-semibold text-navy-900">
-              You rated {rating}/5 · {labels[rating - 1]}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => navigate('/ho/dashboard')}
-            className="mt-8 w-full max-w-sm rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition hover:bg-brand-600"
-          >
-            Open Head Office dashboard
-          </button>
-          <button
-            type="button"
-            className="mt-3 text-xs font-medium text-slate-400 hover:text-slate-600"
-            onClick={() => demo.resetDemo()}
-          >
-            Reset demo metrics
-          </button>
+
+        <button
+          type="button"
+          onClick={finish}
+          disabled={rating == null}
+          className="mx-auto mt-6 w-full max-w-sm rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 enabled:active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Submit feedback
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function ShopperThanksPage() {
+  const demo = useDemo()
+  const navigate = useNavigate()
+  const location = useLocation() as { state?: { rating?: number; label?: string } }
+  const rating = location.state?.rating
+  const label = location.state?.label
+
+  return (
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#f7f4ec] px-6 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-navy-900 shadow-lg shadow-navy-900/25">
+        <Sparkles className="text-gold-400" size={28} />
+      </div>
+      <h2 className="mt-5 text-2xl font-bold text-slate-900">Thank you!</h2>
+      <p className="mt-2 max-w-xs text-sm text-slate-500">
+        Your feedback was received. Enjoy your reward and thank you for choosing Kashmir Cooking Oil.
+      </p>
+      {rating != null && (
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-[#fff8eb] px-5 py-3 text-sm font-semibold text-navy-900">
+          You rated {rating}/5{label ? ` · ${label}` : ''}
         </div>
       )}
+      <button
+        type="button"
+        onClick={() => navigate('/shopper')}
+        className="mt-8 w-full max-w-sm rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition hover:bg-brand-600"
+      >
+        Done
+      </button>
+      <button
+        type="button"
+        className="mt-3 text-xs font-medium text-slate-400 hover:text-slate-600"
+        onClick={() => {
+          demo.resetDemo()
+          navigate('/shopper')
+        }}
+      >
+        Start again
+      </button>
     </div>
   )
 }

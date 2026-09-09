@@ -43,6 +43,7 @@ import {
   ShopperRewardPage,
   ShopperSpinPage,
   ShopperSurveyPage,
+  ShopperThanksPage,
 } from './pages/shopper/ShopperPages'
 
 const hoPages = (
@@ -125,6 +126,7 @@ export default function App() {
               <Route path="survey" element={<ShopperSurveyPage />} />
               <Route path="reward" element={<ShopperRewardPage />} />
               <Route path="feedback" element={<ShopperFeedbackPage />} />
+              <Route path="thanks" element={<ShopperThanksPage />} />
             </Route>
 
             <Route path="/app/*" element={<Navigate to="/ho/dashboard" replace />} />
