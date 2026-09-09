@@ -33,6 +33,7 @@ import {
   BaPerformancePage,
   BaTrainingPage,
 } from './pages/ba/BaPages'
+import { BaDailySalesPage, BaStockReportPage } from './pages/ba/BaCheckoutPages'
 import {
   ShopperAiPage,
   ShopperFeedbackPage,
@@ -110,6 +111,8 @@ export default function App() {
               <Route path="training" element={<BaTrainingPage />} />
               <Route path="assistance" element={<BaAssistancePage />} />
               <Route path="performance" element={<BaPerformancePage />} />
+              <Route path="daily-sales" element={<BaDailySalesPage />} />
+              <Route path="stock-report" element={<BaStockReportPage />} />
             </Route>
 
             {/* Shopper — full-screen mobile web */}

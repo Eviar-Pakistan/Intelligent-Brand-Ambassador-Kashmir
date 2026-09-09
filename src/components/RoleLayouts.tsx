@@ -11,6 +11,7 @@ import { useEffect } from 'react'
 import { useRole, type Role } from '../context/AppContext'
 import { cn } from './ui'
 import { useBrand } from '../context/BrandContext'
+import { BaShiftProvider } from '../context/BaShiftContext'
 
 /** Sync active role from URL prefix so each experience stays isolated. */
 export function RoleSync({ role }: { role: Role }) {
@@ -30,52 +31,66 @@ const baTabs = [
 
 export function BaShell() {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { brand } = useBrand()
+  const hideTabs = pathname.includes('/daily-sales') || pathname.includes('/stock-report')
+
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-slate-50">
-      <RoleSync role="ba" />
-      <header className="safe-top sticky top-0 z-20 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
-        <div className="mx-auto flex max-w-lg items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-[10px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
-              {brand.productName} · BA
+    <BaShiftProvider>
+      <div className="flex min-h-[100dvh] flex-col bg-slate-50">
+        <RoleSync role="ba" />
+        <header className="safe-top sticky top-0 z-20 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="mx-auto flex max-w-lg items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
+                {brand.productName} · BA
+              </div>
+              <div className="truncate text-sm font-bold text-slate-900">Ayesha Khan · Store #12</div>
             </div>
-            <div className="truncate text-sm font-bold text-slate-900">Ayesha Khan · Store #12</div>
-          </div>
-          <button
-            onClick={() => navigate('/login')}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            <LogOut size={13} /> Exit
-          </button>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-lg flex-1 overflow-x-hidden overflow-y-auto px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-24">
-        <Outlet />
-      </main>
-
-      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto grid max-w-lg grid-cols-4">
-          {baTabs.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  'flex flex-col items-center gap-1 py-2.5 text-[11px] font-semibold',
-                  isActive ? 'text-brand-600' : 'text-slate-400',
-                )
-              }
+            <button
+              onClick={() => navigate('/login')}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
-              <Icon size={18} />
-              {label}
-            </NavLink>
-          ))}
-        </div>
-      </nav>
-    </div>
+              <LogOut size={13} /> Exit
+            </button>
+          </div>
+        </header>
+
+        <main
+          className={cn(
+            'mx-auto w-full max-w-lg flex-1 overflow-x-hidden overflow-y-auto px-3 sm:px-4',
+            hideTabs
+              ? 'pb-[calc(1.5rem+env(safe-area-inset-bottom))]'
+              : 'pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-24',
+          )}
+        >
+          <Outlet />
+        </main>
+
+        {!hideTabs && (
+          <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+            <div className="mx-auto grid max-w-lg grid-cols-4">
+              {baTabs.map(({ to, label, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex flex-col items-center gap-1 py-2.5 text-[11px] font-semibold',
+                      isActive ? 'text-brand-600' : 'text-slate-400',
+                    )
+                  }
+                >
+                  <Icon size={18} />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+        )}
+      </div>
+    </BaShiftProvider>
   )
 }
 

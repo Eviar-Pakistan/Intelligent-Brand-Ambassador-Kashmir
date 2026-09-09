@@ -1,25 +1,143 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, ChevronRight, Clock, Medal, Star, Trophy } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  CloudSun,
+  MapPin,
+  Medal,
+  Star,
+  Trophy,
+} from 'lucide-react'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 import { useBrand } from '../../context/BrandContext'
+import { formatDate, formatTime, useBaShift } from '../../context/BaShiftContext'
+
+function greetingFor(hour: number) {
+  if (hour < 12) return 'Good Morning'
+  if (hour < 17) return 'Good Afternoon'
+  return 'Good Evening'
+}
+
+function weatherLabel(code: number) {
+  if (code === 0) return 'Clear'
+  if (code <= 3) return 'Partly cloudy'
+  if (code <= 48) return 'Foggy'
+  if (code <= 67) return 'Rain'
+  if (code <= 77) return 'Snow'
+  if (code <= 82) return 'Showers'
+  return 'Stormy'
+}
 
 export function BaHomePage() {
   const { brand } = useBrand()
-  const [checkedIn, setCheckedIn] = useState(false)
+  const navigate = useNavigate()
+  const {
+    city,
+    shiftLabel,
+    checkedIn,
+    checkInAt,
+    canCheckOut,
+    reportSubmitted,
+    checkIn,
+  } = useBaShift()
+
+  const [now, setNow] = useState(() => new Date())
+  const [tempC, setTempC] = useState<string | null>(null)
+  const [weatherText, setWeatherText] = useState('Loading…')
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadWeather() {
+      try {
+        // Lahore coords — Open-Meteo (no API key)
+        const url =
+          'https://api.open-meteo.com/v1/forecast?latitude=31.5204&longitude=74.3587&current=temperature_2m,weather_code'
+        const res = await fetch(url)
+        if (!res.ok) throw new Error('weather failed')
+        const data = await res.json()
+        if (cancelled) return
+        const t = data?.current?.temperature_2m
+        const code = Number(data?.current?.weather_code ?? 0)
+        setTempC(typeof t === 'number' ? String(Math.round(t)) : null)
+        setWeatherText(weatherLabel(code))
+      } catch {
+        if (!cancelled) {
+          setTempC('32')
+          setWeatherText('Clear')
+        }
+      }
+    }
+    void loadWeather()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="space-y-4 bg-[#f7f4ec] p-4 pb-6">
-      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <p className="text-sm text-slate-500">Good Morning</p>
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 sm:p-5">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#faf6ee] p-3.5">
+          <div>
+            <div className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+              Date
+            </div>
+            <div className="mt-1 text-base font-bold leading-snug text-slate-900 sm:text-lg">
+              {formatDate(now)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+              Time
+            </div>
+            <div className="mt-1 font-mono text-base font-bold tabular-nums leading-snug text-navy-900 sm:text-lg">
+              {formatTime(now)}
+            </div>
+          </div>
+          <div className="col-span-2 h-px bg-slate-200/70" />
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+              <MapPin size={20} />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                City
+              </div>
+              <div className="truncate text-lg font-bold text-slate-900">{city}</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2.5">
+            <div className="min-w-0 text-right">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                Weather
+              </div>
+              <div className="text-lg font-bold text-slate-900">
+                {tempC ? `${tempC}°C` : '—'}
+              </div>
+              <div className="text-sm font-medium text-slate-600">{weatherText}</div>
+            </div>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold-500/15 text-gold-600">
+              <CloudSun size={20} />
+            </span>
+          </div>
+        </div>
+
+        <p className="mt-4 text-base text-slate-500">{greetingFor(now.getHours())}</p>
         <div className="mt-1 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Ayesha Khan 👋</h2>
-            <p className="mt-1 text-sm font-semibold text-brand-600">A+ Certified</p>
+            <h2 className="text-2xl font-bold text-slate-900">Ayesha Khan 👋</h2>
+            <p className="mt-1 text-base font-semibold text-brand-600">A+ Certified</p>
           </div>
           <Link
             to="/ba/performance"
-            className="flex shrink-0 items-center gap-0.5 pt-1 text-sm font-semibold text-brand-600"
+            className="flex shrink-0 items-center gap-0.5 pt-1.5 text-sm font-semibold text-brand-600"
           >
             View Profile
             <ChevronRight size={16} />
@@ -34,18 +152,54 @@ export function BaHomePage() {
             AK
           </div>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold text-slate-900">Store #12, Lahore</div>
-            <div className="text-sm text-slate-500">08:00 AM – 08:00 PM</div>
+            <div className="font-semibold text-slate-900">Store #12, {city}</div>
+            <div className="text-sm text-slate-500">{shiftLabel}</div>
           </div>
-          <button
-            type="button"
-            onClick={() => setCheckedIn(true)}
-            disabled={checkedIn}
-            className="shrink-0 rounded-full bg-navy-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:bg-brand-600"
-          >
-            {checkedIn ? 'Checked In' : 'Check In'}
-          </button>
+          {!checkedIn ? (
+            <button
+              type="button"
+              onClick={checkIn}
+              className="shrink-0 rounded-full bg-navy-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+            >
+              Check In
+            </button>
+          ) : (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
+              <CheckCircle2 size={14} />
+              Checked In
+            </span>
+          )}
         </div>
+
+        {checkedIn && checkInAt && (
+          <div className="mt-3 rounded-xl bg-[#faf6ee] px-3 py-2.5 text-sm text-slate-700">
+            <span className="font-medium text-slate-500">Check-in time</span>
+            <div className="mt-0.5 font-semibold tabular-nums text-slate-900">
+              {formatTime(checkInAt)}
+            </div>
+          </div>
+        )}
+
+        {checkedIn && !reportSubmitted && (
+          <>
+            <button
+              type="button"
+              disabled={!canCheckOut}
+              onClick={() => navigate('/ba/daily-sales')}
+              className="mt-3 w-full rounded-2xl bg-navy-900 py-3 text-sm font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+            >
+              Check Out
+            </button>
+            
+          </>
+        )}
+
+        {reportSubmitted && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+            <CheckCircle2 size={16} />
+            Today&apos;s report submitted
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -266,9 +420,9 @@ export function BaTrainingPage() {
 }
 
 export function BaAssistancePage() {
+  const { shiftEnded, endShift } = useBaShift()
   const [tab, setTab] = useState<'assistant' | 'help'>('assistant')
   const [elapsed, setElapsed] = useState(2 * 3600 + 49 * 60 + 2)
-  const [shiftEnded, setShiftEnded] = useState(false)
 
   useEffect(() => {
     if (shiftEnded) return
@@ -375,7 +529,7 @@ export function BaAssistancePage() {
 
         <button
           type="button"
-          onClick={() => setShiftEnded(true)}
+          onClick={endShift}
           disabled={shiftEnded}
           className="mt-auto w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:bg-brand-700/80"
         >
