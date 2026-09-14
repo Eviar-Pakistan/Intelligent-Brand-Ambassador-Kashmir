@@ -1,21 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { RotateCcw, Search } from 'lucide-react'
-import { Card, cn, KpiCard } from '../../components/ui'
+import { Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
 import {
   aggregateBaPerformance,
   baPerformanceMonths,
@@ -23,20 +9,21 @@ import {
   filterBaPerformanceRecords,
   getStoresForTown,
 } from '../../data/baPerformance'
-
-const CATEGORY_COLORS = ['#7ec99a', '#0b7a3e', '#d4a017']
-const CHART_GREEN = '#0b7a3e'
-const CHART_GREEN_LIGHT = '#7ec99a'
-const CHART_GOLD = '#d4a017'
-const GRID_STROKE = '#f1f5f9'
-const AXIS_TICK = '#94a3b8'
-
-const tooltipStyle = {
-  borderRadius: 8,
-  border: '1px solid #e2e8f0',
-  boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
-  fontSize: 12,
-}
+import {
+  activeBasByStore,
+  baCheckInOutByStore,
+  baCheckInOutTimeline,
+} from '../../data/mock'
+import {
+  categoryColors,
+  chartGold,
+  chartGreen,
+  chartGreenLight,
+  chartGrid,
+  chartTick,
+  defaultChartOptions,
+} from '../../lib/chartjs'
+import type { ChartData, ChartOptions } from 'chart.js'
 
 type FilterPanelProps = {
   title: string
@@ -102,8 +89,8 @@ function FilterPanel({
       </div>
       <div
         className={cn(
-          'overflow-y-auto',
-          fill ? 'max-h-36 lg:max-h-none lg:min-h-0 lg:flex-1' : 'max-h-36',
+          'overflow-y-auto overscroll-contain',
+          fill ? 'max-h-52 sm:max-h-60 lg:max-h-72' : 'max-h-36',
         )}
       >
         {allowAll && (
@@ -158,16 +145,82 @@ function ChartCard({
         <h3 className="truncate text-sm font-medium text-slate-700">{title}</h3>
       </div>
       <div className="p-3 sm:p-4">
-        <div className={cn('w-full', CHART_HEIGHT)}>{children}</div>
+        <div className={cn('relative w-full', CHART_HEIGHT)}>{children}</div>
       </div>
     </Card>
   )
 }
 
+const scaleDefaults = {
+  grid: { color: chartGrid },
+  ticks: { color: chartTick, font: { size: 11 } },
+  border: { display: false },
+}
+
+type DatePreset = 'today' | 'yesterday' | 'mtd' | 'ytd' | 'custom'
+
+const DATE_PRESETS: { id: DatePreset; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'mtd', label: 'Month to date' },
+  { id: 'ytd', label: 'Year to date' },
+  { id: 'custom', label: 'Custom date' },
+]
+
+const MONTH_ORDER = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+function monthNameFromDate(d: Date) {
+  return MONTH_ORDER[d.getMonth()]
+}
+
+/** Prefer exact month if present in data; otherwise nearest prior available month. */
+function resolveDataMonth(monthName: string): string | null {
+  if (baPerformanceMonths.includes(monthName)) return monthName
+  const idx = MONTH_ORDER.indexOf(monthName)
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (baPerformanceMonths.includes(MONTH_ORDER[i])) return MONTH_ORDER[i]
+  }
+  return baPerformanceMonths[0] ?? null
+}
+
+function monthForPreset(preset: DatePreset, customFrom?: string, customTo?: string): string | null {
+  const today = new Date()
+  if (preset === 'ytd') return null
+  if (preset === 'custom') {
+    if (!customFrom || !customTo) return null
+    const from = new Date(customFrom)
+    const to = new Date(customTo)
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
+    const fromMonth = monthNameFromDate(from)
+    const toMonth = monthNameFromDate(to)
+    if (fromMonth === toMonth) return resolveDataMonth(fromMonth)
+    return null
+  }
+  const d =
+    preset === 'yesterday' ? new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1) : today
+  return resolveDataMonth(monthNameFromDate(d))
+}
+
 export function BaPerformanceDashboardPage() {
-  const [town, setTown] = useState('Faisalabad')
-  const [month, setMonth] = useState('August')
+  const [town, setTown] = useState<string | null>(null)
+  const [month, setMonth] = useState<string | null>(() => monthForPreset('mtd'))
   const [store, setStore] = useState<string | null>(null)
+  const [datePreset, setDatePreset] = useState<DatePreset>('mtd')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
 
   const storeOptions = useMemo(() => getStoresForTown(town, month), [town, month])
 
@@ -181,26 +234,270 @@ export function BaPerformanceDashboardPage() {
     [filteredRecords, town, month],
   )
 
+  function applyDatePreset(preset: DatePreset, from = customFrom, to = customTo) {
+    setDatePreset(preset)
+    if (preset === 'custom') return
+    setMonth(monthForPreset(preset, from, to))
+    setStore(null)
+  }
+
+  function handleCustomFrom(value: string) {
+    setCustomFrom(value)
+    setDatePreset('custom')
+    if (value && customTo) {
+      setMonth(monthForPreset('custom', value, customTo))
+      setStore(null)
+    }
+  }
+
+  function handleCustomTo(value: string) {
+    setCustomTo(value)
+    setDatePreset('custom')
+    if (customFrom && value) {
+      setMonth(monthForPreset('custom', customFrom, value))
+      setStore(null)
+    }
+  }
+
   function handleTownChange(next: string | null) {
-    if (!next) return
     setTown(next)
     setStore(null)
   }
 
   function handleMonthChange(next: string | null) {
-    if (!next) return
     setMonth(next)
     setStore(null)
+    setDatePreset('custom')
   }
 
-  const townBarData = [
-    { name: 'Target', value: data.townTargetVsSales.target, fill: CHART_GREEN_LIGHT },
-    { name: 'Sales', value: data.townTargetVsSales.sales, fill: CHART_GREEN },
-  ]
+  const dateRangeLabel = useMemo(() => {
+    if (datePreset === 'custom' && customFrom && customTo) {
+      return `${customFrom} → ${customTo}`
+    }
+    return DATE_PRESETS.find((p) => p.id === datePreset)?.label ?? ''
+  }, [datePreset, customFrom, customTo])
+
+  const scopeLabel = data.townTargetVsSales.town
+
+  const categoryChart = useMemo<ChartData<'doughnut'>>(
+    () => ({
+      labels: data.categorySales.map((c) => c.name),
+      datasets: [
+        {
+          data: data.categorySales.map((c) => c.value),
+          backgroundColor: categoryColors,
+          borderColor: '#fff',
+          borderWidth: 2,
+        },
+      ],
+    }),
+    [data.categorySales],
+  )
+
+  const categoryOptions = useMemo<ChartOptions<'doughnut'>>(
+    () => ({
+      ...defaultChartOptions,
+      plugins: {
+        ...defaultChartOptions.plugins,
+        legend: { ...defaultChartOptions.plugins.legend, position: 'bottom' },
+      },
+      cutout: '55%',
+    }),
+    [],
+  )
+
+  const targetSalesChart = useMemo<ChartData<'bar'>>(
+    () => ({
+      labels: ['Target', 'Sales'],
+      datasets: [
+        {
+          data: [data.townTargetVsSales.target, data.townTargetVsSales.sales],
+          backgroundColor: [chartGreenLight, chartGreen],
+          borderRadius: 4,
+          maxBarThickness: 48,
+        },
+      ],
+    }),
+    [data.townTargetVsSales],
+  )
+
+  const targetSalesOptions = useMemo<ChartOptions<'bar'>>(
+    () => ({
+      ...defaultChartOptions,
+      plugins: { ...defaultChartOptions.plugins, legend: { display: false } },
+      scales: {
+        x: scaleDefaults,
+        y: { ...scaleDefaults, beginAtZero: true },
+      },
+    }),
+    [],
+  )
+
+  const weekChart = useMemo<ChartData<'line'>>(
+    () => ({
+      labels: data.weekSales.map((w) => `W${w.week}`),
+      datasets: [
+        {
+          label: 'Sales',
+          data: data.weekSales.map((w) => w.sales),
+          borderColor: chartGreen,
+          backgroundColor: chartGreen,
+          pointBackgroundColor: chartGreen,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: chartGold,
+          tension: 0.35,
+          borderWidth: 2,
+        },
+      ],
+    }),
+    [data.weekSales],
+  )
+
+  const weekOptions = useMemo<ChartOptions<'line'>>(
+    () => ({
+      ...defaultChartOptions,
+      plugins: { ...defaultChartOptions.plugins, legend: { display: false } },
+      scales: {
+        x: scaleDefaults,
+        y: { ...scaleDefaults, beginAtZero: true },
+      },
+    }),
+    [],
+  )
+
+  const topStoresChart = useMemo<ChartData<'bar'>>(
+    () => ({
+      labels: data.topStores.map((s) => s.store),
+      datasets: [
+        {
+          data: data.topStores.map((s) => s.sales),
+          backgroundColor: chartGreenLight,
+          borderRadius: 3,
+          maxBarThickness: 18,
+        },
+      ],
+    }),
+    [data.topStores],
+  )
+
+  const topSkusChart = useMemo<ChartData<'bar'>>(
+    () => ({
+      labels: data.topSkus.map((s) => s.sku),
+      datasets: [
+        {
+          data: data.topSkus.map((s) => s.sales),
+          backgroundColor: chartGreenLight,
+          borderRadius: 3,
+          maxBarThickness: 18,
+        },
+      ],
+    }),
+    [data.topSkus],
+  )
+
+  const horizontalBarOptions = useMemo<ChartOptions<'bar'>>(
+    () => ({
+      ...defaultChartOptions,
+      indexAxis: 'y',
+      plugins: { ...defaultChartOptions.plugins, legend: { display: false } },
+      scales: {
+        x: { ...scaleDefaults, beginAtZero: true },
+        y: {
+          ...scaleDefaults,
+          ticks: { ...scaleDefaults.ticks, font: { size: 9 } },
+        },
+      },
+    }),
+    [],
+  )
+
+  const checkInOutChart = useMemo<ChartData<'bar'>>(
+    () => ({
+      labels: baCheckInOutTimeline.map((r) => r.time),
+      datasets: [
+        {
+          label: 'Check-in',
+          data: baCheckInOutTimeline.map((r) => r.checkIn),
+          backgroundColor: chartGreen,
+          borderRadius: 4,
+          maxBarThickness: 28,
+        },
+        {
+          label: 'Check-out',
+          data: baCheckInOutTimeline.map((r) => r.checkOut),
+          backgroundColor: chartGold,
+          borderRadius: 4,
+          maxBarThickness: 28,
+        },
+      ],
+    }),
+    [],
+  )
+
+  const checkInOutOptions = useMemo<ChartOptions<'bar'>>(
+    () => ({
+      ...defaultChartOptions,
+      scales: {
+        x: scaleDefaults,
+        y: { ...scaleDefaults, beginAtZero: true, ticks: { ...scaleDefaults.ticks, precision: 0 } },
+      },
+    }),
+    [],
+  )
 
   return (
     <div className="space-y-5">
-  
+      <Card className="!p-3 sm:!p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              Date range
+            </div>
+            <div className="text-xs text-slate-400">{dateRangeLabel}</div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {DATE_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => applyDatePreset(p.id)}
+                className={cn(
+                  'rounded-lg px-2.5 py-1.5 text-xs font-semibold transition',
+                  datePreset === p.id
+                    ? 'bg-brand-500 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {datePreset === 'custom' && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-slate-600">From</span>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => handleCustomFrom(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500"
+              />
+            </label>
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-slate-600">To</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(e) => handleCustomTo(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500"
+              />
+            </label>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <KpiCard label="Customers Intercepted" value={data.customersIntercepted.toLocaleString()} />
@@ -218,12 +515,16 @@ export function BaPerformanceDashboardPage() {
             options={baPerformanceTowns}
             value={town}
             onChange={handleTownChange}
+            allowAll
+            allLabel="All towns"
           />
           <FilterPanel
             title="Month"
             options={baPerformanceMonths}
             value={month}
             onChange={handleMonthChange}
+            allowAll
+            allLabel="All months"
           />
           <FilterPanel
             title="Store"
@@ -238,131 +539,104 @@ export function BaPerformanceDashboardPage() {
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-1 lg:items-stretch">
           <ChartCard title="Category-wise sales">
-            <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={data.categorySales}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius="72%"
-                      stroke="#fff"
-                      strokeWidth={2}
-                      label={({ name, value }) =>
-                        `${name}\n${Number(value).toLocaleString()}`
-                      }
-                      labelLine={{ stroke: AXIS_TICK, strokeWidth: 1 }}
-                    >
-                      {data.categorySales.map((_, i) => (
-                        <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(v: number) => v.toLocaleString()}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12, color: '#64748b' }} />
-                  </PieChart>
-            </ResponsiveContainer>
+            <Doughnut data={categoryChart} options={categoryOptions} />
           </ChartCard>
 
-          <ChartCard title={`Target vs sales — ${town}`}>
-            <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={townBarData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      formatter={(v: number) => v.toLocaleString()}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
-                      {townBarData.map((entry, i) => (
-                        <Cell key={i} fill={entry.fill} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-            </ResponsiveContainer>
+          <ChartCard title={`Target vs sales — ${scopeLabel}`}>
+            <Bar data={targetSalesChart} options={targetSalesOptions} />
           </ChartCard>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:grid-cols-3 lg:items-stretch">
           <ChartCard title="Week-wise sales (Ltr/Kg)">
-            <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.weekSales}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
-                    <XAxis dataKey="week" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      formatter={(v: number) => v.toLocaleString()}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="sales"
-                      stroke={CHART_GREEN}
-                      strokeWidth={2}
-                      dot={{ fill: CHART_GREEN, r: 3, strokeWidth: 0 }}
-                      activeDot={{ r: 4, fill: CHART_GOLD, strokeWidth: 0 }}
-                    />
-                  </LineChart>
-            </ResponsiveContainer>
+            <Line data={weekChart} options={weekOptions} />
           </ChartCard>
 
           <ChartCard title="Top 5 stores">
-            <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    layout="vertical"
-                    data={data.topStores}
-                    margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: AXIS_TICK }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="store"
-                      width={88}
-                      tick={{ fontSize: 9, fill: AXIS_TICK }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(v: number) => v.toLocaleString()}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Bar dataKey="sales" fill={CHART_GREEN_LIGHT} radius={[0, 3, 3, 0]} maxBarSize={20} />
-                  </BarChart>
-            </ResponsiveContainer>
+            <Bar data={topStoresChart} options={horizontalBarOptions} />
           </ChartCard>
 
           <ChartCard title="Top 5 SKUs">
-            <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    layout="vertical"
-                    data={data.topSkus}
-                    margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: AXIS_TICK }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="sku"
-                      width={88}
-                      tick={{ fontSize: 9, fill: AXIS_TICK }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(v: number) => v.toLocaleString()}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Bar dataKey="sales" fill={CHART_GREEN_LIGHT} radius={[0, 3, 3, 0]} maxBarSize={20} />
-                  </BarChart>
-            </ResponsiveContainer>
+            <Bar data={topSkusChart} options={horizontalBarOptions} />
           </ChartCard>
         </div>
       </div>
+
+      <Card padding={false}>
+        <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
+          <CardHeader title="Active BAs by store" subtitle="Live status today" />
+        </div>
+        <TableScroll minWidth={520}>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="px-4 py-3">Store</th>
+                <th className="px-4 py-3">City</th>
+                <th className="px-4 py-3">Active</th>
+                <th className="px-4 py-3">Break</th>
+                <th className="px-4 py-3">Offline</th>
+                <th className="px-4 py-3">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeBasByStore.map((row) => (
+                <tr key={row.storeId} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    #{row.storeId} {row.store}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{row.city}</td>
+                  <td className="px-4 py-3 font-semibold text-emerald-600">{row.active}</td>
+                  <td className="px-4 py-3 text-amber-600">{row.break}</td>
+                  <td className="px-4 py-3 text-slate-500">{row.offline}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-900">{row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
+      </Card>
+
+      <Card padding={false}>
+        <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
+          <CardHeader title="BA check-in / check-out" subtitle="Store-wise today" />
+        </div>
+        <TableScroll minWidth={640}>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="px-4 py-3">BA</th>
+                <th className="px-4 py-3">Store</th>
+                <th className="px-4 py-3">Check-in</th>
+                <th className="px-4 py-3">Check-out</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {baCheckInOutByStore.map((row) => (
+                <tr key={`${row.ba}-${row.store}-${row.checkIn}`} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">{row.ba}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <div>{row.store}</div>
+                    <div className="text-xs text-slate-400">{row.city}</div>
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{row.checkIn}</td>
+                  <td className="px-4 py-3 tabular-nums text-slate-600">{row.checkOut}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={row.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
+      </Card>
+
+      <Card>
+        <CardHeader title="BA check-in & check-out by time" subtitle="Hourly activity today" />
+        <div className="relative h-56 sm:h-72">
+          <Bar data={checkInOutChart} options={checkInOutOptions} />
+        </div>
+      </Card>
     </div>
   )
 }

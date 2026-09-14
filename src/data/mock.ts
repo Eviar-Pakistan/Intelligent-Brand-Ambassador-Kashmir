@@ -78,6 +78,77 @@ export const consumerInsights = {
   ],
 }
 
+export type ConsumerStoreQuestion = {
+  id: string
+  storeId: number
+  prompt: string
+  responses: number
+}
+
+/** Survey questions captured / configured per store */
+export const initialConsumerStoreQuestions: ConsumerStoreQuestion[] = [
+  {
+    id: 'cq1',
+    storeId: 12,
+    prompt: 'Which oil do you currently use at home?',
+    responses: 312,
+  },
+  {
+    id: 'cq2',
+    storeId: 12,
+    prompt: 'How many people do you cook for weekly?',
+    responses: 298,
+  },
+  {
+    id: 'cq3',
+    storeId: 12,
+    prompt: 'What matters most — health, taste, or price?',
+    responses: 276,
+  },
+  {
+    id: 'cq4',
+    storeId: 7,
+    prompt: 'How often do you buy cooking oil?',
+    responses: 184,
+  },
+  {
+    id: 'cq5',
+    storeId: 7,
+    prompt: 'Would you try Kashmir Cooking Oil this visit?',
+    responses: 161,
+  },
+  {
+    id: 'cq6',
+    storeId: 4,
+    prompt: 'Which pack size do you usually buy?',
+    responses: 220,
+  },
+  {
+    id: 'cq7',
+    storeId: 4,
+    prompt: 'Have you heard of Kashmir Cooking Oil before?',
+    responses: 205,
+  },
+  {
+    id: 'cq8',
+    storeId: 19,
+    prompt: 'What is your preferred cooking method at home?',
+    responses: 142,
+  },
+  {
+    id: 'cq9',
+    storeId: 19,
+    prompt: 'How price-sensitive are you when choosing oil?',
+    responses: 138,
+  },
+  {
+    id: 'cq10',
+    storeId: 23,
+    prompt: 'What stops you from switching brands?',
+    responses: 96,
+  },
+]
+
 export const shopperIntel = {
   footfall: '48.2k',
   engagementRate: '68.4%',
@@ -91,6 +162,84 @@ export const operations = {
   attendance: '94%',
   storeCoverage: '87%',
 }
+
+/** Active BAs aggregated by store (Dashboard) */
+export const activeBasByStore = [
+  { storeId: 12, store: 'Carrefour DHA', city: 'Lahore', active: 2, break: 1, offline: 0, total: 3 },
+  { storeId: 7, store: 'Imtiaz Clifton', city: 'Karachi', active: 1, break: 0, offline: 1, total: 2 },
+  { storeId: 4, store: 'Metro Lahore', city: 'Lahore', active: 1, break: 0, offline: 0, total: 1 },
+  { storeId: 19, store: 'Al-Fatah Blue Area', city: 'Islamabad', active: 1, break: 0, offline: 0, total: 1 },
+  { storeId: 23, store: 'Hyperstar Multan', city: 'Multan', active: 0, break: 0, offline: 1, total: 1 },
+]
+
+/** Store-wise BA check-in / check-out log (Dashboard) */
+export const baCheckInOutByStore = [
+  {
+    ba: 'Ayesha Khan',
+    store: 'Carrefour DHA',
+    city: 'Lahore',
+    checkIn: '08:02 AM',
+    checkOut: '—',
+    status: 'Active',
+  },
+  {
+    ba: 'Hamza Ali',
+    store: 'Carrefour DHA',
+    city: 'Lahore',
+    checkIn: '08:10 AM',
+    checkOut: '—',
+    status: 'Active',
+  },
+  {
+    ba: 'Sara Ahmed',
+    store: 'Carrefour DHA',
+    city: 'Lahore',
+    checkIn: '08:18 AM',
+    checkOut: '01:05 PM',
+    status: 'Checked Out',
+  },
+  {
+    ba: 'Bilal Ahmed',
+    store: 'Imtiaz Clifton',
+    city: 'Karachi',
+    checkIn: '09:01 AM',
+    checkOut: '—',
+    status: 'Active',
+  },
+  {
+    ba: 'Fatima Noor',
+    store: 'Metro Lahore',
+    city: 'Lahore',
+    checkIn: '08:45 AM',
+    checkOut: '—',
+    status: 'Active',
+  },
+  {
+    ba: 'Sara Ahmed',
+    store: 'Al-Fatah Blue Area',
+    city: 'Islamabad',
+    checkIn: '10:12 AM',
+    checkOut: '—',
+    status: 'Active',
+  },
+]
+
+/** Hourly BA check-in / check-out counts for today */
+export const baCheckInOutTimeline = [
+  { time: '8 AM', checkIn: 12, checkOut: 0 },
+  { time: '9 AM', checkIn: 18, checkOut: 1 },
+  { time: '10 AM', checkIn: 8, checkOut: 2 },
+  { time: '11 AM', checkIn: 3, checkOut: 1 },
+  { time: '12 PM', checkIn: 2, checkOut: 4 },
+  { time: '1 PM', checkIn: 1, checkOut: 6 },
+  { time: '2 PM', checkIn: 2, checkOut: 3 },
+  { time: '3 PM', checkIn: 1, checkOut: 2 },
+  { time: '4 PM', checkIn: 0, checkOut: 5 },
+  { time: '5 PM', checkIn: 4, checkOut: 2 },
+  { time: '6 PM', checkIn: 2, checkOut: 3 },
+  { time: '7 PM', checkIn: 0, checkOut: 8 },
+  { time: '8 PM', checkIn: 0, checkOut: 14 },
+]
 
 export const storeRanking = [
   { id: 12, name: 'Carrefour DHA', city: 'Lahore', score: 96, conversion: 34 },
@@ -171,6 +320,9 @@ export const ambassadors = [
     scores: { product: 96, communication: 91, selling: 94, objection: 89, interaction: 95 },
     lifecycle: ['Recruited', 'AI Screened', 'Certified', 'Trained', 'Deployed', 'Live'] as LifecycleStage[],
     today: { interactions: 47, conversions: 16, rate: 34 },
+    checkIn: '08:02 AM',
+    checkOut: '—',
+    dataFilled: 'Submitted' as const,
   },
   {
     id: 'hamza',
@@ -188,6 +340,9 @@ export const ambassadors = [
     scores: { product: 86, communication: 85, selling: 84, objection: 82, interaction: 88 },
     lifecycle: ['Recruited', 'AI Screened', 'Certified', 'Trained'] as LifecycleStage[],
     today: { interactions: 0, conversions: 0, rate: 0 },
+    checkIn: '—',
+    checkOut: '—',
+    dataFilled: 'Pending' as const,
   },
   {
     id: 'sara',
@@ -205,6 +360,9 @@ export const ambassadors = [
     scores: { product: 97, communication: 94, selling: 93, objection: 92, interaction: 96 },
     lifecycle: ['Recruited', 'AI Screened', 'Certified', 'Trained', 'Deployed', 'Live'] as LifecycleStage[],
     today: { interactions: 39, conversions: 14, rate: 36 },
+    checkIn: '08:18 AM',
+    checkOut: '01:05 PM',
+    dataFilled: 'Submitted' as const,
   },
   {
     id: 'fatima',
@@ -222,6 +380,9 @@ export const ambassadors = [
     scores: { product: 95, communication: 92, selling: 91, objection: 94, interaction: 90 },
     lifecycle: ['Recruited', 'AI Screened', 'Certified', 'Trained', 'Deployed', 'Live'] as LifecycleStage[],
     today: { interactions: 28, conversions: 9, rate: 32 },
+    checkIn: '08:45 AM',
+    checkOut: '—',
+    dataFilled: 'Incomplete' as const,
   },
   {
     id: 'bilal',
@@ -239,6 +400,9 @@ export const ambassadors = [
     scores: { product: 81, communication: 77, selling: 80, objection: 74, interaction: 82 },
     lifecycle: ['Recruited', 'AI Screened'] as LifecycleStage[],
     today: { interactions: 0, conversions: 0, rate: 0 },
+    checkIn: '09:01 AM',
+    checkOut: '—',
+    dataFilled: 'Pending' as const,
   },
 ]
 
@@ -332,7 +496,7 @@ export const stores = [
     footfall: 'High' as const,
     bas: 3,
     coverage: 96,
-    status: 'LIVE' as const,
+    status: 'Covered' as const,
     todayFootfall: 2340,
     engagement: 71,
     conversion: 34,
@@ -351,7 +515,7 @@ export const stores = [
     footfall: 'Medium' as const,
     bas: 2,
     coverage: 82,
-    status: 'LIVE' as const,
+    status: 'Covered' as const,
     todayFootfall: 1810,
     engagement: 64,
     conversion: 32,
@@ -369,7 +533,7 @@ export const stores = [
     footfall: 'High' as const,
     bas: 4,
     coverage: 91,
-    status: 'LIVE' as const,
+    status: 'Covered' as const,
     todayFootfall: 2100,
     engagement: 69,
     conversion: 30,
@@ -572,6 +736,206 @@ export const initialSchedule: ShiftSlot[] = [
     baId: null,
     baName: null,
     status: 'Open',
+  },
+]
+
+export type BaShiftHistoryItem = {
+  id: string
+  baId: string
+  day: string
+  date: string
+  storeId: number
+  storeName: string
+  city: string
+  shift: string
+  status: 'Completed' | 'Missed' | 'Cancelled'
+  checkIn: string
+  checkOut: string
+}
+
+/** Past shifts (before current schedule week) */
+export const baShiftHistory: BaShiftHistoryItem[] = [
+  {
+    id: 'h1',
+    baId: 'ayesha',
+    day: 'Fri',
+    date: '21 Aug',
+    storeId: 12,
+    storeName: 'Carrefour DHA',
+    city: 'Lahore',
+    shift: '12:00 PM – 3:00 PM',
+    status: 'Completed',
+    checkIn: '11:52 AM',
+    checkOut: '03:05 PM',
+  },
+  {
+    id: 'h2',
+    baId: 'ayesha',
+    day: 'Wed',
+    date: '19 Aug',
+    storeId: 12,
+    storeName: 'Carrefour DHA',
+    city: 'Lahore',
+    shift: '6:00 PM – 9:00 PM',
+    status: 'Completed',
+    checkIn: '05:55 PM',
+    checkOut: '09:02 PM',
+  },
+  {
+    id: 'h3',
+    baId: 'ayesha',
+    day: 'Mon',
+    date: '17 Aug',
+    storeId: 4,
+    storeName: 'Metro Lahore',
+    city: 'Lahore',
+    shift: '2:00 PM – 6:00 PM',
+    status: 'Completed',
+    checkIn: '01:58 PM',
+    checkOut: '06:01 PM',
+  },
+  {
+    id: 'h4',
+    baId: 'ayesha',
+    day: 'Sat',
+    date: '15 Aug',
+    storeId: 12,
+    storeName: 'Carrefour DHA',
+    city: 'Lahore',
+    shift: '10:00 AM – 2:00 PM',
+    status: 'Missed',
+    checkIn: '—',
+    checkOut: '—',
+  },
+  {
+    id: 'h5',
+    baId: 'sara',
+    day: 'Thu',
+    date: '20 Aug',
+    storeId: 19,
+    storeName: 'Al-Fatah Blue Area',
+    city: 'Islamabad',
+    shift: '1:00 PM – 4:00 PM',
+    status: 'Completed',
+    checkIn: '12:50 PM',
+    checkOut: '04:08 PM',
+  },
+  {
+    id: 'h6',
+    baId: 'sara',
+    day: 'Tue',
+    date: '18 Aug',
+    storeId: 19,
+    storeName: 'Al-Fatah Blue Area',
+    city: 'Islamabad',
+    shift: '5:00 PM – 9:00 PM',
+    status: 'Completed',
+    checkIn: '04:58 PM',
+    checkOut: '09:00 PM',
+  },
+  {
+    id: 'h7',
+    baId: 'sara',
+    day: 'Sun',
+    date: '16 Aug',
+    storeId: 19,
+    storeName: 'Al-Fatah Blue Area',
+    city: 'Islamabad',
+    shift: '12:00 PM – 3:00 PM',
+    status: 'Completed',
+    checkIn: '11:55 AM',
+    checkOut: '03:10 PM',
+  },
+  {
+    id: 'h8',
+    baId: 'fatima',
+    day: 'Fri',
+    date: '21 Aug',
+    storeId: 4,
+    storeName: 'Metro Lahore',
+    city: 'Lahore',
+    shift: '11:00 AM – 2:00 PM',
+    status: 'Completed',
+    checkIn: '10:48 AM',
+    checkOut: '02:05 PM',
+  },
+  {
+    id: 'h9',
+    baId: 'fatima',
+    day: 'Wed',
+    date: '19 Aug',
+    storeId: 4,
+    storeName: 'Metro Lahore',
+    city: 'Lahore',
+    shift: '2:00 PM – 6:00 PM',
+    status: 'Completed',
+    checkIn: '01:55 PM',
+    checkOut: '06:00 PM',
+  },
+  {
+    id: 'h10',
+    baId: 'fatima',
+    day: 'Mon',
+    date: '17 Aug',
+    storeId: 12,
+    storeName: 'Carrefour DHA',
+    city: 'Lahore',
+    shift: '6:00 PM – 9:00 PM',
+    status: 'Cancelled',
+    checkIn: '—',
+    checkOut: '—',
+  },
+  {
+    id: 'h11',
+    baId: 'hamza',
+    day: 'Thu',
+    date: '20 Aug',
+    storeId: 7,
+    storeName: 'Imtiaz Clifton',
+    city: 'Karachi',
+    shift: '5:00 PM – 9:00 PM',
+    status: 'Completed',
+    checkIn: '04:50 PM',
+    checkOut: '08:55 PM',
+  },
+  {
+    id: 'h12',
+    baId: 'hamza',
+    day: 'Tue',
+    date: '18 Aug',
+    storeId: 7,
+    storeName: 'Imtiaz Clifton',
+    city: 'Karachi',
+    shift: '12:00 PM – 3:00 PM',
+    status: 'Missed',
+    checkIn: '—',
+    checkOut: '—',
+  },
+  {
+    id: 'h13',
+    baId: 'bilal',
+    day: 'Wed',
+    date: '19 Aug',
+    storeId: 7,
+    storeName: 'Imtiaz Clifton',
+    city: 'Karachi',
+    shift: '10:00 AM – 2:00 PM',
+    status: 'Completed',
+    checkIn: '10:05 AM',
+    checkOut: '01:50 PM',
+  },
+  {
+    id: 'h14',
+    baId: 'bilal',
+    day: 'Mon',
+    date: '17 Aug',
+    storeId: 7,
+    storeName: 'Imtiaz Clifton',
+    city: 'Karachi',
+    shift: '2:00 PM – 6:00 PM',
+    status: 'Completed',
+    checkIn: '02:10 PM',
+    checkOut: '05:58 PM',
   },
 ]
 

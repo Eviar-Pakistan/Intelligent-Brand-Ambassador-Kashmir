@@ -76,7 +76,7 @@ const stockGheeFields: FieldDef[] = [
   { key: 'stockGheeTin5', label: 'Tin 5 KG' },
 ]
 
-const STOCK_OPTIONS = ['Available', 'Not Available'] as const
+const STOCK_OPTIONS = ['In Stock', 'Out of Stock', 'New Out of Stock'] as const
 
 function emptyNumeric(fields: FieldDef[]) {
   return Object.fromEntries(fields.map((f) => [f.key, ''])) as Record<string, string>
@@ -132,7 +132,7 @@ function StockCheckboxes({
   return (
     <div className="rounded-xl border border-slate-100 bg-[#faf6ee] px-3 py-3">
       <div className="text-xs font-semibold text-slate-700">{label}</div>
-      <div className="mt-2.5 flex flex-wrap gap-4">
+      <div className="mt-2.5 flex flex-col gap-2.5">
         {STOCK_OPTIONS.map((opt) => {
           const checked = value === opt
           return (
@@ -183,7 +183,7 @@ function PageChrome({
 
 export function BaDailySalesPage() {
   const navigate = useNavigate()
-  const { city, checkOut } = useBaShift()
+  const { city } = useBaShift()
 
   const allFields = useMemo(
     () => [
@@ -205,9 +205,8 @@ export function BaDailySalesPage() {
 
   function handleContinue(e: FormEvent) {
     e.preventDefault()
-    checkOut()
     sessionStorage.setItem('ba-daily-sales', JSON.stringify(values))
-    navigate('/ba/stock-report')
+    navigate('/ba/other-brands')
   }
 
   return (
@@ -215,7 +214,7 @@ export function BaDailySalesPage() {
       <PageChrome
         title="Daily Sales"
         subtitle={`${city} · enter today's interceptions & SKU sales`}
-        onBack={() => navigate('/ba/home')}
+        onBack={() => navigate('/ba/stock-report')}
       />
 
       <Section title="Interceptions">
@@ -288,7 +287,7 @@ export function BaDailySalesPage() {
         type="submit"
         className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition hover:bg-brand-600"
       >
-        Next · Stock Report
+        Next · Other Brands
       </button>
     </form>
   )
@@ -296,11 +295,10 @@ export function BaDailySalesPage() {
 
 export function BaStockReportPage() {
   const navigate = useNavigate()
-  const { markReportSubmitted } = useBaShift()
+  const { checkOut } = useBaShift()
   const [stock, setStock] = useState(() =>
     emptyStock([...stockOilFields, ...stockGheeFields]),
   )
-  const [submitted, setSubmitted] = useState(false)
 
   function setField(key: string, value: string) {
     setStock((prev) => ({ ...prev, [key]: value }))
@@ -308,41 +306,20 @@ export function BaStockReportPage() {
 
   const allFilled = [...stockOilFields, ...stockGheeFields].every((f) => stock[f.key])
 
-  function handleSubmit(e: FormEvent) {
+  function handleContinue(e: FormEvent) {
     e.preventDefault()
     if (!allFilled) return
+    checkOut()
     sessionStorage.setItem('ba-stock-report', JSON.stringify(stock))
-    markReportSubmitted()
-    setSubmitted(true)
-  }
-
-  if (submitted) {
-    return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center bg-[#f7f4ec] p-6 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-          <CheckCircle2 size={36} />
-        </div>
-        <h2 className="mt-4 text-xl font-bold text-slate-900">Your Data has been Submitted</h2>
-        <p className="mt-2 max-w-xs text-sm text-slate-500">
-          Daily sales and stock report were saved for today&apos;s shift.
-        </p>
-        <button
-          type="button"
-          onClick={() => navigate('/ba/home')}
-          className="mt-6 w-full max-w-xs rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition hover:bg-brand-600"
-        >
-          Back to Home
-        </button>
-      </div>
-    )
+    navigate('/ba/daily-sales')
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
+    <form onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Stock Report"
-        subtitle="Tick Available or Not Available for each SKU"
-        onBack={() => navigate('/ba/daily-sales')}
+        subtitle="Mark In Stock, Out of Stock, or New Out of Stock for each SKU"
+        onBack={() => navigate('/ba/home')}
       />
 
       <Section title="Kashmir Premium Oil">
@@ -370,6 +347,115 @@ export function BaStockReportPage() {
       <button
         type="submit"
         disabled={!allFilled}
+        className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        Next · Daily Sales
+      </button>
+    </form>
+  )
+}
+
+type OtherBrandRow = { id: string; name: string; price: string }
+
+const DEFAULT_OTHER_BRANDS: OtherBrandRow[] = [
+  { id: '1', name: 'Dalda 1 LTR', price: '' },
+  { id: '2', name: 'Dalda 5 LTR', price: '' },
+  { id: '3', name: 'Sufi 1 LTR', price: '' },
+  { id: '4', name: 'Sufi 5 LTR', price: '' },
+  { id: '5', name: 'Kisan 1 LTR', price: '' },
+  { id: '6', name: 'Kisan 5 LTR', price: '' },
+]
+
+export function BaOtherBrandsPage() {
+  const navigate = useNavigate()
+  const { markReportSubmitted } = useBaShift()
+  const [rows, setRows] = useState<OtherBrandRow[]>(DEFAULT_OTHER_BRANDS)
+  const [submitted, setSubmitted] = useState(false)
+
+  function updateRow(id: string, patch: Partial<OtherBrandRow>) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+
+  const canSubmit = rows.some((r) => r.name.trim() && r.price.trim())
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!canSubmit) return
+    const payload = rows.filter((r) => r.name.trim() || r.price.trim())
+    sessionStorage.setItem('ba-other-brands', JSON.stringify(payload))
+    markReportSubmitted()
+    setSubmitted(true)
+  }
+
+  if (submitted) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center bg-[#f7f4ec] p-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <CheckCircle2 size={36} />
+        </div>
+        <h2 className="mt-4 text-xl font-bold text-slate-900">Your Data has been Submitted</h2>
+        <p className="mt-2 max-w-xs text-sm text-slate-500">
+          Stock report, daily sales, and other brand prices were saved for today&apos;s shift.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate('/ba/home')}
+          className="mt-6 w-full max-w-xs rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition hover:bg-brand-600"
+        >
+          Back to Home
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
+      <PageChrome
+        title="Other Brands"
+        subtitle="Enter selling price for each competitor brand / pack"
+        onBack={() => navigate('/ba/daily-sales')}
+      />
+
+      <Section title="Competitor prices">
+        {rows.map((row, index) => (
+          <div
+            key={row.id}
+            className="rounded-xl border border-slate-100 bg-[#faf6ee] p-3 space-y-2.5"
+          >
+            <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+              Brand {index + 1}
+            </span>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">
+                Brand / pack name
+              </span>
+              <input
+                type="text"
+                value={row.name}
+                disabled
+                readOnly
+                className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Price (Rs.)</span>
+              <input
+                type="number"
+                min={0}
+                inputMode="decimal"
+                value={row.price}
+                onChange={(e) => updateRow(row.id, { price: e.target.value })}
+                placeholder="0"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+              />
+            </label>
+          </div>
+        ))}
+      </Section>
+
+      <button
+        type="submit"
+        disabled={!canSubmit}
         className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
       >
         Submit

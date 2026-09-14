@@ -1,19 +1,21 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
-  Clock,
   CloudSun,
+  FileSpreadsheet,
   MapPin,
-  Medal,
-  Star,
   Trophy,
+  Upload,
 } from 'lucide-react'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 import { useBrand } from '../../context/BrandContext'
 import { formatDate, formatTime, useBaShift } from '../../context/BaShiftContext'
+import { useTrainingContent } from '../../context/TrainingContentContext'
+import { Modal } from '../../components/ui'
 
 function greetingFor(hour: number) {
   if (hour < 12) return 'Good Morning'
@@ -37,16 +39,53 @@ export function BaHomePage() {
   const {
     city,
     shiftLabel,
+    shiftEndLabel,
     checkedIn,
     checkInAt,
     canCheckOut,
     reportSubmitted,
+    isEarlyCheckout,
     checkIn,
+    checkOut,
+    setEarlyCheckoutReason,
+    markReportSubmitted,
   } = useBaShift()
 
   const [now, setNow] = useState(() => new Date())
   const [tempC, setTempC] = useState<string | null>(null)
   const [weatherText, setWeatherText] = useState('Loading…')
+  const [checkoutWarningOpen, setCheckoutWarningOpen] = useState(false)
+  const [earlyReasonOpen, setEarlyReasonOpen] = useState(false)
+  const [earlyReason, setEarlyReason] = useState('')
+  const [excelFileName, setExcelFileName] = useState<string | null>(null)
+  const excelInputRef = useRef<HTMLInputElement>(null)
+
+  function saveExcelUpload(file: File | undefined) {
+    if (!file) return
+    setExcelFileName(file.name)
+    sessionStorage.setItem('ba-reports-excel', file.name)
+    if (!reportSubmitted) {
+      checkOut()
+      markReportSubmitted()
+    }
+  }
+
+  function handleCheckOutClick() {
+    if (isEarlyCheckout) {
+      setEarlyReason('')
+      setEarlyReasonOpen(true)
+      return
+    }
+    setCheckoutWarningOpen(true)
+  }
+
+  function submitEarlyReason() {
+    const reason = earlyReason.trim()
+    if (reason.length < 8) return
+    setEarlyCheckoutReason(reason)
+    setEarlyReasonOpen(false)
+    setCheckoutWarningOpen(true)
+  }
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000)
@@ -185,12 +224,21 @@ export function BaHomePage() {
             <button
               type="button"
               disabled={!canCheckOut}
-              onClick={() => navigate('/ba/daily-sales')}
+              onClick={handleCheckOutClick}
               className="mt-3 w-full rounded-2xl bg-navy-900 py-3 text-sm font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
             >
               Check Out
             </button>
-            
+            {!canCheckOut && (
+              <p className="mt-2 text-center text-xs text-slate-500">
+                Check Out enables 10 seconds after check-in
+              </p>
+            )}
+            {canCheckOut && isEarlyCheckout && (
+              <p className="mt-2 text-center text-xs text-amber-700">
+                Shift ends at {shiftEndLabel}. Early checkout requires a reason.
+              </p>
+            )}
           </>
         )}
 
@@ -201,6 +249,137 @@ export function BaHomePage() {
           </div>
         )}
       </div>
+
+      {checkedIn && (
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet size={18} className="text-brand-600" />
+            <h3 className="text-sm font-bold text-slate-900">Upload Excel report</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            One file for Stock Report, Daily Sales, and Other Brands (.xlsx / .xls / .csv)
+          </p>
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-100 bg-[#faf6ee] px-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-slate-900">Daily report file</div>
+              <div className="truncate text-xs text-slate-500">
+                {excelFileName ? `Uploaded: ${excelFileName}` : 'No file selected'}
+              </div>
+            </div>
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                saveExcelUpload(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => excelInputRef.current?.click()}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              <Upload size={12} />
+              {excelFileName ? 'Replace' : 'Upload'}
+            </button>
+          </div>
+          {excelFileName ? (
+            <p className="mt-3 text-center text-xs font-semibold text-brand-700">
+              Report file uploaded
+            </p>
+          ) : (
+            <p className="mt-3 text-center text-xs text-slate-500">
+              Or check out and fill reports manually
+            </p>
+          )}
+        </div>
+      )}
+
+      <Modal
+        open={earlyReasonOpen}
+        onClose={() => setEarlyReasonOpen(false)}
+        title="Early check-out"
+      >
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+            <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={22} />
+            <p className="text-sm leading-relaxed text-slate-800">
+              Your shift ends at <span className="font-semibold">{shiftEndLabel}</span>. You are
+              checking out early — please enter a reason to continue.
+            </p>
+          </div>
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-medium text-slate-700">Reason for early check-out</span>
+            <textarea
+              value={earlyReason}
+              onChange={(e) => setEarlyReason(e.target.value)}
+              rows={4}
+              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+              placeholder="e.g. Store closed early / Manager approved leave / Feeling unwell…"
+            />
+          </label>
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row-reverse">
+            <button
+              type="button"
+              disabled={earlyReason.trim().length < 8}
+              onClick={submitEarlyReason}
+              className="w-full rounded-xl bg-navy-900 py-3 text-sm font-semibold text-white transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto sm:px-5"
+            >
+              Continue
+            </button>
+            <button
+              type="button"
+              onClick={() => setEarlyReasonOpen(false)}
+              className="w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:px-5"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={checkoutWarningOpen}
+        onClose={() => setCheckoutWarningOpen(false)}
+        title="Complete your reports"
+      >
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+            <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={22} />
+            <p className="text-sm leading-relaxed text-slate-800">
+              You must submit the <span className="font-semibold">Stock Report</span>,{' '}
+              <span className="font-semibold">Daily Sales Report</span>, and{' '}
+              <span className="font-semibold">Other Brands prices</span> before finishing
+              checkout.
+            </p>
+          </div>
+          <p className="text-sm leading-relaxed text-slate-600">
+            If these reports are not submitted, your attendance for today will be marked as{' '}
+            <span className="font-bold text-red-600">Absent</span>.
+          </p>
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row-reverse">
+            <button
+              type="button"
+              onClick={() => {
+                setCheckoutWarningOpen(false)
+                navigate('/ba/stock-report')
+              }}
+              className="w-full rounded-xl bg-navy-900 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 sm:w-auto sm:px-5"
+            >
+              Continue to reports
+            </button>
+            <button
+              type="button"
+              onClick={() => setCheckoutWarningOpen(false)}
+              className="w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:px-5"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <h3 className="text-sm font-bold text-slate-900">Today&apos;s Goals</h3>
@@ -319,11 +498,19 @@ const trainingScenarios = [
 const TRAINING_TOTAL = trainingScenarios.length
 
 export function BaTrainingPage() {
+  const { modules } = useTrainingContent()
+  const [mode, setMode] = useState<'video' | 'scenarios'>('video')
+  const [moduleIndex, setModuleIndex] = useState(0)
+  const [qIndex, setQIndex] = useState(0)
+  const [videoAnswer, setVideoAnswer] = useState('')
+
   const [scenarioIndex, setScenarioIndex] = useState(1)
   const [answer, setAnswer] = useState('')
   const [submitted, setSubmitted] = useState(false)
 
   const scenario = trainingScenarios[scenarioIndex]
+  const module = modules[moduleIndex]
+  const question = module?.questions[qIndex]
 
   function submitAnswer() {
     if (answer.trim().length < 8) return
@@ -337,205 +524,176 @@ export function BaTrainingPage() {
     setSubmitted(false)
   }
 
+  function nextQuestion() {
+    if (!module || videoAnswer.trim().length < 4) return
+    if (qIndex >= module.questions.length - 1) {
+      if (moduleIndex < modules.length - 1) {
+        setModuleIndex((i) => i + 1)
+        setQIndex(0)
+        setVideoAnswer('')
+      }
+      return
+    }
+    setQIndex((i) => i + 1)
+    setVideoAnswer('')
+  }
+
   return (
     <div className="flex min-h-[calc(100dvh-8rem)] flex-col bg-[#f7f4ec] px-4 pb-6 pt-5">
-      <h1 className="text-center text-sm font-bold text-slate-800">
-        Scenario {scenarioIndex + 1} of {TRAINING_TOTAL}
-      </h1>
-
-      <div className="mt-5 flex-1 space-y-5">
-        <section>
-          <div className="text-xs font-bold text-slate-900">Shopper</div>
-          <div className="mt-2 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-sm leading-relaxed text-slate-800">
-            {scenario.question}
-          </div>
-        </section>
-
-        <section>
-          <div className="text-xs font-bold text-slate-900">Your Response</div>
-          {!submitted ? (
-            <textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              rows={4}
-              className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-[#faf6ee] px-4 py-3.5 text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/15"
-              placeholder="Type your answer..."
-            />
-          ) : (
-            <div className="mt-2 rounded-xl border border-slate-200/80 bg-[#faf6ee] px-4 py-3.5 text-sm leading-relaxed text-slate-800">
-              {answer}
-            </div>
-          )}
-        </section>
-
-        {submitted && (
-          <section className="animate-fade-up rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-            <div className="text-sm font-bold text-brand-600">AI Coach Feedback</div>
-            <div className="mt-3 flex items-end justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm font-medium text-slate-600">Score</span>
-              <div className="leading-none">
-                <span className="text-3xl font-black text-navy-900">{scenario.score}</span>
-                <span className="text-sm font-medium text-slate-400">/100</span>
-              </div>
-            </div>
-            <ul className="mt-3 space-y-2.5">
-              {scenario.feedback.map((item) => (
-                <li key={item.text} className="flex items-start gap-2 text-sm font-medium text-brand-700">
-                  {item.type === 'success' ? (
-                    <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-brand-600" />
-                  ) : (
-                    <AlertCircle size={16} className="mt-0.5 shrink-0 text-gold-500" />
-                  )}
-                  {item.text}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </div>
-
-      <div className="mt-6 shrink-0 pt-2">
-        {!submitted ? (
-          <button
-            type="button"
-            disabled={answer.trim().length < 8}
-            onClick={submitAnswer}
-            className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Submit Answer
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={nextScenario}
-            disabled={scenarioIndex >= TRAINING_TOTAL - 1}
-            className="w-full rounded-2xl bg-gradient-to-b from-brand-600 to-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/25 transition enabled:hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {scenarioIndex >= TRAINING_TOTAL - 1 ? 'Training Complete' : 'Next Scenario'}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-export function BaAssistancePage() {
-  const { shiftEnded, endShift } = useBaShift()
-  const [tab, setTab] = useState<'assistant' | 'help'>('assistant')
-  const [elapsed, setElapsed] = useState(2 * 3600 + 49 * 60 + 2)
-
-  useEffect(() => {
-    if (shiftEnded) return
-    const id = window.setInterval(() => setElapsed((s) => s + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [shiftEnded])
-
-  const timer = [
-    String(Math.floor(elapsed / 3600)).padStart(2, '0'),
-    String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0'),
-    String(elapsed % 60).padStart(2, '0'),
-  ].join(':')
-
-  const quickActions = ['Product Info', 'Key Benefits', 'Objections'] as const
-  const quickHelp = [
-    { title: 'Price objection', tip: 'Compare cost per meal and highlight 1L trial pack value.' },
-    { title: 'Brand loyalty', tip: 'Acknowledge their current brand, then compare health profile calmly.' },
-    { title: 'Cooking doubt', tip: 'Mention high smoke point and crisp results for frying.' },
-  ]
-
-  return (
-    <div className="flex min-h-[calc(100dvh-8rem)] flex-col bg-[#f7f4ec]">
-      <div className="flex items-center justify-between bg-navy-900 px-4 py-3 text-white">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold-500 text-navy-950">
-            <Clock size={16} strokeWidth={2.25} />
-          </div>
-          <span className="text-sm font-semibold">Live Shift · Store #12</span>
-        </div>
-        <span className="font-mono text-sm font-semibold tabular-nums">{timer}</span>
-      </div>
-
-      <div className="grid grid-cols-2 border-b border-slate-200/80 bg-[#efe9dc]">
+      <div className="mx-auto mb-4 flex w-full max-w-md rounded-xl bg-slate-100 p-1">
         <button
           type="button"
-          onClick={() => setTab('assistant')}
-          className={`relative py-3 text-sm font-semibold transition ${
-            tab === 'assistant' ? 'bg-[#f7f4ec] text-slate-900' : 'text-slate-500'
+          onClick={() => setMode('video')}
+          className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
+            mode === 'video' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
           }`}
         >
-          AI Assistant
-          {tab === 'assistant' && (
-            <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-navy-900" />
-          )}
+          Training videos
         </button>
         <button
           type="button"
-          onClick={() => setTab('help')}
-          className={`relative py-3 text-sm font-semibold transition ${
-            tab === 'help' ? 'bg-[#f7f4ec] text-slate-900' : 'text-slate-500'
+          onClick={() => setMode('scenarios')}
+          className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
+            mode === 'scenarios' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
           }`}
         >
-          Quick Help
-          {tab === 'help' && (
-            <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-navy-900" />
-          )}
+          Scenarios
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col px-4 pb-4 pt-4">
-        {tab === 'assistant' ? (
-          <>
-            <div className="rounded-2xl bg-[#faf6ee] px-4 py-3.5 shadow-sm ring-1 ring-black/5">
-              <div className="text-xs font-medium text-slate-500">Shopper Question</div>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-900">Is this oil good for frying?</p>
-            </div>
-
-            <div className="mt-3 rounded-2xl bg-[#faf6ee] px-4 py-3.5 shadow-sm ring-1 ring-black/5">
-              <div className="text-sm font-bold text-slate-900">AI Suggested Answer</div>
-              <p className="mt-2 text-sm leading-relaxed text-slate-800">
-                Yes! Kashmir Cooking Oil has a high smoke point which makes it perfect for frying and keeps your
-                food crispy and tasty.
-              </p>
-            </div>
-          </>
-        ) : (
-          <div className="space-y-3">
-            {quickHelp.map((item) => (
-              <div
-                key={item.title}
-                className="rounded-2xl bg-[#faf6ee] px-4 py-3.5 shadow-sm ring-1 ring-black/5"
-              >
-                <div className="text-sm font-bold text-slate-900">{item.title}</div>
-                <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{item.tip}</p>
-              </div>
-            ))}
+      {mode === 'video' ? (
+        modules.length === 0 || !module ? (
+          <div className="flex flex-1 items-center justify-center text-center text-sm text-slate-500">
+            No training videos published yet.
           </div>
-        )}
+        ) : (
+          <div className="mx-auto w-full max-w-md flex-1 space-y-4">
+            <div>
+              <h1 className="text-center text-sm font-bold text-slate-800">{module.title}</h1>
+              {module.description && (
+                <p className="mt-1 text-center text-xs text-slate-500">{module.description}</p>
+              )}
+            </div>
 
-        <div className="mt-6">
-          <div className="text-sm font-bold text-slate-900">Quick Actions</div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {quickActions.map((action) => (
+            {module.videoUrl ? (
+              <video
+                src={module.videoUrl}
+                controls
+                className="w-full rounded-2xl bg-black shadow-sm"
+              />
+            ) : (
+              <div className="rounded-2xl bg-slate-200/80 px-4 py-10 text-center text-sm text-slate-600">
+                Video: {module.videoName}
+              </div>
+            )}
+
+            {question && (
+              <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <div className="text-xs font-semibold text-slate-500 uppercase">
+                  Question {qIndex + 1}/{module.questions.length}
+                </div>
+                <p className="mt-2 text-sm font-semibold text-slate-900">{question.prompt}</p>
+                <textarea
+                  value={videoAnswer}
+                  onChange={(e) => setVideoAnswer(e.target.value)}
+                  rows={3}
+                  className="mt-3 w-full resize-none rounded-xl border border-slate-200 bg-[#faf6ee] px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:bg-white"
+                  placeholder="Type your response..."
+                />
+                <button
+                  type="button"
+                  disabled={videoAnswer.trim().length < 4}
+                  onClick={nextQuestion}
+                  className="mt-4 w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {qIndex >= module.questions.length - 1 && moduleIndex >= modules.length - 1
+                    ? 'Complete'
+                    : 'Next question'}
+                </button>
+              </section>
+            )}
+          </div>
+        )
+      ) : (
+        <>
+          <h1 className="text-center text-sm font-bold text-slate-800">
+            Scenario {scenarioIndex + 1} of {TRAINING_TOTAL}
+          </h1>
+
+          <div className="mt-5 flex-1 space-y-5">
+            <section>
+              <div className="text-xs font-bold text-slate-900">Shopper</div>
+              <div className="mt-2 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-sm leading-relaxed text-slate-800">
+                {scenario.question}
+              </div>
+            </section>
+
+            <section>
+              <div className="text-xs font-bold text-slate-900">Your Response</div>
+              {!submitted ? (
+                <textarea
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  rows={4}
+                  className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-[#faf6ee] px-4 py-3.5 text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/15"
+                  placeholder="Type your answer..."
+                />
+              ) : (
+                <div className="mt-2 rounded-xl border border-slate-200/80 bg-[#faf6ee] px-4 py-3.5 text-sm leading-relaxed text-slate-800">
+                  {answer}
+                </div>
+              )}
+            </section>
+
+            {submitted && (
+              <section className="animate-fade-up rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <div className="text-sm font-bold text-brand-600">AI Coach Feedback</div>
+                <div className="mt-3 flex items-end justify-between border-b border-slate-100 pb-3">
+                  <span className="text-sm font-medium text-slate-600">Score</span>
+                  <div className="leading-none">
+                    <span className="text-3xl font-black text-navy-900">{scenario.score}</span>
+                    <span className="text-sm font-medium text-slate-400">/100</span>
+                  </div>
+                </div>
+                <ul className="mt-3 space-y-2.5">
+                  {scenario.feedback.map((item) => (
+                    <li key={item.text} className="flex items-start gap-2 text-sm font-medium text-brand-700">
+                      {item.type === 'success' ? (
+                        <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-brand-600" />
+                      ) : (
+                        <AlertCircle size={16} className="mt-0.5 shrink-0 text-gold-500" />
+                      )}
+                      {item.text}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+
+          <div className="mt-6 shrink-0 pt-2">
+            {!submitted ? (
               <button
-                key={action}
                 type="button"
-                className="rounded-xl bg-[#faf6ee] px-2 py-2.5 text-center text-xs font-semibold text-slate-800 shadow-sm ring-1 ring-black/5 transition hover:bg-white active:scale-[0.98]"
+                disabled={answer.trim().length < 8}
+                onClick={submitAnswer}
+                className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                {action}
+                Submit Answer
               </button>
-            ))}
+            ) : (
+              <button
+                type="button"
+                onClick={nextScenario}
+                disabled={scenarioIndex >= TRAINING_TOTAL - 1}
+                className="w-full rounded-2xl bg-gradient-to-b from-brand-600 to-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/25 transition enabled:hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {scenarioIndex >= TRAINING_TOTAL - 1 ? 'Training Complete' : 'Next Scenario'}
+              </button>
+            )}
           </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={endShift}
-          disabled={shiftEnded}
-          className="mt-auto w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:bg-brand-700/80"
-        >
-          {shiftEnded ? 'Shift Ended' : 'End Shift'}
-        </button>
-      </div>
+        </>
+      )}
     </div>
   )
 }
@@ -543,16 +701,14 @@ export function BaAssistancePage() {
 export function BaPerformancePage() {
   const me = buildIncentiveRoster().find((r) => r.baId === 'ayesha')
   const rank = me?.rank ?? 2
-  const points = me?.points ?? 1240
-  const totalPkr = me?.totalPkr ?? 0
-  const nextRankPoints = 1400
-  const progress = Math.min(100, Math.round((points / nextRankPoints) * 100))
-
-  const badges = [
-    { icon: Trophy, label: 'Top Performer', sub: 'Lahore cluster #2', earned: true },
-    { icon: Medal, label: 'Gold Badge', sub: 'A+ certification', earned: true },
-    { icon: Star, label: 'Conversion Star', sub: `${me?.conversion ?? 34}% conv rate`, earned: true },
-  ]
+  const basePay = me?.base ?? 1_000
+  const incentive =
+    (me?.conversionPay ?? 0) +
+    (me?.pointsPay ?? 0) +
+    (me?.sessionPay ?? 0) +
+    (me?.rankBonus ?? 0)
+  const totalPkr = basePay + incentive
+  const daysWorked = 18
 
   return (
     <div className="space-y-4 bg-[#f7f4ec] p-4 pb-6">
@@ -574,80 +730,26 @@ export function BaPerformancePage() {
             <Trophy className="text-gold-400" size={24} />
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
-            <div className="text-[10px] font-medium text-white/70 uppercase">Points</div>
-            <div className="mt-0.5 text-lg font-bold">{points.toLocaleString()}</div>
-          </div>
-          <div className="rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
-            <div className="text-[10px] font-medium text-white/70 uppercase">Earned</div>
-            <div className="mt-0.5 text-lg font-bold text-gold-400">{formatPkr(totalPkr)}</div>
-          </div>
+        <div className="mt-4 rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
+          <div className="text-[10px] font-medium text-white/70 uppercase">Earned</div>
+          <div className="mt-0.5 text-lg font-bold text-gold-400">{formatPkr(totalPkr)}</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <BaStatPill label="Conv Rate" value={`${me?.conversion ?? 34}%`} />
+      <div className="grid grid-cols-2 gap-2">
         <BaStatPill label="Rating" value="4.8" />
-        <BaStatPill label="Sessions" value={String(me?.interactions ?? 47)} />
+        <BaStatPill label="Days worked" value={String(daysWorked)} />
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="text-sm font-bold text-slate-900">Progress to #1</div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#f7f4ec]">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-brand-500 to-gold-500 transition-all"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="text-sm font-bold text-slate-900">PKR breakdown</div>
+        <div className="mt-3 space-y-2.5">
+          <BaPayRow label="Base pay" value={basePay} />
+          <BaPayRow label="Incentive" value={incentive} />
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          {points.toLocaleString()} / {nextRankPoints.toLocaleString()} pts to reach top rank
-        </p>
-      </div>
-
-      {me && (
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-          <div className="text-sm font-bold text-slate-900">PKR breakdown</div>
-          <div className="mt-3 space-y-2.5">
-            <BaPayRow label="Base pay" value={me.base} />
-            <BaPayRow label="Conversion bonus" value={me.conversionPay} />
-            <BaPayRow label="Points bonus" value={me.pointsPay} />
-            <BaPayRow label="Session bonus" value={me.sessionPay} />
-            <BaPayRow label="Rank bonus" value={me.rankBonus} />
-          </div>
-          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-            <span className="text-sm font-bold text-slate-900">Total earned</span>
-            <span className="text-lg font-black text-brand-600">{formatPkr(me.totalPkr)}</span>
-          </div>
-        </div>
-      )}
-
-      <div>
-        <div className="mb-3 text-sm font-bold text-slate-900">Badges earned</div>
-        <div className="space-y-2">
-          {badges.map(({ icon: Icon, label, sub, earned }) => (
-            <div
-              key={label}
-              className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-black/5"
-            >
-              <div
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  earned ? 'bg-gold-500/15 text-gold-600' : 'bg-slate-100 text-slate-400'
-                }`}
-              >
-                <Icon size={20} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-slate-900">{label}</div>
-                <div className="text-xs text-slate-500">{sub}</div>
-              </div>
-              {earned && (
-                <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[10px] font-bold text-brand-700 uppercase">
-                  Earned
-                </span>
-              )}
-            </div>
-          ))}
+        <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+          <span className="text-sm font-bold text-slate-900">Total earned</span>
+          <span className="text-lg font-black text-brand-600">{formatPkr(totalPkr)}</span>
         </div>
       </div>
     </div>

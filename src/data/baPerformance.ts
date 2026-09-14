@@ -30,8 +30,8 @@ export const baPerformanceRecords = (generated.records as BaPerformanceRecord[])
 )
 
 export type BaPerformanceFilters = {
-  town: string
-  month: string
+  town: string | null
+  month: string | null
   store: string | null
 }
 
@@ -49,12 +49,31 @@ export type BaPerformanceAggregate = {
   topSkus: { sku: string; sales: number }[]
 }
 
-export function getStoresForTown(town: string, month?: string) {
-  const stores = baPerformanceStoresByTown[town] ?? []
-  if (!month) return stores
+export function getStoresForTown(town: string | null, month?: string | null) {
+  const towns = town ? [town] : baPerformanceTowns
+  const storeSet = new Set<string>()
+  for (const t of towns) {
+    for (const s of baPerformanceStoresByTown[t] ?? []) storeSet.add(s)
+  }
+  const stores = [...storeSet].sort()
+  if (!month) {
+    if (!town) {
+      // All towns + all months: any store that appears in records
+      const active = new Set(
+        baPerformanceRecords.filter((r) => r.store !== '__ALL__').map((r) => r.store),
+      )
+      return stores.filter((s) => active.has(s))
+    }
+    return stores
+  }
   const active = new Set(
     baPerformanceRecords
-      .filter((r) => r.town === town && r.month === month && r.store !== '__ALL__')
+      .filter(
+        (r) =>
+          (!town || r.town === town) &&
+          r.month === month &&
+          r.store !== '__ALL__',
+      )
       .map((r) => r.store),
   )
   return stores.filter((s) => active.has(s))
@@ -62,15 +81,15 @@ export function getStoresForTown(town: string, month?: string) {
 
 export function filterBaPerformanceRecords(filters: BaPerformanceFilters) {
   return baPerformanceRecords.filter((r) => {
-    if (r.town !== filters.town) return false
-    if (r.month !== filters.month) return false
+    if (filters.town && r.town !== filters.town) return false
+    if (filters.month && r.month !== filters.month) return false
     if (r.store === '__ALL__') return false
     if (filters.store && r.store !== filters.store) return false
     return true
   })
 }
 
-function emptyAggregate(town: string): BaPerformanceAggregate {
+function emptyAggregate(townLabel: string): BaPerformanceAggregate {
   return {
     customersIntercepted: 0,
     productiveCalls: 0,
@@ -79,7 +98,7 @@ function emptyAggregate(town: string): BaPerformanceAggregate {
     salesLtrKg: 0,
     achievementPct: 0,
     categorySales: [],
-    townTargetVsSales: { town, target: 0, sales: 0 },
+    townTargetVsSales: { town: townLabel, target: 0, sales: 0 },
     weekSales: [],
     topStores: [],
     topSkus: [],
@@ -88,17 +107,19 @@ function emptyAggregate(town: string): BaPerformanceAggregate {
 
 export function aggregateBaPerformance(
   records: BaPerformanceRecord[],
-  town: string,
-  month?: string,
+  town: string | null,
+  month?: string | null,
 ): BaPerformanceAggregate {
+  const townLabel = town ?? 'All towns'
+
   if (records.length === 0) {
-    const summary = month
-      ? baPerformanceRecords.find(
-          (r) => r.town === town && r.month === month && r.store === '__ALL__',
-        )
-      : undefined
-    if (!summary) return emptyAggregate(town)
-    return aggregateBaPerformance([{ ...summary, store: 'Summary' }], town)
+    if (town && month) {
+      const summary = baPerformanceRecords.find(
+        (r) => r.town === town && r.month === month && r.store === '__ALL__',
+      )
+      if (summary) return aggregateBaPerformance([{ ...summary, store: 'Summary' }], town, month)
+    }
+    return emptyAggregate(townLabel)
   }
 
   const customersIntercepted = records.reduce((s, r) => s + r.customersIntercepted, 0)
@@ -154,7 +175,7 @@ export function aggregateBaPerformance(
       { name: 'GHEE-SALES', value: ghee },
       { name: 'WAADI-SALES', value: waadi },
     ],
-    townTargetVsSales: { town, target: targetLtrKg, sales: salesLtrKg },
+    townTargetVsSales: { town: townLabel, target: targetLtrKg, sales: salesLtrKg },
     weekSales,
     topStores,
     topSkus,

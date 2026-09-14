@@ -11,7 +11,6 @@ import {
   Settings,
   ShoppingBag,
   Trophy,
-  UserPlus,
   Map,
   ClipboardCheck,
   Sparkles,
@@ -36,10 +35,9 @@ type NavItem = {
 }
 
 const headOfficeNav: NavItem[] = [
-  { to: '/ho/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, section: 'Command' },
-  { to: '/ho/ba-performance', label: 'BA Performance', icon: BarChart3, section: 'Command' },
+  { to: '/ho/dashboard', label: 'Campaign Metrics', icon: LayoutDashboard, end: true, section: 'Command' },
+  { to: '/ho/ba-performance', label: 'Dashboard', icon: BarChart3, section: 'Command' },
   { to: '/ho/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
-  { to: '/ho/candidates', label: 'Candidates', icon: UserPlus, section: 'Operations' },
   { to: '/ho/stores', label: 'Stores', icon: Store, section: 'Operations' },
   { to: '/ho/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
   { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
@@ -51,7 +49,6 @@ const headOfficeNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { to: '/admin/settings', label: 'Campaign Config', icon: Settings, end: true, section: 'Platform' },
-  { to: '/admin/candidates', label: 'Candidates', icon: UserPlus, section: 'People' },
   { to: '/admin/ambassadors', label: 'BA Management', icon: Users, section: 'People' },
   { to: '/admin/stores', label: 'Stores', icon: Store, section: 'Network' },
   { to: '/admin/campaigns', label: 'Campaigns', icon: Megaphone, section: 'Network' },
@@ -92,10 +89,10 @@ const shellConfig: Record<
 }
 
 const titles: Record<string, string> = {
-  '/ho/dashboard': 'Command Center',
-  '/ho/ba-performance': 'BA Performance Dashboard',
+  '/ho/dashboard': 'Campaign Metrics',
+  '/ho/ba-performance': 'Dashboard',
   '/ho/ambassadors': 'Ambassadors',
-  '/ho/candidates': 'AI Recruitment & Certification',
+  '/ho/ambassadors/training': 'Training Content',
   '/ho/stores': 'Store Management',
   '/ho/deployment': 'Intelligent Deployment',
   '/ho/consumers': 'Consumer Intelligence',
@@ -104,7 +101,6 @@ const titles: Record<string, string> = {
   '/ho/incentives': 'BA Performance Incentives',
   '/ho/reports': 'Executive Intelligence Report',
   '/admin/settings': 'Platform Settings',
-  '/admin/candidates': 'Candidates',
   '/admin/ambassadors': 'BA Management',
   '/admin/stores': 'Stores',
   '/admin/campaigns': 'Campaigns',
@@ -162,13 +158,13 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
 
   const title =
     titles[pathname] ??
-    (pathname.includes('/ambassadors/')
+    (pathname === '/ho/ambassadors/training' || pathname.endsWith('/ambassadors/training')
+      ? 'Training Content'
+      : pathname.includes('/ambassadors/')
       ? 'Ambassador Profile'
-      : pathname.includes('/candidates/')
-        ? 'Certification Assessment'
-        : pathname.includes('/stores/')
-          ? 'Store Detail'
-          : cfg.subtitle)
+      : pathname.includes('/stores/')
+        ? 'Store Detail'
+        : cfg.subtitle)
 
   function switchRole(next: Role) {
     setRole(next)

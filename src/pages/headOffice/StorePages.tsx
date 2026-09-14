@@ -1,12 +1,10 @@
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import {
   ambassadors,
-  initialSchedule,
   scheduleDays,
   shiftOptions,
   stores,
-  type ShiftSlot,
 } from '../../data/mock'
 import {
   Avatar,
@@ -18,9 +16,9 @@ import {
   Select,
   StatusBadge,
   TableScroll,
-  Tabs,
 } from '../../components/ui'
 import { CalendarClock, Plus, QrCode, Sparkles } from 'lucide-react'
+import { useSchedule } from '../../context/ScheduleContext'
 
 const deployable = ambassadors.filter(
   (a) => a.status === 'Certified' || a.status === 'Deployed',
@@ -33,7 +31,7 @@ export function StoresPage() {
         title="Stores"
         description={`${stores.length} outlets · prioritization by footfall, coverage & peak hours`}
         actions={
-          <Link to="/ho/deployment?tab=Scheduler">
+          <Link to="/ho/deployment">
             <Button variant="secondary">Open Scheduler</Button>
           </Link>
         }
@@ -105,7 +103,7 @@ export function StoreDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/ho/deployment?tab=Scheduler">
+            <Link to="/ho/deployment">
               <Button variant="secondary">
                 <CalendarClock size={15} /> Schedule BA
               </Button>
@@ -216,69 +214,19 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function DeploymentPage() {
-  const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'Scheduler' ? 'Scheduler' : 'Priority'
-  const setTab = (t: string) => setParams(t === 'Priority' ? {} : { tab: t })
-
   return (
     <div className="space-y-5">
       <PageHeader
         title="Intelligent Store Deployment"
-        description="Prioritize outlets, schedule certified BAs into peak shifts, and activate QR"
+        description="Schedule certified BAs into peak shifts and activate QR"
       />
-      <Tabs tabs={['Priority', 'Scheduler']} value={tab} onChange={setTab} />
-      {tab === 'Priority' ? <PriorityPanel /> : <SchedulerPanel />}
-    </div>
-  )
-}
-
-function PriorityPanel() {
-  return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {stores
-        .slice()
-        .sort((a, b) => b.coverage - a.coverage)
-        .map((s, i) => (
-          <Card key={s.id}>
-            <div className="text-xs font-bold text-brand-600">Priority #{i + 1}</div>
-            <h3 className="mt-1 font-semibold">
-              #{s.id} {s.name}
-            </h3>
-            <p className="text-sm text-slate-500">{s.city}</p>
-            <div className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Footfall</span>
-                <StatusBadge status={s.footfall} />
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Coverage need</span>
-                <span className="font-semibold">{100 - s.coverage}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Peak</span>
-                <span className="text-right text-xs">{s.peak[0]}</span>
-              </div>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <Link to={`/ho/stores/${s.id}`} className="flex-1">
-                <Button className="w-full" size="sm" variant="secondary">
-                  View
-                </Button>
-              </Link>
-              <Link to="/ho/deployment?tab=Scheduler" className="flex-1">
-                <Button className="w-full" size="sm">
-                  Schedule
-                </Button>
-              </Link>
-            </div>
-          </Card>
-        ))}
+      <SchedulerPanel />
     </div>
   )
 }
 
 function SchedulerPanel() {
-  const [schedule, setSchedule] = useState<ShiftSlot[]>(initialSchedule)
+  const { schedule, setSchedule, clearBaFromSlot } = useSchedule()
   const [day, setDay] = useState('Mon')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -388,11 +336,7 @@ function SchedulerPanel() {
   }
 
   function clearSlot(id: string) {
-    setSchedule((prev) =>
-      prev.map((s) =>
-        s.id === id ? { ...s, baId: null, baName: null, status: 'Open' as const } : s,
-      ),
-    )
+    clearBaFromSlot(id)
   }
 
   const selectedStore = stores.find((s) => String(s.id) === form.storeId)
@@ -665,7 +609,7 @@ function SchedulerPanel() {
             </Select>
           </label>
           <p className="text-[11px] text-slate-400">
-            Pending / training-only candidates are gated out until certified (Step 1).
+            Only certified or deployed ambassadors can be assigned.
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>

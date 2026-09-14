@@ -61,38 +61,19 @@ export function ShopperProductPage() {
         {brand.shopperDiscoveryTitle}
       </h2>
 
-      <div className="mt-5 grid flex-1 grid-cols-2 content-start gap-3">
-        {brand.shopperDiscoveryTiles.map((tile) => (
-          <button
-            key={tile.title}
-            type="button"
-            className="flex flex-col overflow-hidden rounded-2xl bg-[#efe9dc] text-left shadow-sm ring-1 ring-black/5 transition hover:ring-brand-500/30 active:scale-[0.99]"
-          >
-            <div className="aspect-square w-full overflow-hidden bg-[#efe9dc] p-2">
-              <img
-                src={tile.image}
-                alt={tile.title}
-                className="h-full w-full object-contain object-center"
-              />
-            </div>
-            <div className="px-2.5 py-2.5 text-center text-[13px] font-semibold text-slate-800">
-              {tile.title}
-            </div>
-          </button>
-        ))}
+      <div className="flex flex-1 flex-col justify-center">
+        <Link
+          to="/shopper/spin"
+          className="mt-5 block overflow-hidden rounded-2xl shadow-lg shadow-navy-900/20 ring-1 ring-black/10 transition hover:brightness-105 active:scale-[0.995]"
+          aria-label="Play Now — Spin & Win"
+        >
+          <img
+            src={brand.shopperPlayNow}
+            alt="Play & Win — Exciting prizes for you! Play Now"
+            className="h-auto w-full object-cover object-center"
+          />
+        </Link>
       </div>
-
-      <Link
-        to="/shopper/spin"
-        className="mt-5 block overflow-hidden rounded-2xl shadow-lg shadow-navy-900/20 ring-1 ring-black/10 transition hover:brightness-105 active:scale-[0.995]"
-        aria-label="Play Now — Spin & Win"
-      >
-        <img
-          src={brand.shopperPlayNow}
-          alt="Play & Win — Exciting prizes for you! Play Now"
-          className="h-auto w-full object-cover object-center"
-        />
-      </Link>
     </div>
   )
 }

@@ -26,16 +26,19 @@ export type BaShiftState = {
   shiftEnded: boolean
   canCheckOut: boolean
   reportSubmitted: boolean
+  earlyCheckoutReason: string | null
+  isEarlyCheckout: boolean
   checkIn: () => void
   endShift: () => void
   checkOut: () => void
+  setEarlyCheckoutReason: (reason: string | null) => void
   markReportSubmitted: () => void
   resetShift: () => void
 }
 
 const BaShiftContext = createContext<BaShiftState | null>(null)
 
-/** Checkout unlocks only when the clock reaches (or passes) shift end time. */
+/** Checkout is on time when the clock reaches (or passes) shift end time. */
 export function isAtOrPastShiftEnd(now: Date) {
   const minutes = now.getHours() * 60 + now.getMinutes()
   const endMinutes = SHIFT_END_HOUR * 60 + SHIFT_END_MINUTE
@@ -50,6 +53,7 @@ export function BaShiftProvider({ children }: { children: ReactNode }) {
   const [checkOutAt, setCheckOutAt] = useState<Date | null>(null)
   const [assistShiftEnded, setAssistShiftEnded] = useState(false)
   const [reportSubmitted, setReportSubmitted] = useState(false)
+  const [earlyCheckoutReason, setEarlyCheckoutReason] = useState<string | null>(null)
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000)
@@ -57,6 +61,7 @@ export function BaShiftProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const atShiftEnd = isAtOrPastShiftEnd(now)
+  const isEarlyCheckout = checkedIn && !checkedOut && !atShiftEnd
   const canCheckOut =
     checkedIn &&
     !checkedOut &&
@@ -72,10 +77,10 @@ export function BaShiftProvider({ children }: { children: ReactNode }) {
     setCheckedOut(false)
     setCheckOutAt(null)
     setReportSubmitted(false)
+    setEarlyCheckoutReason(null)
   }, [])
 
   const endShift = useCallback(() => {
-    // Stops Assist live timer only; does not enable Check Out
     setAssistShiftEnded(true)
   }, [])
 
@@ -95,6 +100,7 @@ export function BaShiftProvider({ children }: { children: ReactNode }) {
     setCheckOutAt(null)
     setAssistShiftEnded(false)
     setReportSubmitted(false)
+    setEarlyCheckoutReason(null)
   }, [])
 
   const shiftEndLabel = `${String(SHIFT_END_HOUR % 12 || 12).padStart(2, '0')}:${String(SHIFT_END_MINUTE).padStart(2, '0')} PM`
@@ -111,9 +117,12 @@ export function BaShiftProvider({ children }: { children: ReactNode }) {
       shiftEnded,
       canCheckOut,
       reportSubmitted,
+      earlyCheckoutReason,
+      isEarlyCheckout,
       checkIn,
       endShift,
       checkOut,
+      setEarlyCheckoutReason,
       markReportSubmitted,
       resetShift,
     }),
@@ -126,6 +135,8 @@ export function BaShiftProvider({ children }: { children: ReactNode }) {
       shiftEnded,
       canCheckOut,
       reportSubmitted,
+      earlyCheckoutReason,
+      isEarlyCheckout,
       checkIn,
       endShift,
       checkOut,

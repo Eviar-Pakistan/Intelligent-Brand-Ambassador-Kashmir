@@ -13,7 +13,6 @@ import {
 import {
   buildIncentiveRoster,
   formatPkr,
-  incentiveRules,
   type IncentiveBreakdown,
 } from '../../lib/incentives'
 import { Banknote, CheckCircle2, Wallet } from 'lucide-react'
@@ -73,8 +72,8 @@ export function IncentivesPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="BA Performance Incentives"
-        description="PKR payouts calculated from conversion, points, sessions and rank"
+        title="BA Incentives"
+        description="Base pay and incentive payouts for Brand Ambassadors"
         actions={
           <>
             <Button variant="secondary" onClick={approveAllPending}>
@@ -110,18 +109,6 @@ export function IncentivesPage() {
         </Card>
       </div>
 
-      <Card>
-        <h3 className="mb-3 font-semibold">How PKR is calculated</h3>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {incentiveRules.map((r) => (
-            <div key={r.label} className="rounded-xl bg-slate-50 px-3 py-2 text-sm">
-              <div className="font-semibold text-slate-800">{r.label}</div>
-              <div className="text-xs text-slate-500">{r.detail}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs tabs={['All', 'Pending', 'Approved', 'Paid']} value={tab} onChange={setTab} />
       </div>
@@ -133,8 +120,9 @@ export function IncentivesPage() {
             <tr>
               <th className="px-4 py-3">Rank</th>
               <th className="px-4 py-3">Ambassador</th>
-              <th className="px-4 py-3">Performance</th>
-              <th className="px-4 py-3">Incentive (PKR)</th>
+              <th className="px-4 py-3">Base pay</th>
+              <th className="px-4 py-3">Incentive</th>
+              <th className="px-4 py-3">Total (PKR)</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
@@ -142,6 +130,8 @@ export function IncentivesPage() {
           <tbody>
             {filtered.map((r) => {
               const st = statusMap[r.baId]
+              const incentive =
+                r.conversionPay + r.pointsPay + r.sessionPay + r.rankBonus
               return (
                 <tr key={r.baId} className="border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-4 py-3 font-bold text-brand-600">#{r.rank}</td>
@@ -159,10 +149,8 @@ export function IncentivesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600">
-                    <div>{r.conversion}% conv · {r.points} pts</div>
-                    <div>{r.interactions} sessions</div>
-                  </td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.base)}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(incentive)}</td>
                   <td className="px-4 py-3">
                     <button
                       className="font-bold text-slate-900 hover:text-brand-600"
@@ -217,15 +205,18 @@ export function IncentivesPage() {
             <div className="rounded-xl bg-navy-900 px-4 py-3 text-white">
               <div className="text-xs text-emerald-200">Total this week</div>
               <div className="text-2xl font-black">{formatPkr(selected.totalPkr)}</div>
-              <div className="text-xs text-slate-300">
-                Rank #{selected.rank} · {selected.conversion}% conversion · {selected.points} pts
-              </div>
+              <div className="text-xs text-slate-300">Rank #{selected.rank}</div>
             </div>
-            <Row label="Base active pay" value={selected.base} />
-            <Row label={`Conversion (${selected.conversion}% × 80)`} value={selected.conversionPay} />
-            <Row label={`Points (${selected.points} × 1.5)`} value={selected.pointsPay} />
-            <Row label={`Sessions (${selected.interactions} × 25)`} value={selected.sessionPay} />
-            <Row label="Rank bonus" value={selected.rankBonus} />
+            <Row label="Base pay" value={selected.base} />
+            <Row
+              label="Incentive"
+              value={
+                selected.conversionPay +
+                selected.pointsPay +
+                selected.sessionPay +
+                selected.rankBonus
+              }
+            />
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setSelected(null)}>
                 Close

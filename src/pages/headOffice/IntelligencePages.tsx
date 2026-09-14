@@ -1,6 +1,13 @@
 import { Link } from 'react-router-dom'
-import { useState, type ReactNode } from 'react'
-import { baRanking, consumerInsights, settingsSections } from '../../data/mock'
+import { useMemo, useState, type ReactNode } from 'react'
+import {
+  baRanking,
+  consumerInsights,
+  initialConsumerStoreQuestions,
+  settingsSections,
+  stores,
+  type ConsumerStoreQuestion,
+} from '../../data/mock'
 import { useDemo } from '../../context/AppContext'
 import {
   Button,
@@ -12,9 +19,42 @@ import {
   TableScroll,
 } from '../../components/ui'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
+import { Plus, Trash2 } from 'lucide-react'
 
 export function ConsumersPage() {
   const demo = useDemo()
+  const [storeId, setStoreId] = useState<string>('all')
+  const [questions, setQuestions] = useState<ConsumerStoreQuestion[]>(initialConsumerStoreQuestions)
+  const [newQuestion, setNewQuestion] = useState('')
+
+  const storeMap = useMemo(
+    () => Object.fromEntries(stores.map((s) => [s.id, s])),
+    [],
+  )
+
+  const filteredQuestions = useMemo(() => {
+    if (storeId === 'all') return questions
+    return questions.filter((q) => String(q.storeId) === storeId)
+  }, [questions, storeId])
+
+  function addQuestion() {
+    if (!newQuestion.trim() || storeId === 'all') return
+    setQuestions((prev) => [
+      {
+        id: `cq-${Date.now()}`,
+        storeId: Number(storeId),
+        prompt: newQuestion.trim(),
+        responses: 0,
+      },
+      ...prev,
+    ])
+    setNewQuestion('')
+  }
+
+  function removeQuestion(id: string) {
+    setQuestions((prev) => prev.filter((q) => q.id !== id))
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -22,7 +62,7 @@ export function ConsumersPage() {
         description={`${demo.shoppers.toLocaleString()} consumer profiles · Module 5 capture`}
       />
       <div className="flex flex-wrap gap-2">
-        {['City', 'Store', 'Age Group', 'Family Size', 'Current Brand', 'Purchase Frequency', 'Price Sensitivity', 'SKU'].map(
+        {['City', 'Age Group', 'Family Size', 'Current Brand', 'Purchase Frequency', 'Price Sensitivity', 'SKU'].map(
           (f) => (
             <Select key={f} defaultValue="" className="w-full min-w-[8rem] flex-1 sm:w-auto sm:flex-none">
               <option value="">{f}</option>
@@ -30,7 +70,102 @@ export function ConsumersPage() {
             </Select>
           ),
         )}
+        <Select
+          value={storeId}
+          onChange={(e) => setStoreId(e.target.value)}
+          className="w-full min-w-[10rem] flex-1 sm:w-auto sm:flex-none"
+        >
+          <option value="all">All stores</option>
+          {stores.map((s) => (
+            <option key={s.id} value={s.id}>
+              #{s.id} {s.name}
+            </option>
+          ))}
+        </Select>
       </div>
+
+      <Card padding={false}>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-50 px-4 py-3 sm:px-5">
+          <div>
+            <h3 className="font-semibold text-slate-900">Consumer questions by store</h3>
+            <p className="text-xs text-slate-500">
+              {storeId === 'all'
+                ? 'All stores'
+                : `#${storeId} ${storeMap[Number(storeId)]?.name ?? ''}`}
+              {' · '}
+              {filteredQuestions.length} question{filteredQuestions.length === 1 ? '' : 's'}
+            </p>
+          </div>
+        </div>
+
+        {storeId !== 'all' && (
+          <div className="flex flex-wrap gap-2 border-b border-slate-50 px-4 py-3 sm:px-5">
+            <input
+              value={newQuestion}
+              onChange={(e) => setNewQuestion(e.target.value)}
+              placeholder="Add a question for this store..."
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500"
+            />
+            <Button size="sm" disabled={!newQuestion.trim()} onClick={addQuestion}>
+              <Plus size={14} /> Add question
+            </Button>
+          </div>
+        )}
+
+        {filteredQuestions.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-slate-500 sm:px-5">
+            {storeId === 'all'
+              ? 'No consumer questions yet.'
+              : 'No questions for this store. Add one above.'}
+          </p>
+        ) : (
+          <TableScroll minWidth={640}>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <tr>
+                  <th className="px-4 py-3">#</th>
+                  <th className="px-4 py-3">Question</th>
+                  <th className="px-4 py-3">Store</th>
+                  <th className="px-4 py-3">Responses</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredQuestions.map((q, i) => {
+                  const store = storeMap[q.storeId]
+                  return (
+                    <tr key={q.id} className="border-t border-slate-100">
+                      <td className="px-4 py-3 text-slate-400">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">{q.prompt}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {store ? (
+                          <>
+                            <div>
+                              #{store.id} {store.name}
+                            </div>
+                            <div className="text-xs text-slate-400">{store.city}</div>
+                          </>
+                        ) : (
+                          `Store #${q.storeId}`
+                        )}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-slate-800">
+                        {q.responses.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button size="sm" variant="ghost" onClick={() => removeQuestion(q.id)}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </TableScroll>
+        )}
+      </Card>
+
       <div className="grid gap-5 lg:grid-cols-2">
         <ChartCard title="Preferred Oil" rows={consumerInsights.preferredOil} />
         <ChartCard title="Family Size" rows={consumerInsights.familySize} />

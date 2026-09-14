@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { DemoProvider, RoleProvider } from './context/AppContext'
 import { BrandProvider } from './context/BrandContext'
+import { ScheduleProvider } from './context/ScheduleContext'
+import { TrainingContentProvider } from './context/TrainingContentContext'
 import { DesktopShell } from './components/AppShell'
 import { BaShell, ShopperShell } from './components/RoleLayouts'
 import { ScreenHub } from './pages/ScreenHub'
@@ -8,12 +10,8 @@ import { LoginPage } from './pages/LoginPage'
 import { CommandCenterPage, OptimizationPage } from './pages/headOffice/CommandCenterPage'
 import { BaPerformanceDashboardPage } from './pages/headOffice/BaPerformanceDashboardPage'
 import { CampaignOverviewPage, CampaignsPage } from './pages/headOffice/CampaignPages'
-import {
-  AmbassadorProfilePage,
-  AmbassadorsPage,
-  CandidateDetailPage,
-  CandidatesPage,
-} from './pages/headOffice/AmbassadorPages'
+import { AmbassadorProfilePage, AmbassadorsPage } from './pages/headOffice/AmbassadorPages'
+import { TrainingManagerPage } from './pages/headOffice/TrainingManagerPage'
 import { DeploymentPage, StoreDetailPage, StoresPage } from './pages/headOffice/StorePages'
 import {
   ConsumersPage,
@@ -28,12 +26,11 @@ import {
   ManagerDashboard,
 } from './pages/manager/ManagerPages'
 import {
-  BaAssistancePage,
   BaHomePage,
   BaPerformancePage,
   BaTrainingPage,
 } from './pages/ba/BaPages'
-import { BaDailySalesPage, BaStockReportPage } from './pages/ba/BaCheckoutPages'
+import { BaDailySalesPage, BaOtherBrandsPage, BaStockReportPage } from './pages/ba/BaCheckoutPages'
 import {
   ShopperAiPage,
   ShopperFeedbackPage,
@@ -52,9 +49,8 @@ const hoPages = (
     <Route path="dashboard" element={<CommandCenterPage />} />
     <Route path="ba-performance" element={<BaPerformanceDashboardPage />} />
     <Route path="ambassadors" element={<AmbassadorsPage />} />
+    <Route path="ambassadors/training" element={<TrainingManagerPage />} />
     <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
-    <Route path="candidates" element={<CandidatesPage />} />
-    <Route path="candidates/:id" element={<CandidateDetailPage />} />
     <Route path="stores" element={<StoresPage />} />
     <Route path="stores/:id" element={<StoreDetailPage />} />
     <Route path="deployment" element={<DeploymentPage />} />
@@ -71,6 +67,8 @@ export default function App() {
     <BrandProvider>
       <RoleProvider>
         <DemoProvider>
+          <ScheduleProvider>
+          <TrainingContentProvider>
           <BrowserRouter>
           <Routes>
             <Route path="/" element={<LoginPage />} />
@@ -86,9 +84,8 @@ export default function App() {
             <Route path="/admin" element={<DesktopShell kind="admin" />}>
               <Route index element={<Navigate to="settings" replace />} />
               <Route path="settings" element={<SettingsPage />} />
-              <Route path="candidates" element={<CandidatesPage />} />
-              <Route path="candidates/:id" element={<CandidateDetailPage />} />
               <Route path="ambassadors" element={<AmbassadorsPage />} />
+              <Route path="ambassadors/training" element={<TrainingManagerPage />} />
               <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
               <Route path="stores" element={<StoresPage />} />
               <Route path="stores/:id" element={<StoreDetailPage />} />
@@ -110,10 +107,10 @@ export default function App() {
               <Route index element={<Navigate to="home" replace />} />
               <Route path="home" element={<BaHomePage />} />
               <Route path="training" element={<BaTrainingPage />} />
-              <Route path="assistance" element={<BaAssistancePage />} />
               <Route path="performance" element={<BaPerformancePage />} />
               <Route path="daily-sales" element={<BaDailySalesPage />} />
               <Route path="stock-report" element={<BaStockReportPage />} />
+              <Route path="other-brands" element={<BaOtherBrandsPage />} />
             </Route>
 
             {/* Shopper — full-screen mobile web */}
@@ -132,7 +129,9 @@ export default function App() {
             <Route path="/app/*" element={<Navigate to="/ho/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
-        </BrowserRouter>
+          </BrowserRouter>
+          </TrainingContentProvider>
+          </ScheduleProvider>
         </DemoProvider>
       </RoleProvider>
     </BrandProvider>

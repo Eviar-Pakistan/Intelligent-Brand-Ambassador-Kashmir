@@ -95,6 +95,7 @@ export function Button({
 
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
+    Covered: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     LIVE: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Active: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Certified: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -112,6 +113,13 @@ export function StatusBadge({ status }: { status: string }) {
     Low: 'bg-rose-50 text-rose-700 ring-rose-200',
     Break: 'bg-amber-50 text-amber-700 ring-amber-200',
     Offline: 'bg-slate-100 text-slate-600 ring-slate-200',
+    'Checked Out': 'bg-slate-100 text-slate-600 ring-slate-200',
+    Submitted: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Incomplete: 'bg-amber-50 text-amber-700 ring-amber-200',
+    Scheduled: 'bg-sky-50 text-sky-700 ring-sky-200',
+    Completed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Missed: 'bg-rose-50 text-rose-700 ring-rose-200',
+    Cancelled: 'bg-slate-100 text-slate-600 ring-slate-200',
   }
   return (
     <span

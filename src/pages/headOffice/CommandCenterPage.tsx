@@ -264,9 +264,6 @@ export function OptimizationPage() {
               >
                 View Store
               </Link>
-              <button className="rounded-xl bg-brand-500 px-3 py-2 text-xs font-semibold text-white">
-                Apply Recommendation
-              </button>
             </div>
           </Card>
         ))}

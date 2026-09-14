@@ -41,7 +41,7 @@ const experiences: {
     role: 'ba',
     icon: Smartphone,
     title: 'Brand Ambassador',
-    desc: 'Shift home, AI training, live assistance and rewards',
+    desc: 'Shift home, AI training and rewards',
     layout: 'Full-screen BA app',
   },
   {
