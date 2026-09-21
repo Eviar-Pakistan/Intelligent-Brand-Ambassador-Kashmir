@@ -15,12 +15,18 @@ import {
   formatPkr,
   type IncentiveBreakdown,
 } from '../../lib/incentives'
+import { useKpiConfig } from '../../lib/kpiConfig'
+import { KpiSettingsModal } from './IncentiveKpiSettings'
+import { SupervisorIncentives } from './SupervisorIncentives'
 import { Banknote, CheckCircle2, Wallet } from 'lucide-react'
 
 type PayoutStatus = 'Pending' | 'Approved' | 'Paid'
 
 export function IncentivesPage() {
-  const roster = useMemo(() => buildIncentiveRoster(), [])
+  const kpiConfig = useKpiConfig()
+  const roster = useMemo(() => buildIncentiveRoster(kpiConfig), [kpiConfig])
+  const [kpiOpen, setKpiOpen] = useState(false)
+  const [section, setSection] = useState('Ambassadors')
   const [statusMap, setStatusMap] = useState<Record<string, PayoutStatus>>(() =>
     Object.fromEntries(roster.map((r) => [r.baId, 'Pending' as PayoutStatus])),
   )
@@ -69,15 +75,39 @@ export function IncentivesPage() {
     setTimeout(() => setToast(null), 2800)
   }
 
+  const sectionTabs = <Tabs tabs={['Ambassadors', 'Supervisors']} value={section} onChange={setSection} />
+
+  if (section === 'Supervisors') {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          title="Supervisor Incentives"
+          description="Calculated automatically from the KPIs you set for supervisors"
+          actions={
+            <Button variant="secondary" onClick={() => setKpiOpen(true)}>
+              Set KPIs
+            </Button>
+          }
+        />
+        {sectionTabs}
+        <SupervisorIncentives />
+        <KpiSettingsModal open={kpiOpen} onClose={() => setKpiOpen(false)} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
         title="BA Incentives"
-        description="Base pay and incentive payouts for Brand Ambassadors"
+        description="Calculated automatically from the KPIs you set for ambassadors"
         actions={
           <>
             <Button variant="secondary" onClick={approveAllPending}>
               Approve all pending
+            </Button>
+            <Button variant="secondary" onClick={() => setKpiOpen(true)}>
+              Set KPIs
             </Button>
             <Link to="/ho/leaderboard">
               <Button variant="secondary">Leaderboard</Button>
@@ -85,6 +115,8 @@ export function IncentivesPage() {
           </>
         }
       />
+
+      {sectionTabs}
 
       {toast && (
         <div className="animate-fade-up rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -130,8 +162,6 @@ export function IncentivesPage() {
           <tbody>
             {filtered.map((r) => {
               const st = statusMap[r.baId]
-              const incentive =
-                r.conversionPay + r.pointsPay + r.sessionPay + r.rankBonus
               return (
                 <tr key={r.baId} className="border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-4 py-3 font-bold text-brand-600">#{r.rank}</td>
@@ -150,7 +180,7 @@ export function IncentivesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.base)}</td>
-                  <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(incentive)}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.incentive)}</td>
                   <td className="px-4 py-3">
                     <button
                       className="font-bold text-slate-900 hover:text-brand-600"
@@ -195,6 +225,8 @@ export function IncentivesPage() {
         </TableScroll>
       </Card>
 
+      <KpiSettingsModal open={kpiOpen} onClose={() => setKpiOpen(false)} />
+
       <Modal
         open={!!selected}
         onClose={() => setSelected(null)}
@@ -205,17 +237,18 @@ export function IncentivesPage() {
             <div className="rounded-xl bg-navy-900 px-4 py-3 text-white">
               <div className="text-xs text-emerald-200">Total this week</div>
               <div className="text-2xl font-black">{formatPkr(selected.totalPkr)}</div>
-              <div className="text-xs text-slate-300">Rank #{selected.rank}</div>
+              <div className="text-xs text-slate-300">
+                Rank #{selected.rank} · {selected.conversion}% conversion · {selected.sessions} sessions
+              </div>
             </div>
-            <Row label="Base pay" value={selected.base} />
+            <Row label="Base active pay" value={selected.base} />
             <Row
-              label="Incentive"
-              value={
-                selected.conversionPay +
-                selected.pointsPay +
-                selected.sessionPay +
-                selected.rankBonus
-              }
+              label={`Conversion (${selected.conversion}% of ${kpiConfig.conversionTarget}% → ${formatPkr(kpiConfig.conversionAmount)})`}
+              value={selected.conversionPay}
+            />
+            <Row
+              label={`Sessions (${selected.sessions} of ${kpiConfig.sessionTarget} → ${formatPkr(kpiConfig.sessionAmount)})`}
+              value={selected.sessionPay}
             />
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setSelected(null)}>

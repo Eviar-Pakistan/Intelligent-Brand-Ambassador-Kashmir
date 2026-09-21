@@ -3,80 +3,21 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useBaShift } from '../../context/BaShiftContext'
 
-type FieldDef = { key: string; label: string }
-
-const interceptionFields: FieldDef[] = [
-  { key: 'totalInterceptions', label: 'Total Interceptions' },
-  { key: 'productiveCalls', label: 'Productive Calls' },
-  { key: 'nonProductiveCalls', label: 'Non-Productive Calls' },
-  { key: 'totalSalesLtrKg', label: 'Total Sales (Ltr/Kg)' },
-]
-
-const competitiveFields: FieldDef[] = [
-  { key: 'dalda', label: 'Dalda' },
-  { key: 'sufi', label: 'Sufi' },
-  { key: 'kisan', label: 'Kisan' },
-  { key: 'others', label: 'Others' },
-]
-
-const whyNotFields: FieldDef[] = [
-  { key: 'taste', label: 'Taste' },
-  { key: 'price', label: 'Price' },
-  { key: 'packaging', label: 'Packaging' },
-]
-
-const oilSalesFields: FieldDef[] = [
-  { key: 'oilPouch1kgEco', label: 'Pouch 1Kg Eco' },
-  { key: 'oilPouch1Ltr', label: 'Pouch 1 LTR' },
-  { key: 'oilSup1Eco', label: 'SUP 1Kg/LTR Eco' },
-  { key: 'oilSup1Ltr', label: 'SUP 1 LTR' },
-  { key: 'oilBtl3', label: 'BTL 3 LTR' },
-  { key: 'oilBtl45', label: 'BTL 4.5 LTR' },
-  { key: 'oilCan10', label: 'CAN 10 LTR' },
-  { key: 'oilTin5', label: 'TIN 5 LTR' },
-  { key: 'salesOil', label: 'Sales-Oil (LTR)' },
-]
-
-const gheeSalesFields: FieldDef[] = [
-  { key: 'gheePouch125', label: 'Pouch 1.25 KG Eco' },
-  { key: 'gheePouch1', label: 'Pouch 1 KG' },
-  { key: 'gheeBkt25', label: 'BKT 2.5 KG' },
-  { key: 'gheeBkt5', label: 'BKT 5 KG' },
-  { key: 'gheeBkt10', label: 'BKT 10 KG' },
-  { key: 'gheeBkt16', label: 'BKT 16 KG' },
-  { key: 'gheeTin5', label: 'TIN 5 KG' },
-  { key: 'salesGhee', label: 'Sales-Ghee (KG)' },
-]
-
-const waadiSalesFields: FieldDef[] = [
-  { key: 'waadiPouch1', label: 'Pouch 1 KG' },
-  { key: 'waadiBucket5', label: 'Bucket 5 KG' },
-  { key: 'waadiBox5', label: 'Box 5 KG' },
-  { key: 'salesWaadi', label: 'Sales-Waadi (KG)' },
-]
-
-const stockOilFields: FieldDef[] = [
-  { key: 'stockOilPouch1x5', label: 'Pouch 1x5 LTR' },
-  { key: 'stockOilPouch1', label: 'Pouch 1 LTR' },
-  { key: 'stockOilSup1x5', label: 'Stand Up Pouch 1x5 LTR' },
-  { key: 'stockOilSup1', label: 'Stand Up Pouch 1 LTR' },
-  { key: 'stockOilBtl3', label: 'Bottle 3 LTR' },
-  { key: 'stockOilBtl45', label: 'Bottle 4.5 LTR' },
-  { key: 'stockOilCan10', label: 'Can 10 LTR' },
-  { key: 'stockOilTin5', label: 'Tin 5 LTR' },
-]
-
-const stockGheeFields: FieldDef[] = [
-  { key: 'stockGheeBox1x5', label: 'Box 1x5 KG' },
-  { key: 'stockGheePouch1', label: 'Pouch 1 KG' },
-  { key: 'stockGheeBkt25', label: 'Bucket 2.5 KG' },
-  { key: 'stockGheeBkt5', label: 'Bucket 5 KG' },
-  { key: 'stockGheeBkt10', label: 'Bucket 10 KG' },
-  { key: 'stockGheeBkt16', label: 'Bucket 16 KG' },
-  { key: 'stockGheeTin5', label: 'Tin 5 KG' },
-]
-
-const STOCK_OPTIONS = ['In Stock', 'Out of Stock', 'New Out of Stock'] as const
+import {
+  DEFAULT_OTHER_BRANDS,
+  SESSION_KEYS,
+  STOCK_OPTIONS,
+  competitiveFields,
+  gheeSalesFields,
+  interceptionFields,
+  oilSalesFields,
+  stockGheeFields,
+  stockOilFields,
+  waadiSalesFields,
+  whyNotFields,
+  type FieldDef,
+  type OtherBrandRow,
+} from '../../lib/baReport'
 
 function emptyNumeric(fields: FieldDef[]) {
   return Object.fromEntries(fields.map((f) => [f.key, ''])) as Record<string, string>
@@ -205,7 +146,7 @@ export function BaDailySalesPage() {
 
   function handleContinue(e: FormEvent) {
     e.preventDefault()
-    sessionStorage.setItem('ba-daily-sales', JSON.stringify(values))
+    sessionStorage.setItem(SESSION_KEYS.sales, JSON.stringify(values))
     navigate('/ba/other-brands')
   }
 
@@ -310,7 +251,7 @@ export function BaStockReportPage() {
     e.preventDefault()
     if (!allFilled) return
     checkOut()
-    sessionStorage.setItem('ba-stock-report', JSON.stringify(stock))
+    sessionStorage.setItem(SESSION_KEYS.stock, JSON.stringify(stock))
     navigate('/ba/daily-sales')
   }
 
@@ -318,7 +259,7 @@ export function BaStockReportPage() {
     <form onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Stock Report"
-        subtitle="Mark In Stock, Out of Stock, or New Out of Stock for each SKU"
+        subtitle="Mark In Stock, Out of Stock, or Near Out of Stock for each SKU"
         onBack={() => navigate('/ba/home')}
       />
 
@@ -355,17 +296,6 @@ export function BaStockReportPage() {
   )
 }
 
-type OtherBrandRow = { id: string; name: string; price: string }
-
-const DEFAULT_OTHER_BRANDS: OtherBrandRow[] = [
-  { id: '1', name: 'Dalda 1 LTR', price: '' },
-  { id: '2', name: 'Dalda 5 LTR', price: '' },
-  { id: '3', name: 'Sufi 1 LTR', price: '' },
-  { id: '4', name: 'Sufi 5 LTR', price: '' },
-  { id: '5', name: 'Kisan 1 LTR', price: '' },
-  { id: '6', name: 'Kisan 5 LTR', price: '' },
-]
-
 export function BaOtherBrandsPage() {
   const navigate = useNavigate()
   const { markReportSubmitted } = useBaShift()
@@ -382,7 +312,7 @@ export function BaOtherBrandsPage() {
     e.preventDefault()
     if (!canSubmit) return
     const payload = rows.filter((r) => r.name.trim() || r.price.trim())
-    sessionStorage.setItem('ba-other-brands', JSON.stringify(payload))
+    sessionStorage.setItem(SESSION_KEYS.otherBrands, JSON.stringify(payload))
     markReportSubmitted()
     setSubmitted(true)
   }

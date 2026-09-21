@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CloudSun,
+  Download,
   FileSpreadsheet,
   MapPin,
   Trophy,
@@ -15,7 +16,10 @@ import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 import { useBrand } from '../../context/BrandContext'
 import { formatDate, formatTime, useBaShift } from '../../context/BaShiftContext'
 import { useTrainingContent } from '../../context/TrainingContentContext'
+import { downloadBaReportTemplate, parseBaReportFile, saveBaReport } from '../../lib/baReport'
 import { Modal } from '../../components/ui'
+import { useActiveInvite } from '../../lib/baInvites'
+import { BaOnboarding } from './BaOnboarding'
 
 function greetingFor(hour: number) {
   if (hour < 12) return 'Good Morning'
@@ -33,8 +37,19 @@ function weatherLabel(code: number) {
   return 'Stormy'
 }
 
+function initialsOf(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join('')
+}
+
 export function BaHomePage() {
   const { brand } = useBrand()
+  const { invite } = useActiveInvite()
+  const baName = invite?.name ?? 'Ayesha Khan'
   const navigate = useNavigate()
   const {
     city,
@@ -58,12 +73,22 @@ export function BaHomePage() {
   const [earlyReasonOpen, setEarlyReasonOpen] = useState(false)
   const [earlyReason, setEarlyReason] = useState('')
   const [excelFileName, setExcelFileName] = useState<string | null>(null)
+  const [excelErrors, setExcelErrors] = useState<string[]>([])
+  const [excelBusy, setExcelBusy] = useState(false)
   const excelInputRef = useRef<HTMLInputElement>(null)
 
-  function saveExcelUpload(file: File | undefined) {
+  async function saveExcelUpload(file: File | undefined) {
     if (!file) return
+    setExcelBusy(true)
+    const result = await parseBaReportFile(file)
+    setExcelBusy(false)
+    if ('errors' in result) {
+      setExcelErrors(result.errors)
+      return
+    }
+    setExcelErrors([])
     setExcelFileName(file.name)
-    sessionStorage.setItem('ba-reports-excel', file.name)
+    saveBaReport(result.data, file.name)
     if (!reportSubmitted) {
       checkOut()
       markReportSubmitted()
@@ -171,7 +196,7 @@ export function BaHomePage() {
         <p className="mt-4 text-base text-slate-500">{greetingFor(now.getHours())}</p>
         <div className="mt-1 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Ayesha Khan 👋</h2>
+            <h2 className="text-2xl font-bold text-slate-900">{baName} 👋</h2>
             <p className="mt-1 text-base font-semibold text-brand-600">A+ Certified</p>
           </div>
           <Link
@@ -188,7 +213,7 @@ export function BaHomePage() {
         <h3 className="text-sm font-bold text-slate-900">Today&apos;s Shift</h3>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-100 to-brand-200 text-sm font-bold text-brand-700 ring-2 ring-white">
-            AK
+            {initialsOf(baName)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-slate-900">Store #12, {city}</div>
@@ -259,6 +284,17 @@ export function BaHomePage() {
           <p className="mt-1 text-xs text-slate-500">
             One file for Stock Report, Daily Sales, and Other Brands (.xlsx / .xls / .csv)
           </p>
+          <button
+            type="button"
+            onClick={() => void downloadBaReportTemplate()}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-100"
+          >
+            <Download size={14} />
+            Download Excel template
+          </button>
+          <p className="mt-1.5 text-center text-[11px] text-slate-400">
+            Fill in the template, then upload it below
+          </p>
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-100 bg-[#faf6ee] px-3 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-slate-900">Daily report file</div>
@@ -278,13 +314,30 @@ export function BaHomePage() {
             />
             <button
               type="button"
+              disabled={excelBusy}
               onClick={() => excelInputRef.current?.click()}
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-45"
             >
               <Upload size={12} />
-              {excelFileName ? 'Replace' : 'Upload'}
+              {excelBusy ? 'Checking…' : excelFileName ? 'Replace' : 'Upload'}
             </button>
           </div>
+          {excelErrors.length > 0 && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800">
+              <div className="font-semibold">
+                Report not submitted — please fix {excelErrors.length}{' '}
+                {excelErrors.length === 1 ? 'issue' : 'issues'} and upload again:
+              </div>
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                {excelErrors.slice(0, 8).map((err) => (
+                  <li key={err}>{err}</li>
+                ))}
+              </ul>
+              {excelErrors.length > 8 && (
+                <div className="mt-1 font-medium">…and {excelErrors.length - 8} more</div>
+              )}
+            </div>
+          )}
           {excelFileName ? (
             <p className="mt-3 text-center text-xs font-semibold text-brand-700">
               Report file uploaded
@@ -498,6 +551,13 @@ const trainingScenarios = [
 const TRAINING_TOTAL = trainingScenarios.length
 
 export function BaTrainingPage() {
+  const { invite } = useActiveInvite()
+  // A BA who joined through an invite link goes through the video + verbal assessment
+  if (invite) return <BaOnboarding invite={invite} />
+  return <BaTrainingLibrary />
+}
+
+function BaTrainingLibrary() {
   const { modules } = useTrainingContent()
   const [mode, setMode] = useState<'video' | 'scenarios'>('video')
   const [moduleIndex, setModuleIndex] = useState(0)
@@ -701,12 +761,8 @@ export function BaTrainingPage() {
 export function BaPerformancePage() {
   const me = buildIncentiveRoster().find((r) => r.baId === 'ayesha')
   const rank = me?.rank ?? 2
-  const basePay = me?.base ?? 1_000
-  const incentive =
-    (me?.conversionPay ?? 0) +
-    (me?.pointsPay ?? 0) +
-    (me?.sessionPay ?? 0) +
-    (me?.rankBonus ?? 0)
+  const basePay = me?.base ?? 0
+  const incentive = me?.incentive ?? 0
   const totalPkr = basePay + incentive
   const daysWorked = 18
 

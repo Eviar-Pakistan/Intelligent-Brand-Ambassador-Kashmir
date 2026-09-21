@@ -14,16 +14,20 @@ import {
   Map,
   ClipboardCheck,
   Sparkles,
-  ChevronDown,
+  LogOut,
   Banknote,
+  Plus,
+  UserCog,
   Menu,
   X,
+  MessageSquareWarning,
   type LucideIcon,
 } from 'lucide-react'
 import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
 import { useEffect, useState } from 'react'
 import { cn } from './ui'
 import { RoleSync } from './RoleLayouts'
+import { signOut, useSupervisorSession } from '../lib/supervisors'
 import { useBrand } from '../context/BrandContext'
 
 type NavItem = {
@@ -39,7 +43,9 @@ const headOfficeNav: NavItem[] = [
   { to: '/ho/ba-performance', label: 'Dashboard', icon: BarChart3, section: 'Command' },
   { to: '/ho/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
   { to: '/ho/stores', label: 'Stores', icon: Store, section: 'Operations' },
+  { to: '/ho/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
   { to: '/ho/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
+  { to: '/ho/complaints', label: 'Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
   { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
   { to: '/ho/optimization', label: 'AI Optimization', icon: Brain, section: 'Intelligence' },
   { to: '/ho/leaderboard', label: 'Leaderboard', icon: Trophy, section: 'Intelligence' },
@@ -51,6 +57,7 @@ const adminNav: NavItem[] = [
   { to: '/admin/settings', label: 'Campaign Config', icon: Settings, end: true, section: 'Platform' },
   { to: '/admin/ambassadors', label: 'BA Management', icon: Users, section: 'People' },
   { to: '/admin/stores', label: 'Stores', icon: Store, section: 'Network' },
+  { to: '/admin/supervisors', label: 'Supervisors', icon: UserCog, section: 'Network' },
   { to: '/admin/campaigns', label: 'Campaigns', icon: Megaphone, section: 'Network' },
 ]
 
@@ -59,10 +66,18 @@ const managerNav: NavItem[] = [
   { to: '/manager/attendance', label: 'Attendance', icon: ClipboardCheck, section: 'Today' },
   { to: '/manager/coverage', label: 'Coverage', icon: Map, section: 'Today' },
   { to: '/manager/stores/12', label: 'My Store', icon: Store, section: 'Store' },
+  { to: '/manager/stores', label: 'All Stores', icon: Store, end: true, section: 'Store' },
+  { to: '/manager/stores/new', label: 'Create Store', icon: Plus, section: 'Store' },
   { to: '/manager/deployment', label: 'Deployment', icon: Sparkles, section: 'Store' },
 ]
 
-type ShellKind = 'headOffice' | 'admin' | 'storeManager'
+const supervisorNav: NavItem[] = [
+  { to: '/supervisor', label: 'Overview', icon: LayoutDashboard, end: true, section: 'My stores' },
+  { to: '/supervisor/stores', label: 'Store Characteristics', icon: Store, section: 'My stores' },
+  { to: '/supervisor/bas', label: 'BA Performance', icon: Users, section: 'My stores' },
+]
+
+type ShellKind = 'headOffice' | 'admin' | 'storeManager' | 'supervisor'
 
 const shellConfig: Record<
   ShellKind,
@@ -86,6 +101,12 @@ const shellConfig: Record<
     brand: 'Store Manager',
     subtitle: 'Field operations',
   },
+  supervisor: {
+    role: 'supervisor',
+    nav: supervisorNav,
+    brand: 'Supervisor',
+    subtitle: 'Store oversight',
+  },
 }
 
 const titles: Record<string, string> = {
@@ -94,7 +115,14 @@ const titles: Record<string, string> = {
   '/ho/ambassadors': 'Ambassadors',
   '/ho/ambassadors/training': 'Training Content',
   '/ho/stores': 'Store Management',
+  '/ho/stores/new': 'Create Store',
+  '/ho/supervisors': 'Supervisors',
+  '/admin/supervisors': 'Supervisors',
+  '/supervisor': 'Supervisor Overview',
+  '/supervisor/stores': 'Store Characteristics',
+  '/supervisor/bas': 'BA Performance',
   '/ho/deployment': 'Intelligent Deployment',
+  '/ho/complaints': 'Complaint Center',
   '/ho/consumers': 'Consumer Intelligence',
   '/ho/optimization': 'AI Optimization',
   '/ho/leaderboard': 'Ambassador Leaderboard',
@@ -103,10 +131,13 @@ const titles: Record<string, string> = {
   '/admin/settings': 'Platform Settings',
   '/admin/ambassadors': 'BA Management',
   '/admin/stores': 'Stores',
+  '/admin/stores/new': 'Create Store',
   '/admin/campaigns': 'Campaigns',
   '/manager': 'Store Manager Dashboard',
   '/manager/attendance': 'BA Attendance',
   '/manager/coverage': 'Store Coverage',
+  '/manager/stores': 'Stores',
+  '/manager/stores/new': 'Create Store',
   '/manager/deployment': 'Deployment',
 }
 
@@ -138,9 +169,9 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
   const { brand } = useBrand()
   const { role, setRole } = useRole()
   const demo = useDemo()
+  const sv = useSupervisorSession()
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const [roleOpen, setRoleOpen] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const meta = roleMeta[role]
@@ -152,7 +183,6 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
 
   useEffect(() => {
     setSidebarOpen(false)
-    setRoleOpen(false)
     setBellOpen(false)
   }, [pathname])
 
@@ -164,16 +194,18 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
       ? 'Ambassador Profile'
       : pathname.includes('/stores/')
         ? 'Store Detail'
-        : cfg.subtitle)
+        : pathname.includes('/supervisors/')
+          ? 'Supervisor'
+          : cfg.subtitle)
 
-  function switchRole(next: Role) {
-    setRole(next)
-    setRoleOpen(false)
-    navigate(roleMeta[next].home)
+  function handleSignOut() {
+    if (kind === 'supervisor') {
+      signOut()
+      navigate(sv.preview ? '/ho/supervisors' : '/login')
+      return
+    }
+    navigate('/login')
   }
-
-  // Only desktop roles in this switcher — BA/Shopper leave this shell
-  const desktopRoles: Role[] = ['headOffice', 'admin', 'storeManager', 'ba', 'shopper']
 
   return (
     <div className="flex min-h-[100dvh] bg-surface">
@@ -355,42 +387,27 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
               )}
             </div>
 
-            <div className="relative">
-              <button
-                onClick={() => setRoleOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-xl border border-slate-200 px-2 py-1.5 hover:bg-slate-50"
-              >
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-2 py-1.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-white">
                   {meta.short}
                 </div>
                 <div className="hidden text-left sm:block">
-                  <div className="text-xs font-semibold text-slate-800">{cfg.brand}</div>
-                  <div className="text-[10px] text-slate-500">Change experience</div>
+                  <div className="text-xs font-semibold text-slate-800">
+                    {kind === 'supervisor' ? (sv.supervisor?.name ?? cfg.brand) : cfg.brand}
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    {kind === 'supervisor' && sv.preview ? 'Head Office preview' : meta.label}
+                  </div>
                 </div>
-                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+              <button
+                onClick={handleSignOut}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <LogOut size={14} />
+                <span className="hidden sm:inline">{kind === 'supervisor' && sv.preview ? 'Exit preview' : 'Sign out'}</span>
               </button>
-              {roleOpen && (
-                <div className="absolute right-0 z-20 mt-2 w-[min(15rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-                  {desktopRoles.map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => switchRole(r)}
-                      className={cn(
-                        'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-slate-50',
-                        r === cfg.role && 'bg-brand-50 text-brand-700',
-                      )}
-                    >
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-900 text-[10px] font-bold text-white">
-                        {roleMeta[r].short}
-                      </span>
-                      <span>
-                        <div className="font-medium">{roleMeta[r].label}</div>
-                        <div className="text-[10px] text-slate-400">{roleMeta[r].tone}</div>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </header>

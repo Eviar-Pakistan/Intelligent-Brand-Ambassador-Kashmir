@@ -222,23 +222,14 @@ export const baCheckInOutByStore = [
     checkOut: '—',
     status: 'Active',
   },
-]
-
-/** Hourly BA check-in / check-out counts for today */
-export const baCheckInOutTimeline = [
-  { time: '8 AM', checkIn: 12, checkOut: 0 },
-  { time: '9 AM', checkIn: 18, checkOut: 1 },
-  { time: '10 AM', checkIn: 8, checkOut: 2 },
-  { time: '11 AM', checkIn: 3, checkOut: 1 },
-  { time: '12 PM', checkIn: 2, checkOut: 4 },
-  { time: '1 PM', checkIn: 1, checkOut: 6 },
-  { time: '2 PM', checkIn: 2, checkOut: 3 },
-  { time: '3 PM', checkIn: 1, checkOut: 2 },
-  { time: '4 PM', checkIn: 0, checkOut: 5 },
-  { time: '5 PM', checkIn: 4, checkOut: 2 },
-  { time: '6 PM', checkIn: 2, checkOut: 3 },
-  { time: '7 PM', checkIn: 0, checkOut: 8 },
-  { time: '8 PM', checkIn: 0, checkOut: 14 },
+  {
+    ba: 'Usman Tariq',
+    store: 'Hyperstar Multan',
+    city: 'Multan',
+    checkIn: '09:05 AM',
+    checkOut: '03:30 PM',
+    status: 'Checked Out',
+  },
 ]
 
 export const storeRanking = [
@@ -488,7 +479,24 @@ export const candidates = [
   },
 ]
 
-export const stores = [
+export type Store = {
+  id: number
+  name: string
+  city: string
+  footfall: 'High' | 'Medium' | 'Low'
+  bas: number
+  coverage: number
+  status: 'Covered' | 'PARTIAL' | 'NEEDS BA'
+  todayFootfall: number
+  engagement: number
+  conversion: number
+  peak: string[]
+  assigned: { id: string; name: string; state: 'Active' | 'Break' | 'Offline' }[]
+  qrCode: string
+}
+
+/** Demo stores plus any created by the user (added at startup by lib/storeRegistry). */
+export const stores: Store[] = [
   {
     id: 12,
     name: 'Carrefour DHA',

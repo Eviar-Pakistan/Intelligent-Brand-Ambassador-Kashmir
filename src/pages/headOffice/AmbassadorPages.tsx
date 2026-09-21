@@ -15,7 +15,9 @@ import {
   TableScroll,
   Tabs,
 } from '../../components/ui'
-import { Check } from 'lucide-react'
+import { Check, Copy, ExternalLink, UserPlus } from 'lucide-react'
+import { createInvite, inviteLink, useInvites, type Invite } from '../../lib/baInvites'
+import { AssessmentReport } from '../ba/AssessmentReport'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 import { shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
 
@@ -31,13 +33,180 @@ const allLifecycle: LifecycleStage[] = [
 const timeFieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500'
 
+const modalFieldClass =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500'
+
+function CopyLink({ link }: { link: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // clipboard blocked — the link is still selectable in the box above
+    }
+  }
+
+  return (
+    <Button variant="secondary" onClick={() => void copy()}>
+      {copied ? 'Copied!' : 'Copy link'}
+    </Button>
+  )
+}
+
+/** Opens the BA app screens in a new tab, or copies the link to send to the BA. */
+function BaAppLink({ href }: { href: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(href)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // clipboard blocked — Open still works
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+      >
+        <ExternalLink size={12} /> Open
+      </a>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        title="Copy link"
+        className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+        <span className="sr-only">Copy link</span>
+      </button>
+    </div>
+  )
+}
+
+function CreateAmbassadorModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreated: (invite: Invite) => void
+}) {
+  const empty = { name: '', city: '', email: '', phone: '' }
+  const [form, setForm] = useState(empty)
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.name.trim()) return
+    const invite = createInvite(form)
+    setForm(empty)
+    onCreated(invite)
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Create Ambassador">
+      <form onSubmit={submit} className="space-y-4">
+        {(
+          [
+            ['name', 'Name *', 'text'],
+            ['city', 'City', 'text'],
+            ['email', 'Email', 'email'],
+            ['phone', 'Phone', 'tel'],
+          ] as const
+        ).map(([key, label, type]) => (
+          <label key={key} className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700">{label}</span>
+            <input
+              type={type}
+              value={form[key]}
+              onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+              className={modalFieldClass}
+              autoFocus={key === 'name'}
+            />
+          </label>
+        ))}
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row-reverse">
+          <Button type="submit" disabled={!form.name.trim()}>
+            Create &amp; generate link
+          </Button>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function InviteLinkBox({ token }: { token: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-4 py-3 font-mono text-xs break-all text-slate-700">
+      {inviteLink(token)}
+    </div>
+  )
+}
+
+function InviteDetailModal({ invite, onClose }: { invite: Invite | null; onClose: () => void }) {
+  return (
+    <Modal open={!!invite} onClose={onClose} title={invite ? invite.name : 'Ambassador'}>
+      {invite && (
+        <div className="space-y-4 text-sm">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={invite.status} />
+            <span className="text-xs text-slate-500">
+              {[invite.city, invite.email, invite.phone].filter(Boolean).join(' · ') || 'No contact details'}
+            </span>
+          </div>
+
+          {invite.result ? (
+            <AssessmentReport name={invite.name} result={invite.result} answers={invite.answers} />
+          ) : (
+            <p className="text-slate-600">
+              {invite.videoWatched
+                ? `Training video watched · ${invite.answers.length} assessment answer${invite.answers.length === 1 ? '' : 's'} submitted so far.`
+                : 'Has not finished the training video yet.'}
+            </p>
+          )}
+
+          {invite.status !== 'Certified' && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Training link</div>
+              <InviteLinkBox token={invite.token} />
+              <CopyLink link={inviteLink(invite.token)} />
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 export function AmbassadorsPage() {
   const [tab, setTab] = useState('All')
   const [q, setQ] = useState('')
+  const invites = useInvites()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [created, setCreated] = useState<Invite | null>(null)
+  const [detailToken, setDetailToken] = useState<string | null>(null)
+
   const filtered = ambassadors.filter((a) => {
     const matchTab = tab === 'All' || a.status === tab
     const matchQ = a.name.toLowerCase().includes(q.toLowerCase())
     return matchTab && matchQ
+  })
+  const filteredInvites = invites.filter((i) => {
+    const matchTab = tab === 'All' || (i.status === 'Invited' ? tab === 'Pending' : i.status === tab)
+    return matchTab && i.name.toLowerCase().includes(q.toLowerCase())
   })
 
   return (
@@ -46,9 +215,14 @@ export function AmbassadorsPage() {
         title="Ambassadors"
         description="Full BA lifecycle — recruitment through live performance"
         actions={
-          <Link to="/ho/ambassadors/training">
-            <Button>Training videos</Button>
-          </Link>
+          <>
+            <Button onClick={() => setCreateOpen(true)}>
+              <UserPlus size={15} /> Add ambassador
+            </Button>
+            <Link to="/ho/ambassadors/training">
+              <Button variant="secondary">Training videos</Button>
+            </Link>
+          </>
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -68,9 +242,34 @@ export function AmbassadorsPage() {
               <th className="px-4 py-3">Check-in</th>
               <th className="px-4 py-3">Check-out</th>
               <th className="px-4 py-3">Data filled</th>
+              <th className="px-4 py-3">BA app</th>
             </tr>
           </thead>
           <tbody>
+            {filteredInvites.map((i) => (
+              <tr key={i.token} className="border-t border-slate-100 hover:bg-slate-50/70">
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => setDetailToken(i.token)} className="flex items-center gap-3 text-left">
+                    <Avatar name={i.name} />
+                    <span className="font-medium text-slate-900 hover:text-brand-600">{i.name}</span>
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-slate-600">{i.city || '—'}</td>
+                <td className="px-4 py-3 font-semibold">{i.result ? `${i.result.quality}%` : '—'}</td>
+                <td className="px-4 py-3">
+                  <StatusBadge status={i.status} />
+                </td>
+                <td className="px-4 py-3 text-slate-600">—</td>
+                <td className="px-4 py-3 tabular-nums text-slate-700">—</td>
+                <td className="px-4 py-3 tabular-nums text-slate-700">—</td>
+                <td className="px-4 py-3">
+                  <StatusBadge status="Pending" />
+                </td>
+                <td className="px-4 py-3">
+                  <BaAppLink href={inviteLink(i.token)} />
+                </td>
+              </tr>
+            ))}
             {filtered.map((a) => (
               <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                 <td className="px-4 py-3">
@@ -90,12 +289,44 @@ export function AmbassadorsPage() {
                 <td className="px-4 py-3">
                   <StatusBadge status={a.dataFilled} />
                 </td>
+                <td className="px-4 py-3">
+                  <BaAppLink href={`${window.location.origin}/ba/home`} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         </TableScroll>
       </Card>
+
+      <CreateAmbassadorModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(invite) => {
+          setCreateOpen(false)
+          setCreated(invite)
+        }}
+      />
+
+      <Modal open={!!created} onClose={() => setCreated(null)} title="Ambassador created">
+        {created && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Share this link with the BA. It opens training and assessment only until they are certified.
+            </p>
+            <InviteLinkBox token={created.token} />
+            <div className="flex justify-end gap-2">
+              <CopyLink link={inviteLink(created.token)} />
+              <Button onClick={() => setCreated(null)}>Done</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <InviteDetailModal
+        invite={invites.find((i) => i.token === detailToken) ?? null}
+        onClose={() => setDetailToken(null)}
+      />
     </div>
   )
 }

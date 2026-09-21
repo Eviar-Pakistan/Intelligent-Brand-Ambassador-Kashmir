@@ -1,15 +1,18 @@
-import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useRole, type Role, roleMeta } from '../context/AppContext'
 import { useBrand } from '../context/BrandContext'
 import { Button } from '../components/ui'
+import { authenticate, emailInUse, signIn, signOut } from '../lib/supervisors'
 
-const roles: Role[] = ['headOffice', 'admin', 'storeManager', 'ba', 'shopper']
 
 export function LoginPage() {
   const navigate = useNavigate()
   const { setRole } = useRole()
   const { brand } = useBrand()
+  const [email, setEmail] = useState(brand.loginEmail)
+  const [password, setPassword] = useState('••••••••')
+  const [error, setError] = useState<string | null>(null)
 
   function enter(role: Role) {
     setRole(role)
@@ -18,6 +21,22 @@ export function LoginPage() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
+
+    // An email that belongs to a supervisor must sign in with that supervisor's password
+    if (emailInUse(email)) {
+      const supervisor = authenticate(email, password)
+      if (!supervisor) {
+        setError('Incorrect email or password.')
+        return
+      }
+      setRole('supervisor')
+      signIn(supervisor.id)
+      navigate(roleMeta.supervisor.home)
+      return
+    }
+
+    // Anyone else enters the Head Office demo, as before
+    signOut()
     enter('headOffice')
   }
 
@@ -35,18 +54,9 @@ export function LoginPage() {
           <h1 className="mt-8 max-w-md text-3xl font-bold leading-tight xl:text-4xl">
             Intelligent Brand Ambassador Ecosystem
           </h1>
-          <p className="mt-4 max-w-sm text-white/75">
-            {brand.productName} · Five separate experiences — Head Office, Admin, Store Manager, BA
-            app, and Shopper web.
-          </p>
+         
         </div>
-        <div className="relative space-y-2 text-sm text-white/60">
-          <div>Head Office — Command Center</div>
-          <div>Administrator — Platform settings</div>
-          <div>Store Manager — Field operations</div>
-          <div>Brand Ambassador — Mobile app</div>
-          <div>Shopper — In-store web journey</div>
-        </div>
+      
       </div>
 
       <div className="safe-bottom flex items-center justify-center bg-surface px-4 py-8 sm:px-6 sm:py-12">
@@ -55,9 +65,6 @@ export function LoginPage() {
             <img src={brand.logo} alt={brand.productName} className="h-10 w-auto object-contain sm:h-12" />
           </div>
 
-          <Link to="/portal" className="inline-block text-xs font-medium text-slate-500 hover:text-brand-600 hover:underline">
-            Browse all experiences →
-          </Link>
           <h2 className="mt-4 text-xl font-bold text-slate-900 sm:text-2xl">Sign in</h2>
           <p className="mt-1 text-sm text-slate-500">
             {brand.productName} · Or jump straight into a role experience
@@ -67,9 +74,13 @@ export function LoginPage() {
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Email</span>
               <input
-                key={brand.loginEmail}
                 type="email"
-                defaultValue={brand.loginEmail}
+                autoComplete="username"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  setError(null)
+                }}
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
               />
             </label>
@@ -77,33 +88,24 @@ export function LoginPage() {
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Password</span>
               <input
                 type="password"
-                defaultValue="••••••••"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  setError(null)
+                }}
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
               />
             </label>
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+            )}
             <Button type="submit" className="w-full" size="lg">
-              Sign In as Head Office
+              Sign In
             </Button>
           </form>
 
-          <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
-            <div className="h-px flex-1 bg-slate-200" />
-            Enter as
-            <div className="h-px flex-1 bg-slate-200" />
-          </div>
-          <div className="grid gap-2">
-            {roles.map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => enter(r)}
-                className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:border-brand-500/40 hover:bg-brand-50 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <span className="font-medium text-slate-800">{roleMeta[r].label}</span>
-                <span className="text-[11px] text-slate-400">{roleMeta[r].tone}</span>
-              </button>
-            ))}
-          </div>
+     
         </div>
       </div>
     </div>

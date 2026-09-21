@@ -23,16 +23,19 @@ export function TrainingManagerPage() {
   function handleSave() {
     if (!canSave || !videoFile) return
     const videoUrl = URL.createObjectURL(videoFile)
-    addModule({
-      title: title.trim(),
-      description: description.trim(),
-      videoName: videoFile.name,
-      videoUrl,
-      questions: questions.map((prompt, i) => ({
-        id: `q-${Date.now()}-${i}`,
-        prompt: prompt.trim(),
-      })),
-    })
+    addModule(
+      {
+        title: title.trim(),
+        description: description.trim(),
+        videoName: videoFile.name,
+        videoUrl,
+        questions: questions.map((prompt, i) => ({
+          id: `q-${Date.now()}-${i}`,
+          prompt: prompt.trim(),
+        })),
+      },
+      videoFile,
+    )
     setTitle('')
     setDescription('')
     setVideoFile(null)

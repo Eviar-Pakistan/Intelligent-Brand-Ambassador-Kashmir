@@ -1,72 +1,108 @@
 import { ambassadors, baRanking } from '../data/mock'
+import { getKpiConfig, type KpiConfig } from './kpiConfig'
+import { getSupervisors, supervisorOverview, type Supervisor } from './supervisors'
 
 export type IncentiveBreakdown = {
   baId: string
   name: string
   city: string
   rank: number
-  points: number
+  /** Conversion rate in % */
   conversion: number
-  interactions: number
+  /** Number of sessions (shopper interactions) */
+  sessions: number
   base: number
   conversionPay: number
-  pointsPay: number
   sessionPay: number
-  rankBonus: number
+  /** Conversion + sessions (everything except base pay) */
+  incentive: number
   totalPkr: number
 }
 
-/** Performance → PKR incentive rules (mock showcase rates). */
-export function calculateIncentive(input: {
-  baId: string
-  name: string
-  city: string
-  rank: number
-  points: number
-  conversion: number
-  interactions: number
-}): IncentiveBreakdown {
-  const base = 1_000
-  const conversionPay = Math.round(input.conversion * 80)
-  const pointsPay = Math.round(input.points * 1.5)
-  const sessionPay = input.interactions * 25
-  const rankBonus =
-    input.rank === 1 ? 3_000 : input.rank === 2 ? 2_000 : input.rank === 3 ? 1_000 : 0
-
-  return {
-    ...input,
-    base,
-    conversionPay,
-    pointsPay,
-    sessionPay,
-    rankBonus,
-    totalPkr: base + conversionPay + pointsPay + sessionPay + rankBonus,
-  }
+/**
+ * Base pay + conversion and session payouts, each paid in proportion to its target:
+ * (actual ÷ target) × amount, all from the KPI settings.
+ */
+export function calculateIncentive(
+  input: { baId: string; name: string; city: string; rank: number; conversion: number; sessions: number },
+  config: KpiConfig = getKpiConfig(),
+): IncentiveBreakdown {
+  const base = config.basePay
+  const conversionPay = Math.round((input.conversion / config.conversionTarget) * config.conversionAmount)
+  const sessionPay = Math.round((input.sessions / config.sessionTarget) * config.sessionAmount)
+  const incentive = conversionPay + sessionPay
+  return { ...input, base, conversionPay, sessionPay, incentive, totalPkr: base + incentive }
 }
 
 export function formatPkr(amount: number) {
   return `Rs. ${amount.toLocaleString('en-PK')}`
 }
 
-export function buildIncentiveRoster(): IncentiveBreakdown[] {
+export function buildIncentiveRoster(config: KpiConfig = getKpiConfig()): IncentiveBreakdown[] {
   return baRanking.map((b, i) => {
     const profile = ambassadors.find((a) => a.id === b.id)
-    return calculateIncentive({
-      baId: b.id,
-      name: b.name,
-      city: b.city,
-      rank: i + 1,
-      points: b.points,
-      conversion: b.conversion,
-      interactions: profile?.today.interactions ?? Math.round(b.points / 30),
-    })
+    return calculateIncentive(
+      {
+        baId: b.id,
+        name: b.name,
+        city: b.city,
+        rank: i + 1,
+        conversion: b.conversion,
+        sessions: profile?.today.interactions ?? Math.round(b.points / 30),
+      },
+      config,
+    )
   })
 }
 
-export const incentiveRules = [
-  { label: 'Base active pay', detail: 'Rs. 1,000 flat for scheduled week' },
-  { label: 'Conversion bonus', detail: 'Conversion % × Rs. 80' },
-  { label: 'Points bonus', detail: 'Leaderboard points × Rs. 1.5' },
-  { label: 'Session bonus', detail: 'Interactions × Rs. 25' },
-  { label: 'Rank bonus', detail: '1st Rs. 3,000 · 2nd Rs. 2,000 · 3rd Rs. 1,000' },
-]
+export type SupervisorIncentive = {
+  supervisorId: string
+  name: string
+  city: string
+  storeCount: number
+  baCount: number
+  /** Average conversion of the BAs in the supervisor's stores, % */
+  teamConversion: number
+  /** Average coverage of the supervisor's stores, % */
+  coverage: number
+  base: number
+  conversionPay: number
+  coveragePay: number
+  /** Conversion + coverage (everything except base pay) */
+  incentive: number
+  totalPkr: number
+}
+
+/**
+ * A supervisor earns base pay plus two KPIs measured across their stores — the average
+ * conversion of their BAs and the average store coverage — each paid in proportion to its
+ * target: (actual ÷ target) × amount.
+ */
+export function calculateSupervisorIncentive(
+  supervisor: Supervisor,
+  config: KpiConfig = getKpiConfig(),
+): SupervisorIncentive {
+  const overview = supervisorOverview(supervisor)
+  const conversionPay = Math.round(
+    (overview.teamConversion / config.supConversionTarget) * config.supConversionAmount,
+  )
+  const coveragePay = Math.round((overview.coverage / config.supCoverageTarget) * config.supCoverageAmount)
+  return {
+    supervisorId: supervisor.id,
+    name: supervisor.name,
+    city: supervisor.city,
+    storeCount: overview.stores.length,
+    baCount: new Set(overview.bas.map((b) => b.id)).size,
+    teamConversion: overview.teamConversion,
+    coverage: overview.coverage,
+    base: config.supBasePay,
+    conversionPay,
+    coveragePay,
+    incentive: conversionPay + coveragePay,
+    totalPkr: config.supBasePay + conversionPay + coveragePay,
+  }
+}
+
+export function buildSupervisorRoster(config: KpiConfig = getKpiConfig()) {
+  return getSupervisors().map((s) => calculateSupervisorIncentive(s, config))
+}

@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Settings,
   ClipboardCheck,
+  UserCog,
   Smartphone,
   QrCode,
 } from 'lucide-react'
@@ -36,6 +37,13 @@ const experiences: {
     title: 'Store Manager',
     desc: 'Attendance, GPS status, coverage and store deployment',
     layout: 'Desktop operations',
+  },
+  {
+    role: 'supervisor',
+    icon: UserCog,
+    title: 'Supervisor',
+    desc: 'Their assigned stores — BA performance, store characteristics and own incentive',
+    layout: 'Desktop oversight',
   },
   {
     role: 'ba',

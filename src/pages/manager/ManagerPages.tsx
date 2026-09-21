@@ -1,15 +1,27 @@
 import { Link } from 'react-router-dom'
 import { stores } from '../../data/mock'
-import { Card, PageHeader, StatusBadge, TableScroll } from '../../components/ui'
+import { Button, Card, PageHeader, StatusBadge, TableScroll } from '../../components/ui'
 import { MapPin } from 'lucide-react'
+import { useCreatedStores } from '../../lib/storeRegistry'
 
 export function ManagerDashboard() {
   const store = stores[0]
+  useCreatedStores() // re-render when stores are added
   return (
     <div className="space-y-5">
       <PageHeader
         title="Store Operations"
-        description={`${store.name} · live attendance, GPS & coverage`}
+        description={`${store.name} · ${stores.length} stores · live attendance & coverage`}
+        actions={
+          <>
+            <Link to="/manager/stores">
+              <Button variant="secondary">All Stores</Button>
+            </Link>
+            <Link to="/manager/stores/new">
+              <Button>Create Store</Button>
+            </Link>
+          </>
+        }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -42,12 +54,18 @@ export function ManagerDashboard() {
             </div>
           ))}
         </div>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
           <Link to="/manager/attendance" className="text-sm font-semibold text-brand-600">
             Attendance →
           </Link>
           <Link to="/manager/coverage" className="text-sm font-semibold text-brand-600">
             Coverage →
+          </Link>
+          <Link to="/manager/stores" className="text-sm font-semibold text-brand-600">
+            Stores →
+          </Link>
+          <Link to="/manager/stores/new" className="text-sm font-semibold text-brand-600">
+            Create Store →
           </Link>
         </div>
       </Card>

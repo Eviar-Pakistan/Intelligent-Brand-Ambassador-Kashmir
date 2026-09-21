@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 
-export type Role = 'headOffice' | 'admin' | 'storeManager' | 'ba' | 'shopper'
+export type Role = 'headOffice' | 'admin' | 'storeManager' | 'supervisor' | 'ba' | 'shopper'
 
 export const roleMeta: Record<
   Role,
@@ -30,6 +30,12 @@ export const roleMeta: Record<
     short: 'SM',
     home: '/manager',
     tone: 'Field Operations',
+  },
+  supervisor: {
+    label: 'Supervisor',
+    short: 'SV',
+    home: '/supervisor',
+    tone: 'Store Oversight',
   },
   ba: {
     label: 'Brand Ambassador',

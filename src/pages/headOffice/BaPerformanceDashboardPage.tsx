@@ -6,14 +6,21 @@ import {
   aggregateBaPerformance,
   baPerformanceMonths,
   baPerformanceTowns,
-  filterBaPerformanceRecords,
+  collectPeriodRecords,
   getStoresForTown,
+  MONTH_ORDER,
+  periodsForRange,
+  resolveDataMonth,
+  type DataPeriod,
 } from '../../data/baPerformance'
 import {
-  activeBasByStore,
-  baCheckInOutByStore,
-  baCheckInOutTimeline,
-} from '../../data/mock'
+  attendanceForRange,
+  attendanceRows,
+  baCities,
+  baStatusByCity,
+  daysInRange,
+  workingHoursSeries,
+} from '../../data/baAttendance'
 import {
   categoryColors,
   chartGold,
@@ -24,6 +31,17 @@ import {
   defaultChartOptions,
 } from '../../lib/chartjs'
 import type { ChartData, ChartOptions } from 'chart.js'
+import { IncentiveKpiCard } from './IncentiveKpiSettings'
+
+function EmptyRow({ cols }: { cols: number }) {
+  return (
+    <tr className="border-t border-slate-100">
+      <td colSpan={cols} className="px-4 py-6 text-center text-sm text-slate-400">
+        No data for this selection
+      </td>
+    </tr>
+  )
+}
 
 type FilterPanelProps = {
   title: string
@@ -167,33 +185,8 @@ const DATE_PRESETS: { id: DatePreset; label: string }[] = [
   { id: 'custom', label: 'Custom date' },
 ]
 
-const MONTH_ORDER = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
-
 function monthNameFromDate(d: Date) {
   return MONTH_ORDER[d.getMonth()]
-}
-
-/** Prefer exact month if present in data; otherwise nearest prior available month. */
-function resolveDataMonth(monthName: string): string | null {
-  if (baPerformanceMonths.includes(monthName)) return monthName
-  const idx = MONTH_ORDER.indexOf(monthName)
-  for (let i = idx - 1; i >= 0; i -= 1) {
-    if (baPerformanceMonths.includes(MONTH_ORDER[i])) return MONTH_ORDER[i]
-  }
-  return baPerformanceMonths[0] ?? null
 }
 
 function monthForPreset(preset: DatePreset, customFrom?: string, customTo?: string): string | null {
@@ -201,9 +194,9 @@ function monthForPreset(preset: DatePreset, customFrom?: string, customTo?: stri
   if (preset === 'ytd') return null
   if (preset === 'custom') {
     if (!customFrom || !customTo) return null
-    const from = new Date(customFrom)
-    const to = new Date(customTo)
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
+    const from = parseDateInput(customFrom)
+    const to = parseDateInput(customTo)
+    if (!from || !to) return null
     const fromMonth = monthNameFromDate(from)
     const toMonth = monthNameFromDate(to)
     if (fromMonth === toMonth) return resolveDataMonth(fromMonth)
@@ -214,6 +207,41 @@ function monthForPreset(preset: DatePreset, customFrom?: string, customTo?: stri
   return resolveDataMonth(monthNameFromDate(d))
 }
 
+function todayInputValue() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function parseDateInput(value: string) {
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
+
+/** Inclusive start/end dates for a preset; null while a custom range is incomplete or invalid. */
+function dateRangeForPreset(preset: DatePreset, customFrom: string, customTo: string) {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  switch (preset) {
+    case 'today':
+      return { start: today, end: today }
+    case 'yesterday': {
+      const y = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
+      return { start: y, end: y }
+    }
+    case 'mtd':
+      return { start: new Date(today.getFullYear(), today.getMonth(), 1), end: today }
+    case 'ytd':
+      return { start: new Date(today.getFullYear(), 0, 1), end: today }
+    case 'custom': {
+      const start = parseDateInput(customFrom)
+      const end = parseDateInput(customTo)
+      if (!start || !end || start > end || start > today) return null
+      return { start, end: end > today ? today : end }
+    }
+  }
+}
+
 export function BaPerformanceDashboardPage() {
   const [town, setTown] = useState<string | null>(null)
   const [month, setMonth] = useState<string | null>(() => monthForPreset('mtd'))
@@ -222,16 +250,51 @@ export function BaPerformanceDashboardPage() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
 
-  const storeOptions = useMemo(() => getStoresForTown(town, month), [town, month])
+  const range = useMemo(
+    () => dateRangeForPreset(datePreset, customFrom, customTo),
+    [datePreset, customFrom, customTo],
+  )
 
-  const filteredRecords = useMemo(
-    () => filterBaPerformanceRecords({ town, month, store }),
-    [town, month, store],
+  // Performance data is monthly. A valid date range picks the months (and days of each month)
+  // it covers; otherwise the Month panel decides (one month, or all months when empty).
+  const rangePeriods = useMemo(
+    () => (range ? periodsForRange(range.start, range.end) : null),
+    [range],
+  )
+  const periods = useMemo<DataPeriod[]>(
+    () => rangePeriods?.periods ?? [{ month, share: null }],
+    [rangePeriods, month],
+  )
+  const storeOptions = useMemo(
+    () => getStoresForTown(town, periods.some((p) => p.month === null) ? null : periods.map((p) => p.month as string)),
+    [town, periods],
   )
 
   const data = useMemo(
-    () => aggregateBaPerformance(filteredRecords, town, month),
-    [filteredRecords, town, month],
+    () => aggregateBaPerformance(collectPeriodRecords({ town, store }, periods), town),
+    [town, store, periods],
+  )
+
+  const dataNote = useMemo(() => {
+    if (!rangePeriods) return null
+    if (rangePeriods.fallback) {
+      return `No ${rangePeriods.fallback.wanted} data yet — showing ${rangePeriods.fallback.used} figures`
+    }
+    if (rangePeriods.missing.length > 0) return `No sales data for ${rangePeriods.missing.join(', ')}`
+    return null
+  }, [rangePeriods])
+
+  const attendance = useMemo(() => (range ? attendanceForRange(range) : []), [range])
+  const cityStatus = useMemo(() => (range ? baStatusByCity(range) : null), [range])
+  const isSingleDay = range ? daysInRange(range) === 1 : false
+  const attendanceTable = useMemo(
+    () => attendanceRows(attendance, isSingleDay),
+    [attendance, isSingleDay],
+  )
+  const [hoursCity, setHoursCity] = useState<string | null>(null)
+  const workingHours = useMemo(
+    () => (range ? workingHoursSeries(attendance, range, hoursCity) : null),
+    [attendance, range, hoursCity],
   )
 
   function applyDatePreset(preset: DatePreset, from = customFrom, to = customTo) {
@@ -268,14 +331,27 @@ export function BaPerformanceDashboardPage() {
     setMonth(next)
     setStore(null)
     setDatePreset('custom')
+    // A month picked by hand replaces any date range, so the whole month is shown
+    setCustomFrom('')
+    setCustomTo('')
   }
 
   const dateRangeLabel = useMemo(() => {
     if (datePreset === 'custom' && customFrom && customTo) {
       return `${customFrom} → ${customTo}`
     }
-    return DATE_PRESETS.find((p) => p.id === datePreset)?.label ?? ''
-  }, [datePreset, customFrom, customTo])
+    const label = DATE_PRESETS.find((p) => p.id === datePreset)?.label ?? ''
+    if ((datePreset === 'today' || datePreset === 'yesterday') && range) {
+      return `${label} · ${range.start.toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}`
+    }
+    return label
+  }, [datePreset, customFrom, customTo, range])
+
+  const baStatusHint = !cityStatus
+    ? 'Select a valid date range'
+    : cityStatus.days > 1
+      ? `Avg per day · ${cityStatus.days} days`
+      : undefined
 
   const scopeLabel = data.townTargetVsSales.town
 
@@ -412,38 +488,49 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
-  const checkInOutChart = useMemo<ChartData<'bar'>>(
+  const workingHoursChart = useMemo<ChartData<'bar'>>(
     () => ({
-      labels: baCheckInOutTimeline.map((r) => r.time),
+      labels: workingHours?.points.map((p) => p.label) ?? [],
       datasets: [
         {
-          label: 'Check-in',
-          data: baCheckInOutTimeline.map((r) => r.checkIn),
+          label: 'Avg working hours',
+          data: workingHours?.points.map((p) => p.hours) ?? [],
           backgroundColor: chartGreen,
           borderRadius: 4,
-          maxBarThickness: 28,
-        },
-        {
-          label: 'Check-out',
-          data: baCheckInOutTimeline.map((r) => r.checkOut),
-          backgroundColor: chartGold,
-          borderRadius: 4,
-          maxBarThickness: 28,
+          maxBarThickness: 36,
         },
       ],
     }),
-    [],
+    [workingHours],
   )
 
-  const checkInOutOptions = useMemo<ChartOptions<'bar'>>(
+  const workingHoursOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
       ...defaultChartOptions,
+      plugins: {
+        ...defaultChartOptions.plugins,
+        legend: { display: false },
+        tooltip: {
+          ...defaultChartOptions.plugins.tooltip,
+          displayColors: false,
+          callbacks: {
+            label: (ctx) => {
+              const visits = workingHours?.points[ctx.dataIndex]?.count ?? 0
+              return `${ctx.parsed.y} h avg · ${visits} ${visits === 1 ? 'visit' : 'visits'}`
+            },
+          },
+        },
+      },
       scales: {
         x: scaleDefaults,
-        y: { ...scaleDefaults, beginAtZero: true, ticks: { ...scaleDefaults.ticks, precision: 0 } },
+        y: {
+          ...scaleDefaults,
+          beginAtZero: true,
+          ticks: { ...scaleDefaults.ticks, callback: (v) => `${v}h` },
+        },
       },
     }),
-    [],
+    [workingHours],
   )
 
   return (
@@ -455,6 +542,7 @@ export function BaPerformanceDashboardPage() {
               Date range
             </div>
             <div className="text-xs text-slate-400">{dateRangeLabel}</div>
+            {dataNote && <div className="text-xs text-amber-600">{dataNote}</div>}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {DATE_PRESETS.map((p) => (
@@ -480,6 +568,7 @@ export function BaPerformanceDashboardPage() {
               <span className="mb-1 block font-medium text-slate-600">From</span>
               <input
                 type="date"
+                max={todayInputValue()}
                 value={customFrom}
                 onChange={(e) => handleCustomFrom(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500"
@@ -491,6 +580,7 @@ export function BaPerformanceDashboardPage() {
                 type="date"
                 value={customTo}
                 min={customFrom || undefined}
+                max={todayInputValue()}
                 onChange={(e) => handleCustomTo(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500"
               />
@@ -498,6 +588,12 @@ export function BaPerformanceDashboardPage() {
           </div>
         )}
       </Card>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard label="Active BAs" value={cityStatus?.active ?? '—'} hint={baStatusHint} />
+        <KpiCard label="Offline BAs" value={cityStatus?.offline ?? '—'} hint={baStatusHint} />
+        <KpiCard label="On Break BAs" value={cityStatus?.break ?? '—'} hint={baStatusHint} />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <KpiCard label="Customers Intercepted" value={data.customersIntercepted.toLocaleString()} />
@@ -564,14 +660,21 @@ export function BaPerformanceDashboardPage() {
 
       <Card padding={false}>
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
-          <CardHeader title="Active BAs by store" subtitle="Live status today" />
+          <CardHeader
+            title="Active BAs by city"
+            subtitle={
+              cityStatus && cityStatus.days > 1
+                ? `${dateRangeLabel} · average per day`
+                : dateRangeLabel
+            }
+          />
         </div>
         <TableScroll minWidth={520}>
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
-                <th className="px-4 py-3">Store</th>
                 <th className="px-4 py-3">City</th>
+                <th className="px-4 py-3">Stores</th>
                 <th className="px-4 py-3">Active</th>
                 <th className="px-4 py-3">Break</th>
                 <th className="px-4 py-3">Offline</th>
@@ -579,18 +682,17 @@ export function BaPerformanceDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {activeBasByStore.map((row) => (
-                <tr key={row.storeId} className="border-t border-slate-100">
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    #{row.storeId} {row.store}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{row.city}</td>
+              {(cityStatus?.cities ?? []).map((row) => (
+                <tr key={row.city} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">{row.city}</td>
+                  <td className="px-4 py-3 text-slate-600">{row.stores}</td>
                   <td className="px-4 py-3 font-semibold text-emerald-600">{row.active}</td>
                   <td className="px-4 py-3 text-amber-600">{row.break}</td>
                   <td className="px-4 py-3 text-slate-500">{row.offline}</td>
                   <td className="px-4 py-3 font-semibold text-slate-900">{row.total}</td>
                 </tr>
               ))}
+              {!cityStatus && <EmptyRow cols={6} />}
             </tbody>
           </table>
         </TableScroll>
@@ -598,43 +700,91 @@ export function BaPerformanceDashboardPage() {
 
       <Card padding={false}>
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
-          <CardHeader title="BA check-in / check-out" subtitle="Store-wise today" />
+          <CardHeader
+            title="BA check-in / check-out"
+            subtitle={isSingleDay ? `Store-wise · ${dateRangeLabel}` : `Per BA average · ${dateRangeLabel}`}
+          />
         </div>
-        <TableScroll minWidth={640}>
+        <TableScroll minWidth={720}>
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
                 <th className="px-4 py-3">BA</th>
                 <th className="px-4 py-3">Store</th>
-                <th className="px-4 py-3">Check-in</th>
-                <th className="px-4 py-3">Check-out</th>
-                <th className="px-4 py-3">Status</th>
+                {!isSingleDay && <th className="px-4 py-3">Days worked</th>}
+                <th className="px-4 py-3">{isSingleDay ? 'Check-in' : 'Avg check-in'}</th>
+                <th className="px-4 py-3">{isSingleDay ? 'Check-out' : 'Avg check-out'}</th>
+                <th className="px-4 py-3">{isSingleDay ? 'Working hrs' : 'Avg working hrs'}</th>
+                {isSingleDay && <th className="px-4 py-3">Status</th>}
               </tr>
             </thead>
             <tbody>
-              {baCheckInOutByStore.map((row) => (
+              {attendanceTable.map((row) => (
                 <tr key={`${row.ba}-${row.store}-${row.checkIn}`} className="border-t border-slate-100">
                   <td className="px-4 py-3 font-medium text-slate-900">{row.ba}</td>
                   <td className="px-4 py-3 text-slate-600">
                     <div>{row.store}</div>
                     <div className="text-xs text-slate-400">{row.city}</div>
                   </td>
+                  {!isSingleDay && <td className="px-4 py-3 tabular-nums">{row.days}</td>}
                   <td className="px-4 py-3 tabular-nums">{row.checkIn}</td>
                   <td className="px-4 py-3 tabular-nums text-slate-600">{row.checkOut}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={row.status} />
-                  </td>
+                  <td className="px-4 py-3 tabular-nums">{row.hours.toFixed(1)} h</td>
+                  {isSingleDay && (
+                    <td className="px-4 py-3">
+                      <StatusBadge status={row.status ?? ''} />
+                    </td>
+                  )}
                 </tr>
               ))}
+              {attendanceTable.length === 0 && <EmptyRow cols={6} />}
             </tbody>
           </table>
         </TableScroll>
       </Card>
 
+      <IncentiveKpiCard />
+
       <Card>
-        <CardHeader title="BA check-in & check-out by time" subtitle="Hourly activity today" />
+        <CardHeader
+          title="Average working hours"
+          subtitle={`${dateRangeLabel} · ${
+            !workingHours
+              ? 'select a valid date range'
+              : workingHours.avgHours === null
+                ? 'no attendance for this selection'
+                : `overall average ${workingHours.avgHours} h per BA visit${
+                    range && range.end.toDateString() === new Date().toDateString()
+                      ? ' (today counted up to now)'
+                      : ''
+                  }`
+          }`}
+          action={
+            <label className="flex items-center gap-2 text-xs">
+              <span className="font-medium text-slate-500">City</span>
+              <select
+                value={hoursCity ?? ''}
+                onChange={(e) => setHoursCity(e.target.value || null)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-brand-500"
+              >
+                <option value="">All cities</option>
+                {baCities.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        />
         <div className="relative h-56 sm:h-72">
-          <Bar data={checkInOutChart} options={checkInOutOptions} />
+          {workingHours && workingHours.points.length > 0 ? (
+            <Bar data={workingHoursChart} options={workingHoursOptions} />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-slate-400">
+              No data to show
+            </div>
+          )}
         </div>
       </Card>
     </div>

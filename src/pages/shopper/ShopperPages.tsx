@@ -5,10 +5,12 @@ import { useDemo } from '../../context/AppContext'
 import { useBrand } from '../../context/BrandContext'
 import { Gift, Leaf, Lock, Percent, Sparkles, Ticket } from 'lucide-react'
 import { productCategories, surveyOptions } from './shopperData'
+import { getShopperStore } from '../../lib/storeRegistry'
 
 export function ShopperLandingPage() {
   const { brand } = useBrand()
   const [line1, line2] = brand.shopperHeadline
+  const shopperStore = getShopperStore()
 
   return (
     <div className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[#f7f4ec] text-slate-900">
@@ -20,6 +22,13 @@ export function ShopperLandingPage() {
           alt={brand.productName}
           className="h-[4.5rem] w-auto object-contain sm:h-20"
         />
+
+        {shopperStore && (
+          <div className="mt-4 rounded-full bg-white/80 px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-black/5">
+            Welcome to {shopperStore.name}
+            {shopperStore.city ? ` · ${shopperStore.city}` : ''}
+          </div>
+        )}
 
         <h1 className="mt-6 font-display text-[1.7rem] font-bold leading-[1.2] tracking-tight text-navy-900 sm:text-[1.85rem]">
           {line1}

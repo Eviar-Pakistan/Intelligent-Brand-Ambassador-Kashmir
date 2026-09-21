@@ -17,23 +17,40 @@ import {
   StatusBadge,
   TableScroll,
 } from '../../components/ui'
-import { CalendarClock, Plus, QrCode, Sparkles } from 'lucide-react'
+import { CalendarClock, FileSpreadsheet, Plus, Sparkles } from 'lucide-react'
 import { useSchedule } from '../../context/ScheduleContext'
+import { StoreQrCard } from '../../components/StoreQrCard'
+import { findCreatedStore, shopperPath, useCreatedStores } from '../../lib/storeRegistry'
+import { BulkStoreModal, useRoleBase } from './StoreCreation'
 
 const deployable = ambassadors.filter(
   (a) => a.status === 'Certified' || a.status === 'Deployed',
 )
 
 export function StoresPage() {
+  const base = useRoleBase()
+  const [bulkOpen, setBulkOpen] = useState(false)
+  useCreatedStores() // re-render when stores are added
+
   return (
     <div>
       <PageHeader
         title="Stores"
         description={`${stores.length} outlets · prioritization by footfall, coverage & peak hours`}
         actions={
-          <Link to="/ho/deployment">
-            <Button variant="secondary">Open Scheduler</Button>
-          </Link>
+          <>
+            <Link to={`${base}/stores/new`}>
+              <Button>
+                <Plus size={15} /> Create Store
+              </Button>
+            </Link>
+            <Button variant="secondary" onClick={() => setBulkOpen(true)}>
+              <FileSpreadsheet size={15} /> Bulk upload
+            </Button>
+            <Link to={base === '/manager' ? '/manager/deployment' : '/ho/deployment'}>
+              <Button variant="secondary">Open Scheduler</Button>
+            </Link>
+          </>
         }
       />
       <Card padding={false}>
@@ -46,13 +63,14 @@ export function StoresPage() {
               <th className="px-4 py-3">BAs</th>
               <th className="px-4 py-3">Coverage</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Shopper QR</th>
             </tr>
           </thead>
           <tbody>
             {stores.map((s) => (
               <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                 <td className="px-4 py-3">
-                  <Link to={`/ho/stores/${s.id}`} className="font-semibold text-brand-600 hover:underline">
+                  <Link to={`${base}/stores/${s.id}`} className="font-semibold text-brand-600 hover:underline">
                     #{s.id} {s.name}
                   </Link>
                   <div className="text-xs text-slate-400">{s.city}</div>
@@ -72,24 +90,31 @@ export function StoresPage() {
                 <td className="px-4 py-3">
                   <StatusBadge status={s.status} />
                 </td>
+                <td className="px-4 py-3">
+                  <Link to={`${base}/stores/${s.id}`} className="text-xs font-semibold text-brand-600 hover:underline">
+                    View QR →
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         </TableScroll>
       </Card>
+      <BulkStoreModal open={bulkOpen} onClose={() => setBulkOpen(false)} />
     </div>
   )
 }
 
 export function StoreDetailPage() {
   const { id } = useParams()
+  const base = useRoleBase()
   const store = stores.find((s) => String(s.id) === id) ?? stores[0]
-  const [qrOpen, setQrOpen] = useState(false)
+  const record = findCreatedStore(store.id)
 
   return (
     <div className="space-y-5">
-      <Link to="/ho/stores" className="text-sm text-slate-500 hover:text-brand-600">
+      <Link to={`${base}/stores`} className="text-sm text-slate-500 hover:text-brand-600">
         ← Back to stores
       </Link>
 
@@ -108,10 +133,7 @@ export function StoreDetailPage() {
                 <CalendarClock size={15} /> Schedule BA
               </Button>
             </Link>
-            <Button variant="secondary" onClick={() => setQrOpen(true)}>
-              <QrCode size={15} /> QR Preview
-            </Button>
-            <Link to="/shopper">
+            <Link to={shopperPath(store)}>
               <Button>Open Shopper Experience</Button>
             </Link>
           </div>
@@ -123,6 +145,25 @@ export function StoreDetailPage() {
           <Stat label="Conversion" value={`${store.conversion}%`} />
         </div>
       </Card>
+
+      <StoreQrCard store={store} />
+
+      {record && (
+        <Card>
+          <h3 className="mb-3 font-semibold">Store details</h3>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <Detail label="Address" value={record.address} />
+            <Detail label="Footfall" value={record.footfall} />
+            <Detail
+              label="Coordinates"
+              value={record.latitude !== null && record.longitude !== null ? `${record.latitude}, ${record.longitude}` : ''}
+            />
+            <Detail label="Peak hours" value={record.peakHours} />
+            <Detail label="Contact person" value={record.contactPerson} />
+            <Detail label="Contact phone" value={record.contactPhone} />
+          </dl>
+        </Card>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
@@ -160,46 +201,17 @@ export function StoreDetailPage() {
               </div>
             ))}
           </div>
-          <h3 className="mt-5 mb-2 font-semibold">QR Activation</h3>
-          <button
-            type="button"
-            onClick={() => setQrOpen(true)}
-            className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-brand-500/40"
-          >
-            <img
-              src="/store-qr.png"
-              alt={`QR code for ${store.qrCode}`}
-              className="mx-auto h-36 w-36 object-contain"
-            />
-          </button>
-          <p className="mt-2 text-sm text-slate-500">Code: {store.qrCode}</p>
-          <div className="mt-3 flex gap-2">
-            <Button size="sm" onClick={() => setQrOpen(true)}>
-              QR Preview
-            </Button>
-            <Button size="sm" variant="secondary">
-              Regenerate QR
-            </Button>
-          </div>
         </Card>
       </div>
+    </div>
+  )
+}
 
-      <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="QR Activation Preview">
-        <div className="flex flex-col items-center text-center">
-          <img
-            src="/store-qr.png"
-            alt={`Scan me — ${store.qrCode}`}
-            className="w-56 max-w-full object-contain"
-          />
-          <p className="mt-3 text-sm font-mono text-slate-600">{store.qrCode}</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Scan opens browser shopper journey — no app download
-          </p>
-          <Link to="/shopper" className="mt-4 w-full" onClick={() => setQrOpen(false)}>
-            <Button className="w-full">Simulate Scan → Shopper</Button>
-          </Link>
-        </div>
-      </Modal>
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="font-medium text-slate-900">{value || '—'}</dd>
     </div>
   )
 }
