@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { ambassadors as mockAmbassadors } from '../data/mock'
 import type { AnswerMetrics, AssessmentResult } from './baAssessment'
 import { generatePassword, hashPassword } from './supervisors'
 
@@ -35,13 +36,43 @@ export { generatePassword }
 const STORAGE_KEY = 'ba-accounts-v1'
 const SESSION_KEY = 'ba-session-v1'
 
+/**
+ * Ids of the ambassadors already on the roster (Ayesha, Hamza, ...) rather than created here.
+ * They get an account too — Certified, no onboarding — so Head Office can give any of them a
+ * sign-in the same way as a newly created ambassador.
+ */
+export const rosterAmbassadorIds = new Set(mockAmbassadors.map((a) => a.id))
+
+function rosterAccount(a: (typeof mockAmbassadors)[number]): BaAccount {
+  return {
+    id: a.id,
+    name: a.name,
+    city: a.city,
+    email: '',
+    phone: '',
+    createdAt: new Date(0).toISOString(),
+    status: 'Certified',
+    videoWatched: true,
+    answers: [],
+    result: null,
+    passwordSalt: '',
+    passwordHash: '',
+  }
+}
+
+/** Adds an account for any roster ambassador that doesn't have one yet, without touching the rest. */
+function withRosterAccounts(list: BaAccount[]) {
+  const missing = mockAmbassadors.filter((a) => !list.some((acc) => acc.id === a.id)).map(rosterAccount)
+  return missing.length > 0 ? [...list, ...missing] : list
+}
+
 function load(): BaAccount[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? (parsed as BaAccount[]) : []
+    return withRosterAccounts(Array.isArray(parsed) ? (parsed as BaAccount[]) : [])
   } catch {
-    return []
+    return withRosterAccounts([])
   }
 }
 

@@ -8,6 +8,11 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import defaultTrainingVideo from '../assets/kashmir-cooking-oil-.mp4'
+
+/** The built-in training video and question. Bundled as a static asset, so it can't be lost
+ *  or deleted — it is always available even before Head Office uploads anything of their own. */
+export const DEFAULT_MODULE_ID = 'tm-default'
 
 export type AssessmentQuestion = {
   id: string
@@ -35,26 +40,25 @@ type TrainingContentContextValue = {
 
 const TrainingContentContext = createContext<TrainingContentContextValue | null>(null)
 
-const seedModules: TrainingModule[] = [
-  {
-    id: 'tm-seed-1',
-    title: 'Kashmir product knowledge',
-    description: 'Core talking points for cooking oil benefits and objections.',
-    videoName: 'kashmir-product-intro.mp4',
-    videoUrl: '',
-    questions: [
-      {
-        id: 'q1',
-        prompt: 'What is the primary health benefit to highlight first?',
-      },
-      {
-        id: 'q2',
-        prompt: 'When a shopper says they always buy Dalda, how should you respond?',
-      },
-    ],
-    createdAt: new Date().toISOString(),
-  },
-]
+/**
+ * The default module is never stored (it's a bundled asset, not an upload), so it can't be
+ * lost to a storage clear, corrupted by the IndexedDB round-trip, or removed via the UI — it
+ * is appended to `modules` on every render instead of living in provider state.
+ */
+const DEFAULT_MODULE: TrainingModule = {
+  id: DEFAULT_MODULE_ID,
+  title: 'Kashmir product knowledge',
+  description: 'Core talking points for cooking oil benefits and objections.',
+  videoName: 'kashmir-cooking-oil-.mp4',
+  videoUrl: defaultTrainingVideo,
+  questions: [
+    {
+      id: 'q1',
+      prompt: 'Aap kashmir cooking oil kay baray main kia jantay hain?',
+    },
+  ],
+  createdAt: new Date(0).toISOString(),
+}
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 // Module text lives in localStorage; the video files live in IndexedDB. Together they let a
@@ -98,7 +102,8 @@ function readStoredModules(): StoredModule[] | null {
 }
 
 export function TrainingContentProvider({ children }: { children: ReactNode }) {
-  const [modules, setModules] = useState<TrainingModule[]>(seedModules)
+  // Only Head-Office-uploaded modules live here; the default module is appended below.
+  const [customModules, setCustomModules] = useState<TrainingModule[]>([])
   const hydrated = useRef(false)
 
   useEffect(() => {
@@ -124,7 +129,7 @@ export function TrainingContentProvider({ children }: { children: ReactNode }) {
     ).then((restored) => {
       if (cancelled) return
       hydrated.current = true
-      setModules(restored)
+      setCustomModules(restored)
     })
     return () => {
       cancelled = true
@@ -134,12 +139,12 @@ export function TrainingContentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!hydrated.current) return
     try {
-      const meta: StoredModule[] = modules.map(({ videoUrl, ...m }) => ({ ...m, hasVideo: !!videoUrl }))
+      const meta: StoredModule[] = customModules.map(({ videoUrl, ...m }) => ({ ...m, hasVideo: !!videoUrl }))
       localStorage.setItem(META_KEY, JSON.stringify(meta))
     } catch {
       // storage unavailable — modules stay in memory for this session
     }
-  }, [modules])
+  }, [customModules])
 
   const addModule = useCallback(
     (module: Omit<TrainingModule, 'id' | 'createdAt'>, videoFile?: File) => {
@@ -149,20 +154,25 @@ export function TrainingContentProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       }
       if (videoFile) saveVideo(next.id, videoFile).catch(() => {})
-      setModules((prev) => [next, ...prev])
+      setCustomModules((prev) => [next, ...prev])
       return next
     },
     [],
   )
 
   const removeModule = useCallback((id: string) => {
+    // the default module isn't in customModules, so this can never remove it
     deleteVideo(id).catch(() => {})
-    setModules((prev) => {
+    setCustomModules((prev) => {
       const target = prev.find((m) => m.id === id)
       if (target?.videoUrl) URL.revokeObjectURL(target.videoUrl)
       return prev.filter((m) => m.id !== id)
     })
   }, [])
+
+  // Newest upload first, so it's what `modules.find((m) => m.videoUrl)` picks; the default
+  // module is always last, so it's the fallback whenever nothing has been uploaded yet.
+  const modules = useMemo(() => [...customModules, DEFAULT_MODULE], [customModules])
 
   const value = useMemo(
     () => ({ modules, addModule, removeModule }),

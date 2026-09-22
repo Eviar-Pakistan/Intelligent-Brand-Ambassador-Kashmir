@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Eye, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Avatar, Button, Card, Modal, PageHeader, TableScroll } from '../../components/ui'
+import { Avatar, Button, Card, Modal, PageHeader, PasswordField, TableScroll } from '../../components/ui'
 import { stores } from '../../data/mock'
 import { CITIES, useCreatedStores } from '../../lib/storeRegistry'
 import {
@@ -74,21 +74,6 @@ function StoreChecklist({
   )
 }
 
-function PasswordField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block font-medium text-slate-700">Password *</span>
-      <div className="flex gap-2">
-        <input className={`${fieldClass} font-mono`} value={value} onChange={(e) => onChange(e.target.value)} />
-        <Button type="button" variant="secondary" onClick={() => onChange(generatePassword())}>
-          Generate
-        </Button>
-      </div>
-      <span className="mt-1 block text-xs text-slate-400">At least 6 characters. You will see it once after saving.</span>
-    </label>
-  )
-}
-
 function AddSupervisorModal({
   open,
   onClose,
@@ -155,6 +140,10 @@ function AddSupervisorModal({
           value={form.password}
           onChange={(password) => {
             setForm({ ...form, password })
+            setError(null)
+          }}
+          onGenerate={() => {
+            setForm({ ...form, password: generatePassword() })
             setError(null)
           }}
         />
@@ -227,6 +216,10 @@ function LoginDetailsModal({ supervisor, onClose, onSaved }: { supervisor: Super
             value={current.password}
             onChange={(password) => {
               setDraft({ ...current, password })
+              setError(null)
+            }}
+            onGenerate={() => {
+              setDraft({ ...current, password: generatePassword() })
               setError(null)
             }}
           />

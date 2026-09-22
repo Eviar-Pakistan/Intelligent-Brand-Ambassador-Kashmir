@@ -7,6 +7,7 @@ import {
   Card,
   Modal,
   PageHeader,
+  PasswordField,
   ProgressRing,
   ScoreBars,
   SearchInput,
@@ -24,6 +25,7 @@ import {
   downloadBaCredentials,
   generatePassword,
   parseAmbassadorFile,
+  rosterAmbassadorIds,
   setBaLogin,
   useBaAccounts,
   type AmbassadorParseResult,
@@ -51,25 +53,6 @@ const timeFieldClass =
 
 const modalFieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500'
-
-function PasswordField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-700">Password *</span>
-      <div className="flex gap-2">
-        <input
-          className={`${modalFieldClass} font-mono`}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-        <Button type="button" variant="secondary" onClick={() => onChange(generatePassword())}>
-          Generate
-        </Button>
-      </div>
-      <span className="mt-1 block text-xs text-slate-400">At least 6 characters. You will see it once after saving.</span>
-    </label>
-  )
-}
 
 /** The BA's sign-in details, shown once — passwords are stored hashed and cannot be looked up later. */
 function CredentialsModal({ credentials, onClose }: { credentials: Credentials | null; onClose: () => void }) {
@@ -170,6 +153,10 @@ function CreateAmbassadorModal({
           value={form.password}
           onChange={(password) => {
             setForm({ ...form, password })
+            setError(null)
+          }}
+          onGenerate={() => {
+            setForm({ ...form, password: generatePassword() })
             setError(null)
           }}
         />
@@ -345,6 +332,10 @@ function ManageLoginModal({ account, onClose, onSaved }: { account: BaAccount | 
               setDraft({ ...current, password })
               setError(null)
             }}
+            onGenerate={() => {
+              setDraft({ ...current, password: generatePassword() })
+              setError(null)
+            }}
           />
           {!account.passwordHash && (
             <p className="text-xs text-amber-700">This ambassador has no password yet, so they cannot sign in.</p>
@@ -422,6 +413,8 @@ export function AmbassadorsPage() {
     return matchTab && matchQ
   })
   const filteredAccounts = accounts.filter((a) => {
+    // roster ambassadors (Ayesha, Hamza, ...) already have a row below, with their own Login control
+    if (rosterAmbassadorIds.has(a.id)) return false
     const matchTab = tab === 'All' || (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
     return matchTab && a.name.toLowerCase().includes(q.toLowerCase())
   })
@@ -511,7 +504,18 @@ export function AmbassadorsPage() {
                 <td className="px-4 py-3">
                   <StatusBadge status={a.dataFilled} />
                 </td>
-                <td className="px-4 py-3 text-slate-400">—</td>
+                <td className="px-4 py-3">
+                  {(() => {
+                    const account = accounts.find((acc) => acc.id === a.id)
+                    return account ? (
+                      <Button variant="secondary" size="sm" onClick={() => setLoginTarget(account)}>
+                        <KeyRound size={13} /> Manage
+                      </Button>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )
+                  })()}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { Plus, Trash2, Upload, Video } from 'lucide-react'
 import { Button, Card, PageHeader, StatusBadge } from '../../components/ui'
-import { useTrainingContent } from '../../context/TrainingContentContext'
+import { DEFAULT_MODULE_ID, useTrainingContent } from '../../context/TrainingContentContext'
 
 const fieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500'
@@ -180,6 +180,14 @@ export function TrainingManagerPage() {
                     <Video size={15} className="text-brand-600" />
                     <span className="font-semibold text-slate-900">{m.title}</span>
                     <StatusBadge status="Training" />
+                    {m.id === DEFAULT_MODULE_ID && (
+                      <span
+                        title="Built in — used whenever no other video has been uploaded, and cannot be removed"
+                        className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                      >
+                        Default
+                      </span>
+                    )}
                   </div>
                   {m.description && (
                     <p className="mt-1 text-sm text-slate-500">{m.description}</p>
@@ -203,9 +211,11 @@ export function TrainingManagerPage() {
                     />
                   )}
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => removeModule(m.id)}>
-                  <Trash2 size={14} /> Remove
-                </Button>
+                {m.id !== DEFAULT_MODULE_ID && (
+                  <Button size="sm" variant="ghost" onClick={() => removeModule(m.id)}>
+                    <Trash2 size={14} /> Remove
+                  </Button>
+                )}
               </div>
             ))}
           </div>

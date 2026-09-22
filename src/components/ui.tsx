@@ -8,7 +8,7 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
 } from 'react'
-import { Search, X } from 'lucide-react'
+import { Eye, EyeOff, Search, X } from 'lucide-react'
 
 export function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ')
@@ -212,6 +212,58 @@ export function SearchInput(props: InputHTMLAttributes<HTMLInputElement>) {
       <Search size={14} className="shrink-0 text-slate-400" />
       <input className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" {...props} />
     </div>
+  )
+}
+
+/**
+ * A password input hidden by default, with an eye button to reveal it — so a typed or
+ * generated password can be checked before saving — and an optional Generate button.
+ */
+export function PasswordField({
+  label = 'Password *',
+  value,
+  onChange,
+  onGenerate,
+  hint = 'At least 6 characters. You will see it once after saving.',
+  autoFocus,
+}: {
+  label?: string
+  value: string
+  onChange: (v: string) => void
+  onGenerate?: () => void
+  hint?: string | false
+  autoFocus?: boolean
+}) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-slate-700">{label}</span>
+      <div className="flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <input
+            type={visible ? 'text' : 'password'}
+            autoFocus={autoFocus}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pr-10 pl-3.5 font-mono text-sm outline-none focus:border-brand-500"
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => !v)}
+            aria-label={visible ? 'Hide password' : 'Show password'}
+            className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600"
+          >
+            {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
+        {onGenerate && (
+          <Button type="button" variant="secondary" onClick={onGenerate}>
+            Generate
+          </Button>
+        )}
+      </div>
+      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
+    </label>
   )
 }
 
