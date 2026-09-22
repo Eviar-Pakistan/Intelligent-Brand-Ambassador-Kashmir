@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTrainingContent, type TrainingModule } from '../../context/TrainingContentContext'
 import { MIN_ANSWER_SECONDS, analyzeAnswer, summarizeAssessment } from '../../lib/baAssessment'
-import { updateInvite, type Invite } from '../../lib/baInvites'
+import { updateBaAccount, type BaAccount } from '../../lib/baAccounts'
 import { AssessmentReport } from './AssessmentReport'
 
 const primaryButton =
@@ -20,19 +20,19 @@ function StepCard({ step, title, children }: { step: string; title: string; chil
   )
 }
 
-/** A newly invited BA: watch the training video, answer the verbal assessment, get the report. */
-export function BaOnboarding({ invite }: { invite: Invite }) {
+/** A newly created BA: watch the training video, answer the verbal assessment, get the report. */
+export function BaOnboarding({ account }: { account: BaAccount }) {
   const { modules } = useTrainingContent()
   const module = modules.find((m) => m.videoUrl) ?? modules[0]
 
-  if (invite.result) return <ResultStep invite={invite} />
-  if (!invite.videoWatched) return <VideoStep invite={invite} module={module} />
-  return <AssessmentStep invite={invite} module={module} />
+  if (account.result) return <ResultStep account={account} />
+  if (!account.videoWatched) return <VideoStep account={account} module={module} />
+  return <AssessmentStep account={account} module={module} />
 }
 
 // ─── Step 1: training video ──────────────────────────────────────────────────
 
-function VideoStep({ invite, module }: { invite: Invite; module: TrainingModule | undefined }) {
+function VideoStep({ account, module }: { account: BaAccount; module: TrainingModule | undefined }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const furthest = useRef(0)
   const [percent, setPercent] = useState(0)
@@ -59,7 +59,7 @@ function VideoStep({ invite, module }: { invite: Invite; module: TrainingModule 
     <div className="space-y-4 py-4">
       <StepCard step="Step 1 · Training" title="Watch the BA training video">
         <p className="mt-2 text-base text-slate-500">
-          Hi {invite.name}. Watch the full video, then continue to the verbal assessment.
+          Hi {account.name}. Watch the full video, then continue to the verbal assessment.
         </p>
       </StepCard>
 
@@ -91,7 +91,7 @@ function VideoStep({ invite, module }: { invite: Invite; module: TrainingModule 
         <button
           type="button"
           disabled={!finished}
-          onClick={() => updateInvite(invite.token, { videoWatched: true, status: 'Training' })}
+          onClick={() => updateBaAccount(account.id, { videoWatched: true, status: 'Training' })}
           className={`mt-3 w-full ${primaryButton}`}
         >
           {finished ? 'Continue to assessment' : 'Finish the video first'}
@@ -137,9 +137,9 @@ type Capture = {
 
 const SAMPLE_MS = 200
 
-function AssessmentStep({ invite, module }: { invite: Invite; module: TrainingModule | undefined }) {
+function AssessmentStep({ account, module }: { account: BaAccount; module: TrainingModule | undefined }) {
   const questions = module?.questions ?? []
-  const qIndex = invite.answers.length
+  const qIndex = account.answers.length
   const question = questions[qIndex]
 
   const [phase, setPhase] = useState<Phase>('idle')
@@ -195,7 +195,7 @@ function AssessmentStep({ invite, module }: { invite: Invite; module: TrainingMo
   async function start() {
     setError(null)
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError('This browser cannot use the camera. Open the link in Chrome or Edge.')
+      setError('This browser cannot use the camera. Open this page in Chrome or Edge.')
       return
     }
     let stream: MediaStream
@@ -308,12 +308,12 @@ function AssessmentStep({ invite, module }: { invite: Invite; module: TrainingMo
       speechSec: c.speechSec,
       transcript: c.transcript,
     })
-    const answers = [...invite.answers, metrics]
+    const answers = [...account.answers, metrics]
     if (answers.length >= questions.length) {
       const result = summarizeAssessment(answers)
-      updateInvite(invite.token, { answers, result, status: result.certified ? 'Certified' : 'Training' })
+      updateBaAccount(account.id, { answers, result, status: result.certified ? 'Certified' : 'Training' })
     } else {
-      updateInvite(invite.token, { answers })
+      updateBaAccount(account.id, { answers })
     }
     setPlaybackUrl(null)
     setElapsed(0)
@@ -411,21 +411,21 @@ function AssessmentStep({ invite, module }: { invite: Invite; module: TrainingMo
 
 // ─── Step 3: results ─────────────────────────────────────────────────────────
 
-function ResultStep({ invite }: { invite: Invite }) {
+function ResultStep({ account }: { account: BaAccount }) {
   const navigate = useNavigate()
-  if (!invite.result) return null
+  if (!account.result) return null
 
   return (
     <div className="space-y-4 py-4">
-      <AssessmentReport name={invite.name} result={invite.result} answers={invite.answers} />
-      {invite.result.certified ? (
+      <AssessmentReport name={account.name} result={account.result} answers={account.answers} />
+      {account.result.certified ? (
         <button type="button" onClick={() => navigate('/ba/home')} className={`w-full ${primaryButton}`}>
           Go to Home
         </button>
       ) : (
         <button
           type="button"
-          onClick={() => updateInvite(invite.token, { answers: [], result: null, status: 'Training' })}
+          onClick={() => updateBaAccount(account.id, { answers: [], result: null, status: 'Training' })}
           className={`w-full ${primaryButton}`}
         >
           Retake assessment

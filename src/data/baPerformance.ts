@@ -259,20 +259,9 @@ export function aggregateBaPerformance(
 /** A month of source data, optionally narrowed to some of its days. */
 export type DataPeriod = { month: string | null; share: PeriodShare | null }
 
-/** Prefer the exact month if present in data; otherwise the nearest prior available month. */
-export function resolveDataMonth(monthName: string): string | null {
-  if (baPerformanceMonths.includes(monthName)) return monthName
-  const idx = MONTH_ORDER.indexOf(monthName)
-  for (let i = idx - 1; i >= 0; i -= 1) {
-    if (baPerformanceMonths.includes(MONTH_ORDER[i])) return MONTH_ORDER[i]
-  }
-  return baPerformanceMonths[0] ?? null
-}
-
 /**
- * Splits a date range into the source months it touches. A range inside one month with no
- * data falls back to the nearest earlier month; across several months, months without data
- * are skipped and reported in `missing`.
+ * Splits a date range into the source months it touches. Months without data are skipped
+ * (never substituted with another month's figures) and reported in `missing`.
  */
 export function periodsForRange(start: Date, end: Date) {
   const byMonth = new Map<number, Set<number>>()
@@ -284,20 +273,17 @@ export function periodsForRange(start: Date, end: Date) {
 
   const periods: DataPeriod[] = []
   const missing: string[] = []
-  let fallback: { wanted: string; used: string } | null = null
 
   for (const [monthIdx, days] of byMonth) {
     const wanted = MONTH_ORDER[monthIdx]
-    let month: string | null = baPerformanceMonths.includes(wanted) ? wanted : null
-    if (!month && byMonth.size === 1) {
-      month = resolveDataMonth(wanted)
-      if (month) fallback = { wanted, used: month }
+    if (baPerformanceMonths.includes(wanted)) {
+      periods.push({ month: wanted, share: periodShareForDays(wanted, [...days]) })
+    } else {
+      missing.push(wanted)
     }
-    if (month) periods.push({ month, share: periodShareForDays(month, [...days]) })
-    else missing.push(wanted)
   }
 
-  return { periods, missing, fallback }
+  return { periods, missing }
 }
 
 /** Filtered records for each period, scaled to the days each period covers. */

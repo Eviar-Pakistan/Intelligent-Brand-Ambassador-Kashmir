@@ -46,14 +46,18 @@ function statusForStoreDay(row: (typeof activeBasByStore)[number], day: Date, to
   return { active: row.total - onBreak - offline, break: onBreak, offline }
 }
 
+export type AttendanceFilters = { city?: string | null; store?: string | null }
+
 /**
  * City-wise BA status over a range. One day is an exact headcount; longer ranges are
  * the per-day average, rounded. The overall figures are the sum of the city rows.
  */
-export function baStatusByCity(range: DateRange, today = new Date()) {
+export function baStatusByCity(range: DateRange, filters: AttendanceFilters = {}, today = new Date()) {
   const days = eachDay(range)
   const sums = new Map<string, StatusCounts & { stores: number }>()
   for (const row of activeBasByStore) {
+    if (filters.city && row.city !== filters.city) continue
+    if (filters.store && row.store !== filters.store) continue
     const c = sums.get(row.city) ?? { active: 0, break: 0, offline: 0, stores: 0 }
     c.stores += 1
     for (const d of days) {

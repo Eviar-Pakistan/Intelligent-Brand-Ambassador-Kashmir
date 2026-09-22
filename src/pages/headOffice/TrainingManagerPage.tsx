@@ -7,6 +7,12 @@ import { useTrainingContent } from '../../context/TrainingContentContext'
 const fieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500'
 
+function formatUploadedAt(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'unknown date'
+  return d.toLocaleString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export function TrainingManagerPage() {
   const { modules, addModule, removeModule } = useTrainingContent()
   const [title, setTitle] = useState('')
@@ -159,7 +165,7 @@ export function TrainingManagerPage() {
       </Card>
 
       <Card>
-        <h3 className="mb-3 font-semibold text-slate-900">Published modules</h3>
+        <h3 className="mb-3 font-semibold text-slate-900">Upload history</h3>
         {modules.length === 0 ? (
           <p className="text-sm text-slate-500">No training modules yet.</p>
         ) : (
@@ -180,7 +186,7 @@ export function TrainingManagerPage() {
                   )}
                   <p className="mt-1 text-xs text-slate-400">
                     {m.videoName || 'No file name'} · {m.questions.length} question
-                    {m.questions.length === 1 ? '' : 's'}
+                    {m.questions.length === 1 ? '' : 's'} · Uploaded {formatUploadedAt(m.createdAt)}
                   </p>
                   <ul className="mt-2 space-y-1 text-sm text-slate-600">
                     {m.questions.map((q, i) => (

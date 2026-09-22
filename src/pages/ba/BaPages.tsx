@@ -18,7 +18,7 @@ import { formatDate, formatTime, useBaShift } from '../../context/BaShiftContext
 import { useTrainingContent } from '../../context/TrainingContentContext'
 import { downloadBaReportTemplate, parseBaReportFile, saveBaReport } from '../../lib/baReport'
 import { Modal } from '../../components/ui'
-import { useActiveInvite } from '../../lib/baInvites'
+import { useBaSession } from '../../lib/baAccounts'
 import { BaOnboarding } from './BaOnboarding'
 
 function greetingFor(hour: number) {
@@ -48,8 +48,8 @@ function initialsOf(name: string) {
 
 export function BaHomePage() {
   const { brand } = useBrand()
-  const { invite } = useActiveInvite()
-  const baName = invite?.name ?? 'Ayesha Khan'
+  const { account } = useBaSession()
+  const baName = account?.name ?? 'Brand Ambassador'
   const navigate = useNavigate()
   const {
     city,
@@ -551,9 +551,10 @@ const trainingScenarios = [
 const TRAINING_TOTAL = trainingScenarios.length
 
 export function BaTrainingPage() {
-  const { invite } = useActiveInvite()
-  // A BA who joined through an invite link goes through the video + verbal assessment
-  if (invite) return <BaOnboarding invite={invite} />
+  const { account } = useBaSession()
+  // A BA still onboarding goes through the video + verbal assessment; once certified,
+  // the Training tab opens the fuller scenario library instead.
+  if (account && account.status !== 'Certified') return <BaOnboarding account={account} />
   return <BaTrainingLibrary />
 }
 

@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ambassadors, baShiftHistory, scheduleDays, stores, type LifecycleStage } from '../../data/mock'
 import {
   Avatar,
@@ -15,11 +15,27 @@ import {
   TableScroll,
   Tabs,
 } from '../../components/ui'
-import { Check, Copy, ExternalLink, UserPlus } from 'lucide-react'
-import { createInvite, inviteLink, useInvites, type Invite } from '../../lib/baInvites'
+import { Check, Download, FileSpreadsheet, KeyRound, Upload, UserPlus } from 'lucide-react'
+import {
+  baEmailInUse,
+  createBaAccount,
+  createBaAccounts,
+  downloadAmbassadorTemplate,
+  downloadBaCredentials,
+  generatePassword,
+  parseAmbassadorFile,
+  setBaLogin,
+  useBaAccounts,
+  type AmbassadorParseResult,
+  type BaAccount,
+} from '../../lib/baAccounts'
 import { AssessmentReport } from '../ba/AssessmentReport'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 import { shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
+
+const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+type Credentials = { name: string; email: string; password: string; updated: boolean }
 
 const allLifecycle: LifecycleStage[] = [
   'Recruited',
@@ -36,60 +52,63 @@ const timeFieldClass =
 const modalFieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500'
 
-function CopyLink({ link }: { link: string }) {
-  const [copied, setCopied] = useState(false)
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(link)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // clipboard blocked — the link is still selectable in the box above
-    }
-  }
-
+function PasswordField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <Button variant="secondary" onClick={() => void copy()}>
-      {copied ? 'Copied!' : 'Copy link'}
-    </Button>
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-slate-700">Password *</span>
+      <div className="flex gap-2">
+        <input
+          className={`${modalFieldClass} font-mono`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <Button type="button" variant="secondary" onClick={() => onChange(generatePassword())}>
+          Generate
+        </Button>
+      </div>
+      <span className="mt-1 block text-xs text-slate-400">At least 6 characters. You will see it once after saving.</span>
+    </label>
   )
 }
 
-/** Opens the BA app screens in a new tab, or copies the link to send to the BA. */
-function BaAppLink({ href }: { href: string }) {
+/** The BA's sign-in details, shown once — passwords are stored hashed and cannot be looked up later. */
+function CredentialsModal({ credentials, onClose }: { credentials: Credentials | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
+  const url = `${window.location.origin}/login`
+  const text = credentials
+    ? `Brand Ambassador sign in\n${url}\nEmail: ${credentials.email}\nPassword: ${credentials.password}`
+    : ''
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(href)
+      await navigator.clipboard.writeText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
     } catch {
-      // clipboard blocked — Open still works
+      // clipboard blocked — the details are selectable above
     }
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <a
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-      >
-        <ExternalLink size={12} /> Open
-      </a>
-      <button
-        type="button"
-        onClick={() => void copy()}
-        title="Copy link"
-        className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-      >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-        <span className="sr-only">Copy link</span>
-      </button>
-    </div>
+    <Modal open={!!credentials} onClose={onClose} title={credentials?.updated ? 'Login updated' : 'Ambassador created'}>
+      {credentials && (
+        <div className="space-y-4 text-sm">
+          <p className="text-slate-600">
+            Share these sign-in details with {credentials.name}. The password is shown only now — it is stored
+            hashed and cannot be looked up later (use “Manage login” to set a new one).
+          </p>
+          <pre className="rounded-xl bg-slate-50 px-4 py-3 font-mono text-xs break-all whitespace-pre-wrap text-slate-700">
+            {text}
+          </pre>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => void copy()}>
+              {copied ? 'Copied!' : 'Copy details'}
+            </Button>
+            <Button onClick={onClose}>Done</Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -100,46 +119,66 @@ function CreateAmbassadorModal({
 }: {
   open: boolean
   onClose: () => void
-  onCreated: (invite: Invite) => void
+  onCreated: (credentials: Credentials) => void
 }) {
-  const empty = { name: '', city: '', email: '', phone: '' }
-  const [form, setForm] = useState(empty)
+  const fresh = () => ({ name: '', city: '', email: '', phone: '', password: generatePassword() })
+  const [form, setForm] = useState(fresh)
+  const [error, setError] = useState<string | null>(null)
+
+  function close() {
+    setForm(fresh())
+    setError(null)
+    onClose()
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name.trim()) return
-    const invite = createInvite(form)
-    setForm(empty)
-    onCreated(invite)
+    if (!form.name.trim()) return setError('Name is required.')
+    if (!validEmail(form.email)) return setError('Enter a valid email — the ambassador signs in with it.')
+    if (baEmailInUse(form.email)) return setError('Another ambassador already uses this email.')
+    if (form.password.length < 6) return setError('Password must be at least 6 characters.')
+    createBaAccount(form)
+    onCreated({ name: form.name.trim(), email: form.email.trim(), password: form.password, updated: false })
+    close()
+  }
+
+  const set = (key: 'name' | 'city' | 'email' | 'phone') => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm({ ...form, [key]: e.target.value })
+    setError(null)
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Create Ambassador">
+    <Modal open={open} onClose={close} title="Create Ambassador">
       <form onSubmit={submit} className="space-y-4">
-        {(
-          [
-            ['name', 'Name *', 'text'],
-            ['city', 'City', 'text'],
-            ['email', 'Email', 'email'],
-            ['phone', 'Phone', 'tel'],
-          ] as const
-        ).map(([key, label, type]) => (
-          <label key={key} className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-700">{label}</span>
-            <input
-              type={type}
-              value={form[key]}
-              onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-              className={modalFieldClass}
-              autoFocus={key === 'name'}
-            />
-          </label>
-        ))}
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Name *</span>
+          <input value={form.name} onChange={set('name')} className={modalFieldClass} autoFocus />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">City</span>
+          <input value={form.city} onChange={set('city')} className={modalFieldClass} />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Email * (sign-in name)</span>
+          <input type="email" value={form.email} onChange={set('email')} className={modalFieldClass} />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Phone</span>
+          <input type="tel" value={form.phone} onChange={set('phone')} className={modalFieldClass} />
+        </label>
+        <PasswordField
+          value={form.password}
+          onChange={(password) => {
+            setForm({ ...form, password })
+            setError(null)
+          }}
+        />
+        {error && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+        )}
         <div className="flex flex-col gap-2 pt-1 sm:flex-row-reverse">
-          <Button type="submit" disabled={!form.name.trim()}>
-            Create &amp; generate link
-          </Button>
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="submit">Create ambassador</Button>
+          <Button type="button" variant="secondary" onClick={close}>
             Cancel
           </Button>
         </div>
@@ -148,43 +187,216 @@ function CreateAmbassadorModal({
   )
 }
 
-function InviteLinkBox({ token }: { token: string }) {
+type BulkCredentials = { name: string; email: string; password: string }
+
+/** Download the template → fill it in → upload it → review → create many ambassador accounts at once. */
+function BulkAmbassadorModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreated: (accounts: BaAccount[], credentials: BulkCredentials[]) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const [result, setResult] = useState<AmbassadorParseResult | null>(null)
+
+  function close() {
+    setResult(null)
+    setFileName('')
+    onClose()
+  }
+
+  async function onFile(file: File | undefined) {
+    if (!file) return
+    setBusy(true)
+    setFileName(file.name)
+    setResult(await parseAmbassadorFile(file))
+    setBusy(false)
+  }
+
   return (
-    <div className="rounded-xl bg-slate-50 px-4 py-3 font-mono text-xs break-all text-slate-700">
-      {inviteLink(token)}
-    </div>
+    <Modal open={open} onClose={close} title="Create ambassadors from Excel">
+      <div className="space-y-4 text-sm">
+        <div className="space-y-2">
+          <div className="font-semibold text-slate-900">1. Download the template</div>
+          <p className="text-xs text-slate-500">
+            Fill in one ambassador per row. Name and Email are required; the Instructions sheet explains the rest.
+          </p>
+          <Button variant="secondary" onClick={() => void downloadAmbassadorTemplate()}>
+            <Download size={14} /> Download ambassador template
+          </Button>
+        </div>
+
+        <div className="space-y-2 border-t border-slate-100 pt-4">
+          <div className="font-semibold text-slate-900">2. Upload the filled template</div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              void onFile(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+              <Upload size={14} /> {busy ? 'Checking…' : result ? 'Choose another file' : 'Upload Excel file'}
+            </Button>
+            {fileName && <span className="truncate text-xs text-slate-500">{fileName}</span>}
+          </div>
+        </div>
+
+        {result && (
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            {result.rows.length > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
+                {result.rows.length} {result.rows.length === 1 ? 'ambassador is' : 'ambassadors are'} ready to create.
+              </div>
+            )}
+            {result.errors.length > 0 && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800">
+                <div className="font-semibold">
+                  {result.rows.length > 0
+                    ? `${result.errors.length} ${result.errors.length === 1 ? 'row' : 'rows'} will be skipped:`
+                    : 'Nothing can be created yet:'}
+                </div>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                  {result.errors.slice(0, 8).map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+                {result.errors.length > 8 && <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>}
+              </div>
+            )}
+            {result.rows.length > 0 && (
+              <Button
+                className="w-full"
+                onClick={() => {
+                  const inputs = result.rows.map((r) => r.input)
+                  const created = createBaAccounts(inputs)
+                  close()
+                  onCreated(
+                    created,
+                    inputs.map((i) => ({ name: i.name, email: i.email, password: i.password })),
+                  )
+                }}
+              >
+                Create {result.rows.length} {result.rows.length === 1 ? 'ambassador' : 'ambassadors'}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }
 
-function InviteDetailModal({ invite, onClose }: { invite: Invite | null; onClose: () => void }) {
+/** View an ambassador's login email, or set a new password for them. */
+function ManageLoginModal({ account, onClose, onSaved }: { account: BaAccount | null; onClose: () => void; onSaved: (c: Credentials) => void }) {
+  const [draft, setDraft] = useState<{ id: string; email: string; password: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const current =
+    account && draft?.id === account.id
+      ? draft
+      : account
+        ? { id: account.id, email: account.email, password: generatePassword() }
+        : null
+
+  function close() {
+    setDraft(null)
+    setError(null)
+    onClose()
+  }
+
+  function save() {
+    if (!account || !current) return
+    if (!validEmail(current.email)) return setError('Enter a valid email.')
+    if (baEmailInUse(current.email, account.id)) return setError('Another ambassador already uses this email.')
+    if (current.password.length < 6) return setError('Password must be at least 6 characters.')
+    setBaLogin(account.id, current.email, current.password)
+    onSaved({ name: account.name, email: current.email.trim(), password: current.password, updated: true })
+    close()
+  }
+
   return (
-    <Modal open={!!invite} onClose={onClose} title={invite ? invite.name : 'Ambassador'}>
-      {invite && (
+    <Modal open={!!account} onClose={close} title={account ? `Login · ${account.name}` : 'Login'}>
+      {account && current && (
+        <div className="space-y-4 text-sm">
+          <label className="block">
+            <span className="mb-1 block font-medium text-slate-700">Email (sign-in name)</span>
+            <input
+              className={modalFieldClass}
+              type="email"
+              value={current.email}
+              onChange={(e) => {
+                setDraft({ ...current, email: e.target.value })
+                setError(null)
+              }}
+            />
+          </label>
+          <PasswordField
+            value={current.password}
+            onChange={(password) => {
+              setDraft({ ...current, password })
+              setError(null)
+            }}
+          />
+          {!account.passwordHash && (
+            <p className="text-xs text-amber-700">This ambassador has no password yet, so they cannot sign in.</p>
+          )}
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button onClick={save}>Save login</Button>
+            <Button variant="secondary" onClick={close}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function AmbassadorDetailModal({
+  account,
+  onClose,
+  onManageLogin,
+}: {
+  account: BaAccount | null
+  onClose: () => void
+  onManageLogin: (account: BaAccount) => void
+}) {
+  return (
+    <Modal open={!!account} onClose={onClose} title={account ? account.name : 'Ambassador'}>
+      {account && (
         <div className="space-y-4 text-sm">
           <div className="flex items-center gap-2">
-            <StatusBadge status={invite.status} />
+            <StatusBadge status={account.status} />
             <span className="text-xs text-slate-500">
-              {[invite.city, invite.email, invite.phone].filter(Boolean).join(' · ') || 'No contact details'}
+              {[account.city, account.email, account.phone].filter(Boolean).join(' · ') || 'No contact details'}
             </span>
           </div>
 
-          {invite.result ? (
-            <AssessmentReport name={invite.name} result={invite.result} answers={invite.answers} />
+          {account.result ? (
+            <AssessmentReport name={account.name} result={account.result} answers={account.answers} />
           ) : (
             <p className="text-slate-600">
-              {invite.videoWatched
-                ? `Training video watched · ${invite.answers.length} assessment answer${invite.answers.length === 1 ? '' : 's'} submitted so far.`
+              {account.videoWatched
+                ? `Training video watched · ${account.answers.length} assessment answer${account.answers.length === 1 ? '' : 's'} submitted so far.`
                 : 'Has not finished the training video yet.'}
             </p>
           )}
 
-          {invite.status !== 'Certified' && (
-            <div className="space-y-2">
-              <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Training link</div>
-              <InviteLinkBox token={invite.token} />
-              <CopyLink link={inviteLink(invite.token)} />
-            </div>
-          )}
+          <Button variant="secondary" onClick={() => onManageLogin(account)}>
+            <KeyRound size={14} /> Manage login
+          </Button>
         </div>
       )}
     </Modal>
@@ -194,19 +406,24 @@ function InviteDetailModal({ invite, onClose }: { invite: Invite | null; onClose
 export function AmbassadorsPage() {
   const [tab, setTab] = useState('All')
   const [q, setQ] = useState('')
-  const invites = useInvites()
+  const accounts = useBaAccounts()
   const [createOpen, setCreateOpen] = useState(false)
-  const [created, setCreated] = useState<Invite | null>(null)
-  const [detailToken, setDetailToken] = useState<string | null>(null)
+  const [credentials, setCredentials] = useState<Credentials | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkCreated, setBulkCreated] = useState<{ accounts: BaAccount[]; credentials: BulkCredentials[] } | null>(
+    null,
+  )
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [loginTarget, setLoginTarget] = useState<BaAccount | null>(null)
 
   const filtered = ambassadors.filter((a) => {
     const matchTab = tab === 'All' || a.status === tab
     const matchQ = a.name.toLowerCase().includes(q.toLowerCase())
     return matchTab && matchQ
   })
-  const filteredInvites = invites.filter((i) => {
-    const matchTab = tab === 'All' || (i.status === 'Invited' ? tab === 'Pending' : i.status === tab)
-    return matchTab && i.name.toLowerCase().includes(q.toLowerCase())
+  const filteredAccounts = accounts.filter((a) => {
+    const matchTab = tab === 'All' || (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
+    return matchTab && a.name.toLowerCase().includes(q.toLowerCase())
   })
 
   return (
@@ -218,6 +435,9 @@ export function AmbassadorsPage() {
           <>
             <Button onClick={() => setCreateOpen(true)}>
               <UserPlus size={15} /> Add ambassador
+            </Button>
+            <Button variant="secondary" onClick={() => setBulkOpen(true)}>
+              <FileSpreadsheet size={15} /> Bulk upload (Excel)
             </Button>
             <Link to="/ho/ambassadors/training">
               <Button variant="secondary">Training videos</Button>
@@ -242,22 +462,22 @@ export function AmbassadorsPage() {
               <th className="px-4 py-3">Check-in</th>
               <th className="px-4 py-3">Check-out</th>
               <th className="px-4 py-3">Data filled</th>
-              <th className="px-4 py-3">BA app</th>
+              <th className="px-4 py-3">Login</th>
             </tr>
           </thead>
           <tbody>
-            {filteredInvites.map((i) => (
-              <tr key={i.token} className="border-t border-slate-100 hover:bg-slate-50/70">
+            {filteredAccounts.map((a) => (
+              <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                 <td className="px-4 py-3">
-                  <button type="button" onClick={() => setDetailToken(i.token)} className="flex items-center gap-3 text-left">
-                    <Avatar name={i.name} />
-                    <span className="font-medium text-slate-900 hover:text-brand-600">{i.name}</span>
+                  <button type="button" onClick={() => setDetailId(a.id)} className="flex items-center gap-3 text-left">
+                    <Avatar name={a.name} />
+                    <span className="font-medium text-slate-900 hover:text-brand-600">{a.name}</span>
                   </button>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{i.city || '—'}</td>
-                <td className="px-4 py-3 font-semibold">{i.result ? `${i.result.quality}%` : '—'}</td>
+                <td className="px-4 py-3 text-slate-600">{a.city || '—'}</td>
+                <td className="px-4 py-3 font-semibold">{a.result ? `${a.result.quality}%` : '—'}</td>
                 <td className="px-4 py-3">
-                  <StatusBadge status={i.status} />
+                  <StatusBadge status={a.status} />
                 </td>
                 <td className="px-4 py-3 text-slate-600">—</td>
                 <td className="px-4 py-3 tabular-nums text-slate-700">—</td>
@@ -266,7 +486,9 @@ export function AmbassadorsPage() {
                   <StatusBadge status="Pending" />
                 </td>
                 <td className="px-4 py-3">
-                  <BaAppLink href={inviteLink(i.token)} />
+                  <Button variant="secondary" size="sm" onClick={() => setLoginTarget(a)}>
+                    <KeyRound size={13} /> Manage
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -289,9 +511,7 @@ export function AmbassadorsPage() {
                 <td className="px-4 py-3">
                   <StatusBadge status={a.dataFilled} />
                 </td>
-                <td className="px-4 py-3">
-                  <BaAppLink href={`${window.location.origin}/ba/home`} />
-                </td>
+                <td className="px-4 py-3 text-slate-400">—</td>
               </tr>
             ))}
           </tbody>
@@ -302,30 +522,72 @@ export function AmbassadorsPage() {
       <CreateAmbassadorModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={(invite) => {
+        onCreated={(c) => {
           setCreateOpen(false)
-          setCreated(invite)
+          setCredentials(c)
         }}
       />
 
-      <Modal open={!!created} onClose={() => setCreated(null)} title="Ambassador created">
-        {created && (
+      <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
+
+      <BulkAmbassadorModal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onCreated={(created, creds) => setBulkCreated({ accounts: created, credentials: creds })}
+      />
+
+      <Modal open={!!bulkCreated} onClose={() => setBulkCreated(null)} title="Ambassadors created">
+        {bulkCreated && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Share this link with the BA. It opens training and assessment only until they are certified.
-            </p>
-            <InviteLinkBox token={created.token} />
-            <div className="flex justify-end gap-2">
-              <CopyLink link={inviteLink(created.token)} />
-              <Button onClick={() => setCreated(null)}>Done</Button>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+              {bulkCreated.accounts.length} {bulkCreated.accounts.length === 1 ? 'ambassador' : 'ambassadors'}{' '}
+              created. Download their sign-in details now — passwords cannot be looked up later.
+            </div>
+            <ul className="max-h-64 space-y-1 overflow-y-auto rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+              {bulkCreated.accounts.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailId(a.id)
+                      setBulkCreated(null)
+                    }}
+                    className="font-medium hover:text-brand-600"
+                  >
+                    {a.name}
+                  </button>{' '}
+                  <span className="text-xs text-slate-400">{a.city || '—'}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2 sm:flex-row-reverse">
+              <Button className="w-full" onClick={() => void downloadBaCredentials(bulkCreated.credentials)}>
+                <Download size={14} /> Download sign-in details
+              </Button>
+              <Button variant="secondary" onClick={() => setBulkCreated(null)}>
+                Done
+              </Button>
             </div>
           </div>
         )}
       </Modal>
 
-      <InviteDetailModal
-        invite={invites.find((i) => i.token === detailToken) ?? null}
-        onClose={() => setDetailToken(null)}
+      <AmbassadorDetailModal
+        account={accounts.find((a) => a.id === detailId) ?? null}
+        onClose={() => setDetailId(null)}
+        onManageLogin={(a) => {
+          setDetailId(null)
+          setLoginTarget(a)
+        }}
+      />
+
+      <ManageLoginModal
+        account={loginTarget}
+        onClose={() => setLoginTarget(null)}
+        onSaved={(c) => {
+          setLoginTarget(null)
+          setCredentials(c)
+        }}
       />
     </div>
   )

@@ -10,7 +10,6 @@ import {
   getStoresForTown,
   MONTH_ORDER,
   periodsForRange,
-  resolveDataMonth,
   type DataPeriod,
 } from '../../data/baPerformance'
 import {
@@ -31,7 +30,6 @@ import {
   defaultChartOptions,
 } from '../../lib/chartjs'
 import type { ChartData, ChartOptions } from 'chart.js'
-import { IncentiveKpiCard } from './IncentiveKpiSettings'
 
 function EmptyRow({ cols }: { cols: number }) {
   return (
@@ -199,17 +197,29 @@ function monthForPreset(preset: DatePreset, customFrom?: string, customTo?: stri
     if (!from || !to) return null
     const fromMonth = monthNameFromDate(from)
     const toMonth = monthNameFromDate(to)
-    if (fromMonth === toMonth) return resolveDataMonth(fromMonth)
+    if (fromMonth === toMonth) return fromMonth
     return null
   }
   const d =
     preset === 'yesterday' ? new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1) : today
-  return resolveDataMonth(monthNameFromDate(d))
+  return monthNameFromDate(d)
+}
+
+function dateInputValue(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function todayInputValue() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return dateInputValue(new Date())
+}
+
+/** The calendar span of a data month (this year), clamped by dateRangeForPreset to today. */
+function dateRangeForMonth(monthName: string) {
+  const monthIdx = MONTH_ORDER.indexOf(monthName)
+  const now = new Date()
+  const from = new Date(now.getFullYear(), monthIdx, 1)
+  const to = new Date(now.getFullYear(), monthIdx + 1, 0)
+  return { from: dateInputValue(from), to: dateInputValue(to) }
 }
 
 function parseDateInput(value: string) {
@@ -275,17 +285,17 @@ export function BaPerformanceDashboardPage() {
     [town, store, periods],
   )
 
-  const dataNote = useMemo(() => {
-    if (!rangePeriods) return null
-    if (rangePeriods.fallback) {
-      return `No ${rangePeriods.fallback.wanted} data yet — showing ${rangePeriods.fallback.used} figures`
-    }
-    if (rangePeriods.missing.length > 0) return `No sales data for ${rangePeriods.missing.join(', ')}`
-    return null
-  }, [rangePeriods])
-
-  const attendance = useMemo(() => (range ? attendanceForRange(range) : []), [range])
-  const cityStatus = useMemo(() => (range ? baStatusByCity(range) : null), [range])
+  // Town/Store filters narrow attendance the same way they narrow sales — by matching the
+  // BA's city/store. Attendance is a separate mock dataset from the sales stores, so a town
+  // or store with no attendance records simply shows no data, same as sales.
+  const attendance = useMemo(() => {
+    const all = range ? attendanceForRange(range) : []
+    return all.filter((r) => (!town || r.city === town) && (!store || r.store === store))
+  }, [range, town, store])
+  const cityStatus = useMemo(
+    () => (range ? baStatusByCity(range, { city: town, store }) : null),
+    [range, town, store],
+  )
   const isSingleDay = range ? daysInRange(range) === 1 : false
   const attendanceTable = useMemo(
     () => attendanceRows(attendance, isSingleDay),
@@ -331,9 +341,16 @@ export function BaPerformanceDashboardPage() {
     setMonth(next)
     setStore(null)
     setDatePreset('custom')
-    // A month picked by hand replaces any date range, so the whole month is shown
-    setCustomFrom('')
-    setCustomTo('')
+    // A month picked by hand replaces any date range, so the whole month is shown —
+    // and attendance/working-hours pick it up too, since they follow the same range.
+    if (next) {
+      const { from, to } = dateRangeForMonth(next)
+      setCustomFrom(from)
+      setCustomTo(to)
+    } else {
+      setCustomFrom('')
+      setCustomTo('')
+    }
   }
 
   const dateRangeLabel = useMemo(() => {
@@ -542,7 +559,6 @@ export function BaPerformanceDashboardPage() {
               Date range
             </div>
             <div className="text-xs text-slate-400">{dateRangeLabel}</div>
-            {dataNote && <div className="text-xs text-amber-600">{dataNote}</div>}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {DATE_PRESETS.map((p) => (
@@ -743,7 +759,6 @@ export function BaPerformanceDashboardPage() {
         </TableScroll>
       </Card>
 
-      <IncentiveKpiCard />
 
       <Card>
         <CardHeader

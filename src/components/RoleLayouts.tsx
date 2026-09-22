@@ -12,7 +12,7 @@ import { useRole, type Role } from '../context/AppContext'
 import { cn } from './ui'
 import { useBrand } from '../context/BrandContext'
 import { BaShiftProvider } from '../context/BaShiftContext'
-import { clearActiveInvite, useActiveInvite } from '../lib/baInvites'
+import { baSignOut, useBaSession } from '../lib/baAccounts'
 
 /** Sync active role from URL prefix so each experience stays isolated. */
 export function RoleSync({ role }: { role: Role }) {
@@ -34,12 +34,14 @@ export function BaShell() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const { brand } = useBrand()
-  const { invite, invalidToken } = useActiveInvite()
+  const { account } = useBaSession()
 
-  // A newly invited BA can only use Training until they pass the assessment
-  const onboarding = !!invite && invite.status !== 'Certified'
+  if (!account) return <Navigate to="/login" replace />
+
+  // A newly created BA can only use Training until they pass the assessment
+  const onboarding = account.status !== 'Certified'
   if (onboarding && pathname !== '/ba/training') return <Navigate to="/ba/training" replace />
-  const locked = onboarding || invalidToken
+  const locked = onboarding
 
   return (
     <BaShiftProvider>
@@ -52,16 +54,12 @@ export function BaShell() {
                 {brand.productName} · BA
               </div>
               <div className="truncate text-sm font-bold text-slate-900">
-                {invite
-                  ? `${invite.name} · ${invite.status === 'Certified' ? 'Certified' : 'Training'}`
-                  : invalidToken
-                    ? 'Brand Ambassador · Training'
-                    : 'Ayesha Khan · Store #12'}
+                {account.name} · {account.status === 'Certified' ? 'Certified' : 'Training'}
               </div>
             </div>
             <button
               onClick={() => {
-                clearActiveInvite()
+                baSignOut()
                 navigate('/login')
               }}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
@@ -72,18 +70,7 @@ export function BaShell() {
         </header>
 
         <main className="mx-auto w-full max-w-lg flex-1 overflow-x-hidden overflow-y-auto px-4 pb-[calc(4.75rem+env(safe-area-inset-bottom))]">
-          {invalidToken ? (
-            <div className="py-6">
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-                <h1 className="text-xl font-bold text-slate-900">This training link isn&apos;t recognised</h1>
-                <p className="mt-2 text-sm text-slate-500">
-                  Open the link in the same browser where Head Office created it, or ask them to send a new one.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <Outlet />
-          )}
+          <Outlet />
         </main>
 
         <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
