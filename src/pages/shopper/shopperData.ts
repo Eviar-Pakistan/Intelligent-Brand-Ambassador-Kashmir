@@ -11,3 +11,12 @@ export const surveyOptions = [
   'Soya Supreme',
   'Other / Local brand',
 ]
+
+export const selectionReasons = [
+  'Better taste',
+  'Healthier cooking',
+  'Good for the family',
+  'Better price',
+  'Less smoke',
+  'Always available',
+]
