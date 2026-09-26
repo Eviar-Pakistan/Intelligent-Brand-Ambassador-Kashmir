@@ -13,6 +13,7 @@ import {
   Trophy,
   Map,
   ClipboardCheck,
+  ClipboardList,
   Sparkles,
   LogOut,
   Banknote,
@@ -28,6 +29,7 @@ import { useEffect, useState } from 'react'
 import { cn } from './ui'
 import { RoleSync } from './RoleLayouts'
 import { signOut, useSupervisorSession } from '../lib/supervisors'
+import { useMarketVisitReports } from '../lib/marketVisitReports'
 import { useBrand } from '../context/BrandContext'
 
 type NavItem = {
@@ -46,6 +48,7 @@ const headOfficeNav: NavItem[] = [
   { to: '/ho/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
   { to: '/ho/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
   { to: '/ho/complaints', label: 'Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
+  { to: '/ho/market-visits', label: 'Market Visits', icon: ClipboardList, section: 'Operations' },
   { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
   { to: '/ho/optimization', label: 'AI Optimization', icon: Brain, section: 'Intelligence' },
   { to: '/ho/leaderboard', label: 'Leaderboard', icon: Trophy, section: 'Intelligence' },
@@ -75,6 +78,7 @@ const supervisorNav: NavItem[] = [
   { to: '/supervisor', label: 'Overview', icon: LayoutDashboard, end: true, section: 'My stores' },
   { to: '/supervisor/stores', label: 'Store Characteristics', icon: Store, section: 'My stores' },
   { to: '/supervisor/bas', label: 'BA Performance', icon: Users, section: 'My stores' },
+  { to: '/supervisor/market-visit', label: 'Market Visit Report', icon: ClipboardList, section: 'Field' },
 ]
 
 type ShellKind = 'headOffice' | 'admin' | 'storeManager' | 'supervisor'
@@ -121,8 +125,10 @@ const titles: Record<string, string> = {
   '/supervisor': 'Supervisor Overview',
   '/supervisor/stores': 'Store Characteristics',
   '/supervisor/bas': 'BA Performance',
+  '/supervisor/market-visit': 'Market Visit Report',
   '/ho/deployment': 'Intelligent Deployment',
   '/ho/complaints': 'Complaint Center',
+  '/ho/market-visits': 'Market Visit Reports',
   '/ho/consumers': 'Consumer Intelligence',
   '/ho/optimization': 'AI Optimization',
   '/ho/leaderboard': 'Ambassador Leaderboard',
@@ -170,6 +176,7 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
   const { role, setRole } = useRole()
   const demo = useDemo()
   const sv = useSupervisorSession()
+  const pendingVisits = useMarketVisitReports().filter((report) => report.status === 'Submitted').length
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const [bellOpen, setBellOpen] = useState(false)
@@ -301,7 +308,12 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
                           <FilledIcon icon={icon} size={15} />
                         </span>
                         <span className="min-w-0 truncate">{label}</span>
-                        {isActive && (
+                        {to === '/ho/market-visits' && pendingVisits > 0 && (
+                          <span className="ml-auto rounded-full bg-gold-500 px-1.5 py-0.5 text-[10px] font-bold text-navy-950">
+                            {pendingVisits}
+                          </span>
+                        )}
+                        {isActive && !(to === '/ho/market-visits' && pendingVisits > 0) && (
                           <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-gold-400 shadow-[0_0_8px_rgba(249,176,0,0.8)]" />
                         )}
                       </>

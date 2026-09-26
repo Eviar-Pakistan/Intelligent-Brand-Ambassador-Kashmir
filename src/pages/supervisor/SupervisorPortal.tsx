@@ -16,7 +16,7 @@ export function SupervisorGate() {
   return <DesktopShell kind="supervisor" />
 }
 
-function usePortal(title: string, description: string) {
+export function usePortal(title: string, description: string) {
   const { supervisor, preview } = useSupervisorSession()
 
   const header = (

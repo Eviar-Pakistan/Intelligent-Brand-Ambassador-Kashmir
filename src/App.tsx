@@ -21,6 +21,7 @@ import {
   SupervisorHomePage,
   SupervisorStoresPage,
 } from './pages/supervisor/SupervisorPortal'
+import { SupervisorMarketVisitPage } from './pages/supervisor/MarketVisitReportPage'
 import { ShopperStoreEntry } from './pages/shopper/ShopperStoreEntry'
 import {
   ConsumersPage,
@@ -30,6 +31,7 @@ import {
 } from './pages/headOffice/IntelligencePages'
 import { IncentivesPage } from './pages/headOffice/IncentivesPage'
 import { ComplaintsPage } from './pages/headOffice/ComplaintPages'
+import { MarketVisitReportsPage } from './pages/headOffice/MarketVisitReportsPage'
 import {
   AttendancePage,
   CoveragePage,
@@ -75,6 +77,7 @@ const hoPages = (
     <Route path="leaderboard" element={<LeaderboardPage />} />
     <Route path="incentives" element={<IncentivesPage />} />
     <Route path="complaints" element={<ComplaintsPage />} />
+    <Route path="market-visits" element={<MarketVisitReportsPage />} />
     <Route path="reports" element={<ReportPage />} />
   </>
 )
@@ -130,6 +133,7 @@ export default function App() {
               <Route index element={<SupervisorHomePage />} />
               <Route path="stores" element={<SupervisorStoresPage />} />
               <Route path="bas" element={<SupervisorBasPage />} />
+              <Route path="market-visit" element={<SupervisorMarketVisitPage />} />
             </Route>
 
             {/* Personal BA link — signs that ambassador in, then opens their app */}
