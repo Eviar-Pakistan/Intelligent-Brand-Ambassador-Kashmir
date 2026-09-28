@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { ambassadors } from '../data/mock'
 import type { AnswerMetrics, AssessmentResult } from './baAssessment'
+import { allocateBaCode, baCodeForId } from './baCodes'
 
 /**
  * Ambassadors Head Office creates. Each one gets a personal account link — there is no
@@ -20,6 +21,8 @@ export type BaAccount = {
   city: string
   email: string
   phone: string
+  /** Human-facing code e.g. BA-006 (seed BAs use BA-001…BA-005). */
+  code: string
   createdAt: string
   status: BaStatus
   videoWatched: boolean
@@ -56,6 +59,7 @@ function demoAccounts(): BaAccount[] {
     city: a.city,
     email: `${a.id}@kashmir.demo`,
     phone: '',
+    code: baCodeForId(a.id),
     createdAt: '2026-01-01T00:00:00.000Z',
     status: demoAccountStatus(a.status),
     videoWatched: a.status !== 'Pending',
@@ -86,6 +90,7 @@ function normalizeAccount(raw: Partial<BaAccount> & { passwordHash?: string }): 
     city: raw.city ?? '',
     email: raw.email ?? '',
     phone: raw.phone ?? '',
+    code: raw.code || baCodeForId(raw.id) || '',
     createdAt: raw.createdAt ?? new Date().toISOString(),
     status: raw.status ?? 'Invited',
     videoWatched: !!raw.videoWatched,
@@ -169,13 +174,14 @@ export function baEmailInUse(email: string, exceptId?: string) {
 
 export type BaAccountFields = { name: string; city: string; email: string; phone: string }
 
-function toAccount(fields: BaAccountFields): BaAccount {
+function toAccount(fields: BaAccountFields, code: string): BaAccount {
   return {
     id: `ba-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     name: fields.name.trim(),
     city: fields.city.trim(),
     email: fields.email.trim(),
     phone: fields.phone.trim(),
+    code,
     createdAt: new Date().toISOString(),
     status: 'Invited',
     videoWatched: false,
@@ -199,14 +205,19 @@ export function findBaByAccessToken(token: string): BaAccount | null {
 }
 
 export function createBaAccount(fields: BaAccountFields): BaAccount {
-  const account = toAccount(fields)
+  const account = toAccount(fields, allocateBaCode(accounts))
   commit([account, ...accounts])
   return account
 }
 
 /** Creates many accounts at once, e.g. from a bulk Excel upload. Returns them in input order. */
 export function createBaAccounts(fields: BaAccountFields[]): BaAccount[] {
-  const added = fields.map(toAccount)
+  let pool = accounts
+  const added = fields.map((f) => {
+    const account = toAccount(f, allocateBaCode(pool))
+    pool = [account, ...pool]
+    return account
+  })
   commit([...added.slice().reverse(), ...accounts])
   return added
 }

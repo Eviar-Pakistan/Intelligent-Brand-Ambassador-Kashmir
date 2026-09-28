@@ -15,7 +15,7 @@ import {
   TableScroll,
   Tabs,
 } from '../../components/ui'
-import { Check, Copy, Download, ExternalLink, FileSpreadsheet, Upload, UserPlus } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, FileSpreadsheet, Target, Upload, UserPlus } from 'lucide-react'
 import {
   baAccessUrl,
   baEmailInUse,
@@ -32,8 +32,110 @@ import {
 import { AssessmentReport } from '../ba/AssessmentReport'
 import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
 import { shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
+import { monthInputValue, upsertBaTarget, upsertBaTargets } from '../../lib/baTargets'
+import { baCodeForId, resolveBaByCode } from '../../lib/baCodes'
+import {
+  downloadSalesBulkTemplate,
+  parseSalesBulkFile,
+  type SalesParseResult,
+} from '../../lib/salesBulkUpload'
 
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+/** Set target & sales for one BA at a time. */
+function SetTargetSalesModal({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: (name: string) => void
+}) {
+  const baOptions = useMemo(
+    () =>
+      [...ambassadors]
+        .map((a) => ({ id: a.id, name: a.name, code: baCodeForId(a.id) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [],
+  )
+  const [baId, setBaId] = useState(baOptions[0]?.id ?? '')
+  const [month, setMonth] = useState(() => monthInputValue())
+  const [targetKg, setTargetKg] = useState('120')
+  const [salesKg, setSalesKg] = useState('96')
+
+  function save() {
+    const ba = baOptions.find((b) => b.id === baId)
+    const target = Number(targetKg)
+    const sales = Number(salesKg)
+    if (!ba || !month || !Number.isFinite(target) || target < 0 || !Number.isFinite(sales) || sales < 0) {
+      return
+    }
+    upsertBaTarget({
+      baId: ba.id,
+      baName: ba.name,
+      month,
+      targetKg: target,
+      salesKg: sales,
+    })
+    onSaved(ba.name)
+    onClose()
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Set target and sales">
+      <div className="space-y-3 text-sm">
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">Ambassador</span>
+          <Select className="w-full" value={baId} onChange={(e) => setBaId(e.target.value)}>
+            {baOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.code} — {b.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">Month</span>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">Target (Kg)</span>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={targetKg}
+            onChange={(e) => setTargetKg(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">Sales (Kg)</span>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={salesKg}
+            onChange={(e) => setSalesKg(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+          />
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+          <Button onClick={save}>Save</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 const allLifecycle: LifecycleStage[] = [
   'Recruited',
@@ -178,7 +280,7 @@ function CreateAmbassadorModal({
   )
 }
 
-/** Download the template → fill it in → upload it → review → create many ambassador accounts at once. */
+/** Create many ambassadors from Excel (Name *, City, Email *, Phone). */
 function BulkAmbassadorModal({
   open,
   onClose,
@@ -208,12 +310,12 @@ function BulkAmbassadorModal({
   }
 
   return (
-    <Modal open={open} onClose={close} title="Create ambassadors from Excel">
+    <Modal open={open} onClose={close} title="Bulk upload (Excel)">
       <div className="space-y-4 text-sm">
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Fill in one ambassador per row. Name and Email are required; the Instructions sheet explains the rest.
+            Columns: Name *, City, Email *, Phone. Name and Email are required.
           </p>
           <Button variant="secondary" onClick={() => void downloadAmbassadorTemplate()}>
             <Download size={14} /> Download ambassador template
@@ -281,6 +383,141 @@ function BulkAmbassadorModal({
   )
 }
 
+/** Upload BA targets & sales from Excel (BA Code, Month, SKU, Target, Sales Kg). */
+function UploadTargetsModal({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean
+  onClose: () => void
+  onImported: (count: number) => void
+}) {
+  const accounts = useBaAccounts()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const [result, setResult] = useState<SalesParseResult | null>(null)
+
+  function close() {
+    setResult(null)
+    setFileName('')
+    onClose()
+  }
+
+  async function onFile(file: File | undefined) {
+    if (!file) return
+    setBusy(true)
+    setFileName(file.name)
+    setResult(await parseSalesBulkFile(file))
+    setBusy(false)
+  }
+
+  return (
+    <Modal open={open} onClose={close} title="Upload targets">
+      <div className="space-y-4 text-sm">
+        <div className="space-y-2">
+          <div className="font-semibold text-slate-900">1. Download the template</div>
+          <p className="text-xs text-slate-500">
+            Columns: BA Code, Month, SKU, Target, Sales (Kg). Use codes like BA-001 (Ayesha Khan).
+          </p>
+          <Button variant="secondary" onClick={() => void downloadSalesBulkTemplate()}>
+            <Download size={14} /> Download targets template
+          </Button>
+        </div>
+
+        <div className="space-y-2 border-t border-slate-100 pt-4">
+          <div className="font-semibold text-slate-900">2. Upload the filled template</div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              void onFile(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+              <Upload size={14} /> {busy ? 'Checking…' : result ? 'Choose another file' : 'Upload Excel file'}
+            </Button>
+            {fileName && <span className="truncate text-xs text-slate-500">{fileName}</span>}
+          </div>
+        </div>
+
+        {result && (
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            {result.rows.length > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
+                {result.rows.length} {result.rows.length === 1 ? 'row is' : 'rows are'} ready to import.
+              </div>
+            )}
+            {result.errors.length > 0 && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800">
+                <div className="font-semibold">
+                  {result.rows.length > 0
+                    ? `${result.errors.length} ${result.errors.length === 1 ? 'row' : 'rows'} will be skipped:`
+                    : 'Nothing can be imported yet:'}
+                </div>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                  {result.errors.slice(0, 8).map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+                {result.errors.length > 8 && <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>}
+              </div>
+            )}
+            {result.rows.length > 0 && (
+              <Button
+                className="w-full"
+                onClick={() => {
+                  const extras = accounts.map((a) => ({ id: a.id, name: a.name, code: a.code }))
+                  const valid: Parameters<typeof upsertBaTargets>[0] = []
+                  const unknown: string[] = []
+
+                  for (const r of result.rows) {
+                    const ba = resolveBaByCode(r.input.code, extras)
+                    if (!ba) {
+                      unknown.push(`Row ${r.row}: unknown BA Code "${r.input.code}"`)
+                      continue
+                    }
+                    valid.push({
+                      baId: ba.id,
+                      baName: ba.name,
+                      month: (() => {
+                        const m = r.input.month.trim()
+                        if (/^\d{4}-\d{2}$/.test(m)) return m
+                        const d = new Date(`${m} 1`)
+                        if (!Number.isNaN(d.getTime())) return monthInputValue(d)
+                        return monthInputValue()
+                      })(),
+                      targetKg: r.input.target,
+                      salesKg: r.input.sales,
+                      sku: r.input.sku,
+                    })
+                  }
+
+                  if (unknown.length && valid.length === 0) {
+                    setResult({ rows: [], errors: unknown })
+                    return
+                  }
+
+                  upsertBaTargets(valid)
+                  close()
+                  onImported(valid.length)
+                }}
+              >
+                Import {result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 function AmbassadorDetailModal({
   account,
   onClose,
@@ -326,7 +563,10 @@ export function AmbassadorsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [linkPrompt, setLinkPrompt] = useState<{ account: BaAccount; title: string } | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [uploadTargetsOpen, setUploadTargetsOpen] = useState(false)
+  const [targetOpen, setTargetOpen] = useState(false)
   const [bulkCreated, setBulkCreated] = useState<BaAccount[] | null>(null)
+  const [bulkToast, setBulkToast] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
 
   const filtered = ambassadors.filter((a) => {
@@ -350,8 +590,14 @@ export function AmbassadorsPage() {
             <Button onClick={() => setCreateOpen(true)}>
               <UserPlus size={15} /> Add ambassador
             </Button>
+            <Button variant="secondary" onClick={() => setTargetOpen(true)}>
+              <Target size={15} /> Set target & sales
+            </Button>
             <Button variant="secondary" onClick={() => setBulkOpen(true)}>
               <FileSpreadsheet size={15} /> Bulk upload (Excel)
+            </Button>
+            <Button variant="secondary" onClick={() => setUploadTargetsOpen(true)}>
+              <FileSpreadsheet size={15} /> Upload targets
             </Button>
             <Link to="/ho/ambassadors/training">
               <Button variant="secondary">Training videos</Button>
@@ -470,6 +716,24 @@ export function AmbassadorsPage() {
         onCreated={(created) => setBulkCreated(created)}
       />
 
+      <UploadTargetsModal
+        open={uploadTargetsOpen}
+        onClose={() => setUploadTargetsOpen(false)}
+        onImported={(count) => {
+          setBulkToast(`Imported ${count} target ${count === 1 ? 'row' : 'rows'} from Excel.`)
+          setTimeout(() => setBulkToast(null), 3200)
+        }}
+      />
+
+      <SetTargetSalesModal
+        open={targetOpen}
+        onClose={() => setTargetOpen(false)}
+        onSaved={(name) => {
+          setBulkToast(`Saved target & sales for ${name}.`)
+          setTimeout(() => setBulkToast(null), 3200)
+        }}
+      />
+
       <Modal open={!!bulkCreated} onClose={() => setBulkCreated(null)} title="Ambassadors created">
         {bulkCreated && (
           <div className="space-y-4">
@@ -503,9 +767,8 @@ export function AmbassadorsPage() {
                 </li>
               ))}
             </ul>
-            <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <div className="flex flex-wrap gap-2">
               <Button
-                className="w-full"
                 onClick={() =>
                   void downloadBaLinks(
                     bulkCreated.map((a) => ({ name: a.name, email: a.email, url: baAccessUrl(a) })),
@@ -521,6 +784,12 @@ export function AmbassadorsPage() {
           </div>
         )}
       </Modal>
+
+      {bulkToast && (
+        <div className="fixed right-4 bottom-4 z-50 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-lg">
+          {bulkToast}
+        </div>
+      )}
 
       <AmbassadorDetailModal
         account={accounts.find((a) => a.id === detailId) ?? null}

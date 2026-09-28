@@ -4,13 +4,19 @@ import { RotateCcw, Search } from 'lucide-react'
 import { Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
 import {
   aggregateBaPerformance,
+  baPerformanceBrands,
+  baPerformanceCategories,
   baPerformanceMonths,
   baPerformanceTowns,
+  buildSalesTargetSeries,
   collectPeriodRecords,
+  getSkusForCategory,
   getStoresForTown,
   MONTH_ORDER,
   periodsForRange,
   type DataPeriod,
+  type ProductCategory,
+  type SalesPeriodMode,
 } from '../../data/baPerformance'
 import {
   attendanceForRange,
@@ -145,25 +151,62 @@ function FilterPanel({
 }
 
 const CHART_HEIGHT = 'h-[220px]'
+const PERIOD_CHART_HEIGHT = 'h-[260px]'
 
 function ChartCard({
   title,
   children,
   className,
+  headerRight,
 }: {
   title: string
   children: ReactNode
   className?: string
+  headerRight?: ReactNode
 }) {
   return (
     <Card padding={false} className={cn('h-full', className)}>
-      <div className="flex h-11 shrink-0 items-center border-b border-slate-50 px-4">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-50 px-4">
         <h3 className="truncate text-sm font-medium text-slate-700">{title}</h3>
+        {headerRight}
       </div>
       <div className="p-3 sm:p-4">
         <div className={cn('relative w-full', CHART_HEIGHT)}>{children}</div>
       </div>
     </Card>
+  )
+}
+
+function PeriodToggle({
+  value,
+  onChange,
+}: {
+  value: SalesPeriodMode
+  onChange: (v: SalesPeriodMode) => void
+}) {
+  const options: { id: SalesPeriodMode; label: string }[] = [
+    { id: 'wow', label: 'WoW' },
+    { id: 'mom', label: 'MoM' },
+    { id: 'yoy', label: 'YoY' },
+  ]
+  return (
+    <div className="flex shrink-0 rounded-lg bg-slate-100 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => onChange(o.id)}
+          className={cn(
+            'rounded-md px-2.5 py-1 text-[11px] font-semibold transition',
+            value === o.id
+              ? 'bg-white text-navy-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -256,6 +299,10 @@ export function BaPerformanceDashboardPage() {
   const [town, setTown] = useState<string | null>(null)
   const [month, setMonth] = useState<string | null>(() => monthForPreset('mtd'))
   const [store, setStore] = useState<string | null>(null)
+  const [category, setCategory] = useState<ProductCategory | null>(null)
+  const [brand, setBrand] = useState<string | null>('Kashmir')
+  const [sku, setSku] = useState<string | null>(null)
+  const [salesPeriod, setSalesPeriod] = useState<SalesPeriodMode>('mom')
   const [datePreset, setDatePreset] = useState<DatePreset>('mtd')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -279,11 +326,30 @@ export function BaPerformanceDashboardPage() {
     () => getStoresForTown(town, periods.some((p) => p.month === null) ? null : periods.map((p) => p.month as string)),
     [town, periods],
   )
+  const skuOptions = useMemo(() => getSkusForCategory(category), [category])
 
   const data = useMemo(
-    () => aggregateBaPerformance(collectPeriodRecords({ town, store }, periods), town),
-    [town, store, periods],
+    () =>
+      aggregateBaPerformance(collectPeriodRecords({ town, store }, periods), town, {
+        category,
+        brand,
+        sku,
+      }),
+    [town, store, periods, category, brand, sku],
   )
+
+  const salesTargetPoints = useMemo(
+    () =>
+      buildSalesTargetSeries({ town, store }, { category, brand, sku }, salesPeriod, month),
+    [town, store, category, brand, sku, salesPeriod, month],
+  )
+
+  const periodSalesTitle =
+    salesPeriod === 'wow'
+      ? 'Week-wise sales (Kg)'
+      : salesPeriod === 'mom'
+        ? 'Month-wise sales (Kg)'
+        : 'Year-to-date sales (Kg)'
 
   // Town/Store filters narrow attendance the same way they narrow sales — by matching the
   // BA's city/store. Attendance is a separate mock dataset from the sales stores, so a town
@@ -335,6 +401,15 @@ export function BaPerformanceDashboardPage() {
   function handleTownChange(next: string | null) {
     setTown(next)
     setStore(null)
+  }
+
+  function handleCategoryChange(next: string | null) {
+    const nextCategory = (next as ProductCategory | null) ?? null
+    setCategory(nextCategory)
+    setSku((current) => {
+      if (!current) return null
+      return getSkusForCategory(nextCategory).includes(current) ? current : null
+    })
   }
 
   function handleMonthChange(next: string | null) {
@@ -426,34 +501,73 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
-  const weekChart = useMemo<ChartData<'line'>>(
+  const periodSalesChart = useMemo<ChartData<'line'>>(
     () => ({
-      labels: data.weekSales.map((w) => `W${w.week}`),
+      labels: salesTargetPoints.map((p) => p.label),
       datasets: [
         {
           label: 'Sales',
-          data: data.weekSales.map((w) => w.sales),
+          data: salesTargetPoints.map((p) => p.sales),
           borderColor: chartGreen,
           backgroundColor: chartGreen,
           pointBackgroundColor: chartGreen,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          pointHoverBackgroundColor: chartGold,
-          tension: 0.35,
-          borderWidth: 2,
+          pointBorderColor: '#fff',
+          pointBorderWidth: 1,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+          borderWidth: 2.5,
+        },
+        {
+          label: 'Target',
+          data: salesTargetPoints.map((p) => p.target),
+          borderColor: chartGold,
+          backgroundColor: chartGold,
+          pointBackgroundColor: chartGold,
+          pointBorderColor: '#fff',
+          pointBorderWidth: 1,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+          borderWidth: 2.5,
+          borderDash: [6, 4],
         },
       ],
     }),
-    [data.weekSales],
+    [salesTargetPoints],
   )
 
-  const weekOptions = useMemo<ChartOptions<'line'>>(
+  const periodSalesOptions = useMemo<ChartOptions<'line'>>(
     () => ({
       ...defaultChartOptions,
-      plugins: { ...defaultChartOptions.plugins, legend: { display: false } },
+      plugins: {
+        ...defaultChartOptions.plugins,
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            usePointStyle: false,
+            color: chartTick,
+            font: { size: 11 },
+            padding: 16,
+          },
+        },
+      },
       scales: {
         x: scaleDefaults,
-        y: { ...scaleDefaults, beginAtZero: true },
+        y: {
+          ...scaleDefaults,
+          beginAtZero: true,
+          ticks: {
+            ...scaleDefaults.ticks,
+            callback: (v) =>
+              typeof v === 'number' && v >= 1000
+                ? `${Math.round(v / 1000)}k`
+                : String(v),
+          },
+        },
       },
     }),
     [],
@@ -620,8 +734,8 @@ export function BaPerformanceDashboardPage() {
         <KpiCard label="Achievement" value={`${data.achievementPct}%`} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:grid-rows-[auto_auto]">
-        <aside className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
+      <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:grid-rows-[auto_auto_auto]">
+        <aside className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
           <FilterPanel
             title="Town"
             options={baPerformanceTowns}
@@ -645,11 +759,47 @@ export function BaPerformanceDashboardPage() {
             onChange={setStore}
             allowAll
             allLabel="All stores"
+          />
+          <FilterPanel
+            title="Category"
+            options={baPerformanceCategories}
+            value={category}
+            onChange={handleCategoryChange}
+            allowAll
+            allLabel="All categories"
+          />
+          <FilterPanel
+            title="Brand"
+            options={[...baPerformanceBrands]}
+            value={brand}
+            onChange={setBrand}
+            allowAll
+            allLabel="All brands"
+          />
+          <FilterPanel
+            title="SKU"
+            options={skuOptions}
+            value={sku}
+            onChange={setSku}
+            allowAll
+            allLabel="All SKUs"
             fill
           />
         </aside>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-1 lg:items-stretch">
+        <Card padding={false} className="lg:col-start-2 lg:row-start-1">
+          <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-50 px-4">
+            <h3 className="truncate text-sm font-medium text-slate-700">{periodSalesTitle}</h3>
+            <PeriodToggle value={salesPeriod} onChange={setSalesPeriod} />
+          </div>
+          <div className="p-3 sm:p-4">
+            <div className={cn('relative w-full', PERIOD_CHART_HEIGHT)}>
+              <Line data={periodSalesChart} options={periodSalesOptions} />
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:items-stretch">
           <ChartCard title="Category-wise sales">
             <Doughnut data={categoryChart} options={categoryOptions} />
           </ChartCard>
@@ -659,11 +809,7 @@ export function BaPerformanceDashboardPage() {
           </ChartCard>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:grid-cols-3 lg:items-stretch">
-          <ChartCard title="Week-wise sales (Ltr/Kg)">
-            <Line data={weekChart} options={weekOptions} />
-          </ChartCard>
-
+        <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-3 lg:items-stretch">
           <ChartCard title="Top 5 stores">
             <Bar data={topStoresChart} options={horizontalBarOptions} />
           </ChartCard>

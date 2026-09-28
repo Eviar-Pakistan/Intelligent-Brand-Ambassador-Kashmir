@@ -35,6 +35,48 @@ export type BaPerformanceFilters = {
   store: string | null
 }
 
+export type ProductCategory = 'Cooking Oil' | 'Banaspati Ghee'
+
+export const baPerformanceCategories: ProductCategory[] = ['Cooking Oil', 'Banaspati Ghee']
+export const baPerformanceBrands = ['Kashmir'] as const
+
+/** SKU names as they appear in performance source data, grouped by category. */
+const OIL_SKUS = [
+  'Pouch 1LTR',
+  'POUCH 1KG',
+  'SUP 1LTR',
+  'BTL 3LTR',
+  'BTL 4.5LTR',
+  'CAN 10LTR',
+  'TIN 5LTR',
+] as const
+
+const GHEE_SKUS = [
+  'POUCH 1 KG',
+  'POUCH 1X5 KG Box',
+  'BKT 2.5KG',
+  'BKT 5KG',
+  'BKT 10KG',
+  'BUCKET 5 KG',
+] as const
+
+export type ProductFilters = {
+  category: ProductCategory | null
+  brand: string | null
+  sku: string | null
+}
+
+export function getSkusForCategory(category: ProductCategory | null): string[] {
+  if (category === 'Cooking Oil') return [...OIL_SKUS]
+  if (category === 'Banaspati Ghee') return [...GHEE_SKUS]
+  return [...OIL_SKUS, ...GHEE_SKUS]
+}
+
+function skuBelongsToCategory(sku: string, category: ProductCategory | null) {
+  if (!category) return true
+  return getSkusForCategory(category).includes(sku)
+}
+
 export type BaPerformanceAggregate = {
   customersIntercepted: number
   productiveCalls: number
@@ -192,22 +234,53 @@ function emptyAggregate(townLabel: string): BaPerformanceAggregate {
 export function aggregateBaPerformance(
   records: BaPerformanceRecord[],
   town: string | null,
+  product: ProductFilters = { category: null, brand: null, sku: null },
 ): BaPerformanceAggregate {
   const townLabel = town ?? 'All towns'
   if (records.length === 0) return emptyAggregate(townLabel)
 
   const customersIntercepted = records.reduce((s, r) => s + r.customersIntercepted, 0)
   const productiveCalls = records.reduce((s, r) => s + r.productiveCalls, 0)
-  const targetLtrKg = Math.round(records.reduce((s, r) => s + r.targetLtrKg, 0))
-  const salesLtrKg = Math.round(records.reduce((s, r) => s + r.salesLtrKg, 0) * 10) / 10
-  const oil = Math.round(records.reduce((s, r) => s + r.oilSales, 0) * 10) / 10
-  const ghee = Math.round(records.reduce((s, r) => s + r.gheeSales, 0) * 10) / 10
-  const waadi = Math.round(records.reduce((s, r) => s + r.waadiSales, 0) * 10) / 10
+
+  const oil = records.reduce((s, r) => s + r.oilSales, 0)
+  const ghee = records.reduce((s, r) => s + r.gheeSales, 0)
+  const waadi = records.reduce((s, r) => s + r.waadiSales, 0)
+
+  /** Sales attributable to the active product filters (category / SKU). */
+  function scopedSales(r: BaPerformanceRecord) {
+    if (product.sku) {
+      return r.skuSales.find((s) => s.sku === product.sku)?.sales ?? 0
+    }
+    if (product.category === 'Cooking Oil') return r.oilSales
+    if (product.category === 'Banaspati Ghee') return r.gheeSales
+    return r.salesLtrKg
+  }
+
+  function scopedTarget(r: BaPerformanceRecord) {
+    if (product.sku) {
+      const skuAmt = r.skuSales.find((s) => s.sku === product.sku)?.sales ?? 0
+      return r.salesLtrKg > 0 ? r.targetLtrKg * (skuAmt / r.salesLtrKg) : 0
+    }
+    if (product.category === 'Cooking Oil') {
+      const cat = r.oilSales + r.gheeSales + r.waadiSales
+      return cat > 0 ? r.targetLtrKg * (r.oilSales / cat) : 0
+    }
+    if (product.category === 'Banaspati Ghee') {
+      const cat = r.oilSales + r.gheeSales + r.waadiSales
+      return cat > 0 ? r.targetLtrKg * (r.gheeSales / cat) : 0
+    }
+    return r.targetLtrKg
+  }
+
+  const salesLtrKg = Math.round(records.reduce((s, r) => s + scopedSales(r), 0) * 10) / 10
+  const targetLtrKg = Math.round(records.reduce((s, r) => s + scopedTarget(r), 0))
 
   const weekMap = new Map<number, number>()
   for (const r of records) {
+    const factor =
+      r.salesLtrKg > 0 ? scopedSales(r) / r.salesLtrKg : product.category || product.sku ? 0 : 1
     for (const w of r.weekSales) {
-      weekMap.set(w.week, (weekMap.get(w.week) ?? 0) + w.sales)
+      weekMap.set(w.week, (weekMap.get(w.week) ?? 0) + w.sales * factor)
     }
   }
   const weekSales = [...weekMap.entries()]
@@ -216,7 +289,7 @@ export function aggregateBaPerformance(
 
   const storeMap = new Map<string, number>()
   for (const r of records) {
-    storeMap.set(r.store, (storeMap.get(r.store) ?? 0) + r.salesLtrKg)
+    storeMap.set(r.store, (storeMap.get(r.store) ?? 0) + scopedSales(r))
   }
   const topStores = [...storeMap.entries()]
     .map(([store, sales]) => ({ store, sales: Math.round(sales * 10) / 10 }))
@@ -226,6 +299,8 @@ export function aggregateBaPerformance(
   const skuMap = new Map<string, number>()
   for (const r of records) {
     for (const sku of r.skuSales) {
+      if (product.sku && sku.sku !== product.sku) continue
+      if (!skuBelongsToCategory(sku.sku, product.category)) continue
       skuMap.set(sku.sku, (skuMap.get(sku.sku) ?? 0) + sku.sales)
     }
   }
@@ -233,6 +308,23 @@ export function aggregateBaPerformance(
     .map(([sku, sales]) => ({ sku, sales: Math.round(sales * 10) / 10 }))
     .sort((a, b) => b.sales - a.sales)
     .slice(0, 5)
+
+  const oilRounded = Math.round(oil * 10) / 10
+  const gheeRounded = Math.round(ghee * 10) / 10
+  const waadiRounded = Math.round(waadi * 10) / 10
+
+  let categorySales: { name: string; value: number }[]
+  if (product.category === 'Cooking Oil') {
+    categorySales = [{ name: 'OIL SALES', value: oilRounded }]
+  } else if (product.category === 'Banaspati Ghee') {
+    categorySales = [{ name: 'GHEE-SALES', value: gheeRounded }]
+  } else {
+    categorySales = [
+      { name: 'OIL SALES', value: oilRounded },
+      { name: 'GHEE-SALES', value: gheeRounded },
+      { name: 'WAADI-SALES', value: waadiRounded },
+    ]
+  }
 
   return {
     customersIntercepted,
@@ -244,11 +336,7 @@ export function aggregateBaPerformance(
     targetLtrKg,
     salesLtrKg,
     achievementPct: targetLtrKg > 0 ? Math.round((salesLtrKg / targetLtrKg) * 100) : 0,
-    categorySales: [
-      { name: 'OIL SALES', value: oil },
-      { name: 'GHEE-SALES', value: ghee },
-      { name: 'WAADI-SALES', value: waadi },
-    ],
+    categorySales,
     townTargetVsSales: { town: townLabel, target: targetLtrKg, sales: salesLtrKg },
     weekSales,
     topStores,
@@ -301,4 +389,52 @@ export function collectPeriodRecords(
     }
     return p.share ? scaleRecordsToPeriod(records, p.share) : records
   })
+}
+
+export type SalesPeriodMode = 'wow' | 'mom' | 'yoy'
+
+export type SalesTargetPoint = { label: string; sales: number; target: number }
+
+/** Sales vs target series for WoW / MoM / YoY chart beside dashboard filters. */
+export function buildSalesTargetSeries(
+  filters: { town: string | null; store: string | null },
+  product: ProductFilters,
+  mode: SalesPeriodMode,
+  /** Active month filter — used for WoW week breakdown within that month (or all months). */
+  month: string | null = null,
+): SalesTargetPoint[] {
+  if (mode === 'wow') {
+    const months = month ? [month] : baPerformanceMonths
+    const records = months.flatMap((m) =>
+      filterBaPerformanceRecords({ ...filters, month: m }),
+    )
+    const agg = aggregateBaPerformance(records, filters.town, product)
+    const weekCount = Math.max(agg.weekSales.length, 1)
+    const targetPerWeek = agg.targetLtrKg / weekCount
+    return agg.weekSales.map((w) => ({
+      label: `W${w.week}`,
+      sales: w.sales,
+      target: Math.round(targetPerWeek * 10) / 10,
+    }))
+  }
+
+  // MoM and YoY both plot month labels; YoY uses every available data month (year view).
+  const months =
+    mode === 'yoy'
+      ? baPerformanceMonths
+      : month
+        ? baPerformanceMonths.filter((m) => MONTH_ORDER.indexOf(m) <= MONTH_ORDER.indexOf(month))
+        : baPerformanceMonths
+
+  return months
+    .map((m) => {
+      const records = filterBaPerformanceRecords({ ...filters, month: m })
+      const agg = aggregateBaPerformance(records, filters.town, product)
+      return {
+        label: m.slice(0, 3),
+        sales: agg.salesLtrKg,
+        target: agg.targetLtrKg,
+      }
+    })
+    .filter((p) => p.sales > 0 || p.target > 0)
 }

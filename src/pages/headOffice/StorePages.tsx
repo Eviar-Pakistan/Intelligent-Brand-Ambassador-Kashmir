@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   ambassadors,
   scheduleDays,
@@ -17,11 +17,19 @@ import {
   StatusBadge,
   TableScroll,
 } from '../../components/ui'
-import { CalendarClock, FileSpreadsheet, Plus, Sparkles } from 'lucide-react'
+import { CalendarClock, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react'
 import { useSchedule } from '../../context/ScheduleContext'
 import { StoreQrCard } from '../../components/StoreQrCard'
 import { findCreatedStore, shopperPath, useCreatedStores } from '../../lib/storeRegistry'
 import { BulkStoreModal, useRoleBase } from './StoreCreation'
+import { useBaAccounts } from '../../lib/baAccounts'
+import { resolveBaByCode } from '../../lib/baCodes'
+import {
+  downloadBulkShiftTemplate,
+  expandBulkShiftRow,
+  parseBulkShiftFile,
+  type BulkShiftParseResult,
+} from '../../lib/bulkShiftUpload'
 
 const deployable = ambassadors.filter(
   (a) => a.status === 'Certified' || a.status === 'Deployed',
@@ -239,8 +247,8 @@ export function DeploymentPage() {
 
 function SchedulerPanel() {
   const { schedule, setSchedule, clearBaFromSlot } = useSchedule()
-  const [day, setDay] = useState('Mon')
   const [modalOpen, setModalOpen] = useState(false)
+  const [bulkShiftOpen, setBulkShiftOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -251,8 +259,6 @@ function SchedulerPanel() {
     day: 'Mon',
   })
 
-  const dayMeta = scheduleDays.find((d) => d.key === day)!
-  const daySlots = useMemo(() => schedule.filter((s) => s.day === day), [schedule, day])
   const openCount = schedule.filter((s) => s.status === 'Open').length
   const filledCount = schedule.filter((s) => s.status === 'Scheduled').length
 
@@ -262,31 +268,9 @@ function SchedulerPanel() {
       storeId: prefill?.storeId ?? String(stores[0].id),
       baId: prefill?.baId ?? deployable[0]?.id ?? '',
       shift: prefill?.shift ?? shiftOptions[1],
-      day: prefill?.day ?? day,
+      day: prefill?.day ?? 'Mon',
     })
     setModalOpen(true)
-  }
-
-  function autoFillOpen() {
-    let next = [...schedule]
-    let assigned = 0
-    const pool = [...deployable]
-    let pi = 0
-    next = next.map((slot) => {
-      if (slot.status !== 'Open' || !pool.length) return slot
-      const ba = pool[pi % pool.length]
-      pi += 1
-      assigned += 1
-      return {
-        ...slot,
-        baId: ba.id,
-        baName: ba.name,
-        status: 'Scheduled' as const,
-      }
-    })
-    setSchedule(next)
-    setToast(`Auto-scheduled ${assigned} open peak shifts with certified BAs`)
-    setTimeout(() => setToast(null), 3500)
   }
 
   function saveAssignment() {
@@ -342,7 +326,6 @@ function SchedulerPanel() {
       ])
     }
     setModalOpen(false)
-    setDay(form.day)
     setToast(`Scheduled ${ba.name} → ${store.name}`)
     setTimeout(() => setToast(null), 3000)
   }
@@ -385,59 +368,28 @@ function SchedulerPanel() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={autoFillOpen}>
-              <Sparkles size={14} /> Auto-fill open peaks
+            <Button size="sm" variant="secondary" onClick={() => setBulkShiftOpen(true)}>
+              <FileSpreadsheet size={14} /> Bulk Shift
             </Button>
-            <Button size="sm" onClick={() => openCreate({ day })}>
+            <Button size="sm" onClick={() => openCreate()}>
               <Plus size={14} /> New shift
             </Button>
           </div>
         </div>
 
-        <div className="mb-4 overflow-x-auto">
-          <div className="grid min-w-[560px] grid-cols-7 gap-2">
-          {scheduleDays.map((d) => {
-            const count = schedule.filter((s) => s.day === d.key).length
-            const open = schedule.filter((s) => s.day === d.key && s.status === 'Open').length
-            return (
-              <button
-                key={d.key}
-                onClick={() => setDay(d.key)}
-                className={`rounded-xl border px-2 py-3 text-center transition ${
-                  day === d.key
-                    ? 'border-brand-500 bg-brand-500 text-white shadow-md'
-                    : 'border-slate-200 bg-white hover:border-brand-500/40'
-                }`}
-              >
-                <div className="text-xs font-semibold">{d.label}</div>
-                <div className={`text-[10px] ${day === d.key ? 'text-blue-100' : 'text-slate-400'}`}>
-                  {d.date}
-                </div>
-                <div className={`mt-1 text-[10px] font-medium ${day === d.key ? 'text-white' : 'text-slate-500'}`}>
-                  {count} shifts{open ? ` · ${open} open` : ''}
-                </div>
-              </button>
-            )
-          })}
-          </div>
-        </div>
-
-        <div className="mb-3 text-sm font-semibold text-slate-800">
-          {dayMeta.label} {dayMeta.date}
-        </div>
-
-        {daySlots.length === 0 ? (
+        {schedule.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-500">
-            No shifts this day.{' '}
-            <button className="font-semibold text-brand-600" onClick={() => openCreate({ day })}>
+            No shifts scheduled.{' '}
+            <button className="font-semibold text-brand-600" onClick={() => openCreate()}>
               Add one
             </button>
           </div>
         ) : (
-          <TableScroll minWidth={720}>
+          <TableScroll minWidth={780}>
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
                 <tr>
+                  <th className="px-4 py-3">Day</th>
                   <th className="px-4 py-3">Store</th>
                   <th className="px-4 py-3">Shift</th>
                   <th className="px-4 py-3">Ambassador</th>
@@ -446,8 +398,12 @@ function SchedulerPanel() {
                 </tr>
               </thead>
               <tbody>
-                {daySlots.map((slot) => (
+                {schedule.map((slot) => (
                   <tr key={slot.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{slot.day}</div>
+                      <div className="text-xs text-slate-400">{slot.date}</div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="font-medium">
                         #{slot.storeId} {slot.storeName}
@@ -505,50 +461,6 @@ function SchedulerPanel() {
             </table>
           </TableScroll>
         )}
-      </Card>
-
-      <Card>
-        <h3 className="mb-3 font-semibold">Full week board</h3>
-        <div className="overflow-x-auto">
-          <div className="grid min-w-[720px] grid-cols-7 gap-2">
-            {scheduleDays.map((d) => (
-              <div key={d.key} className="rounded-xl bg-slate-50 p-2">
-                <div className="mb-2 text-center text-xs font-bold text-slate-600">
-                  {d.label}
-                  <div className="font-normal text-slate-400">{d.date}</div>
-                </div>
-                <div className="space-y-1.5">
-                  {schedule
-                    .filter((s) => s.day === d.key)
-                    .map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => {
-                          setDay(d.key)
-                          openCreate({
-                            slotId: s.id,
-                            storeId: String(s.storeId),
-                            baId: s.baId ?? deployable[0]?.id,
-                            shift: s.shift,
-                            day: s.day,
-                          })
-                        }}
-                        className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] leading-snug ${
-                          s.status === 'Open'
-                            ? 'border border-dashed border-amber-300 bg-amber-50 text-amber-900'
-                            : 'bg-white text-slate-700 shadow-sm ring-1 ring-slate-100'
-                        }`}
-                      >
-                        <div className="font-semibold">#{s.storeId}</div>
-                        <div className="truncate">{s.baName ?? 'Open slot'}</div>
-                        <div className="truncate opacity-70">{s.shift}</div>
-                      </button>
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </Card>
 
       <Modal
@@ -631,6 +543,173 @@ function SchedulerPanel() {
           </div>
         </div>
       </Modal>
+
+      <BulkShiftModal
+        open={bulkShiftOpen}
+        onClose={() => setBulkShiftOpen(false)}
+        onImported={(count) => {
+          setToast(`Imported ${count} shift ${count === 1 ? 'slot' : 'slots'} from Excel.`)
+          setTimeout(() => setToast(null), 3200)
+        }}
+      />
     </div>
+  )
+}
+
+/** Download template → fill → upload → create shifts across a date range. */
+function BulkShiftModal({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean
+  onClose: () => void
+  onImported: (count: number) => void
+}) {
+  const accounts = useBaAccounts()
+  const { setSchedule } = useSchedule()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const [result, setResult] = useState<BulkShiftParseResult | null>(null)
+
+  function close() {
+    setResult(null)
+    setFileName('')
+    onClose()
+  }
+
+  async function onFile(file: File | undefined) {
+    if (!file) return
+    setBusy(true)
+    setFileName(file.name)
+    setResult(await parseBulkShiftFile(file))
+    setBusy(false)
+  }
+
+  function importRows() {
+    if (!result?.rows.length) return
+    const extras = accounts.map((a) => ({ id: a.id, name: a.name, code: a.code }))
+    const errors: string[] = []
+    const toAdd: {
+      day: string
+      date: string
+      storeId: number
+      storeName: string
+      city: string
+      shift: string
+      peakRecommended: boolean
+      baId: string
+      baName: string
+      status: 'Scheduled'
+    }[] = []
+
+    for (const r of result.rows) {
+      const ba = resolveBaByCode(r.input.baCode, extras)
+      if (!ba) {
+        errors.push(`Row ${r.row}: unknown BA Code "${r.input.baCode}"`)
+        continue
+      }
+      const expanded = expandBulkShiftRow(r.input)
+      if (expanded.error) {
+        errors.push(`Row ${r.row}: ${expanded.error}`)
+        continue
+      }
+      for (const slot of expanded.slots) {
+        toAdd.push({
+          day: slot.day,
+          date: slot.date,
+          storeId: slot.storeId,
+          storeName: slot.storeName,
+          city: slot.city,
+          shift: slot.shift,
+          peakRecommended: slot.peakRecommended,
+          baId: ba.id,
+          baName: ba.name,
+          status: 'Scheduled',
+        })
+      }
+    }
+
+    if (!toAdd.length) {
+      setResult({ rows: [], errors: errors.length ? errors : ['Nothing could be imported.'] })
+      return
+    }
+
+    setSchedule((prev) => [
+      ...prev,
+      ...toAdd.map((s, i) => ({ ...s, id: `s${Date.now()}-${i}` })),
+    ])
+    close()
+    onImported(toAdd.length)
+  }
+
+  return (
+    <Modal open={open} onClose={close} title="Bulk Shift">
+      <div className="space-y-4 text-sm">
+        <div className="space-y-2">
+          <div className="font-semibold text-slate-900">1. Download the template</div>
+          <p className="text-xs text-slate-500">
+            Columns: BA Code, Store Code, Start Date, End Date, Shift Start Date, Shift End Date.
+          </p>
+          <Button variant="secondary" onClick={() => void downloadBulkShiftTemplate()}>
+            <Download size={14} /> Download shift template
+          </Button>
+        </div>
+
+        <div className="space-y-2 border-t border-slate-100 pt-4">
+          <div className="font-semibold text-slate-900">2. Upload the filled template</div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              void onFile(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+              <Upload size={14} /> {busy ? 'Checking…' : result ? 'Choose another file' : 'Upload Excel file'}
+            </Button>
+            {fileName && <span className="truncate text-xs text-slate-500">{fileName}</span>}
+          </div>
+        </div>
+
+        {result && (
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            {result.rows.length > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
+                {result.rows.length} {result.rows.length === 1 ? 'row is' : 'rows are'} ready to import
+                (expands to one shift per day in each date range).
+              </div>
+            )}
+            {result.errors.length > 0 && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800">
+                <div className="font-semibold">
+                  {result.rows.length > 0
+                    ? `${result.errors.length} ${result.errors.length === 1 ? 'issue' : 'issues'} found:`
+                    : 'Nothing can be imported yet:'}
+                </div>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                  {result.errors.slice(0, 8).map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+                {result.errors.length > 8 && (
+                  <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>
+                )}
+              </div>
+            )}
+            {result.rows.length > 0 && (
+              <Button className="w-full" onClick={importRows}>
+                Import shifts
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }

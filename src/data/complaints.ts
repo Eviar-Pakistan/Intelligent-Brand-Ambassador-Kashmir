@@ -1,5 +1,7 @@
 export type ComplaintStatus = 'Open' | 'In Review' | 'Resolved' | 'Rejected'
 
+export type ComplaintKind = 'customer' | 'ba' | 'insights'
+
 export type ComplaintCategory =
   | 'Store facilities'
   | 'Product stock'
@@ -8,13 +10,17 @@ export type ComplaintCategory =
   | 'Schedule / deployment'
   | 'Other'
 
+export type ProductComplaintCategory = 'Cooking Oil' | 'Banaspati Ghee'
+
 export type Complaint = {
   id: string
+  kind: ComplaintKind
   baId: string
   baName: string
   storeId: number
   storeName: string
   city: string
+  /** BA issue category, or "Product stock" for customer product complaints */
   category: ComplaintCategory
   subject: string
   details: string
@@ -22,6 +28,13 @@ export type Complaint = {
   createdAt: string
   updatedAt: string
   hoNote?: string
+  /** Customer product complaint fields */
+  productCategory?: ProductComplaintCategory
+  brand?: string
+  sku?: string
+  customerName?: string
+  customerPhone?: string
+  imageName?: string
 }
 
 export const complaintCategories: ComplaintCategory[] = [
@@ -33,9 +46,17 @@ export const complaintCategories: ComplaintCategory[] = [
   'Other',
 ]
 
+export const productComplaintCategories: ProductComplaintCategory[] = [
+  'Cooking Oil',
+  'Banaspati Ghee',
+]
+
+export const complaintBrands = ['Kashmir'] as const
+
 export const initialComplaints: Complaint[] = [
   {
     id: 'cmp-1001',
+    kind: 'ba',
     baId: 'hamza',
     baName: 'Hamza Ali',
     storeId: 7,
@@ -45,12 +66,14 @@ export const initialComplaints: Complaint[] = [
     subject: 'Cooking Oil 1 LTR pouch out of stock on shelf',
     details:
       'Shelf bay for Kashmir Cooking Oil 1 LTR pouches has been empty since morning. Asked store staff twice; they said refill expected tomorrow. Sampling impacted.',
-    status: 'Open',
+    status: 'Resolved',
     createdAt: '2026-09-14T09:20:00',
     updatedAt: '2026-09-14T09:20:00',
+    hoNote: 'Stock replenished same day.',
   },
   {
     id: 'cmp-1002',
+    kind: 'ba',
     baId: 'sara',
     baName: 'Sara Ahmed',
     storeId: 19,
@@ -67,6 +90,7 @@ export const initialComplaints: Complaint[] = [
   },
   {
     id: 'cmp-1003',
+    kind: 'ba',
     baId: 'fatima',
     baName: 'Fatima Noor',
     storeId: 4,
@@ -83,6 +107,7 @@ export const initialComplaints: Complaint[] = [
   },
   {
     id: 'cmp-1004',
+    kind: 'ba',
     baId: 'bilal',
     baName: 'Bilal Ahmed',
     storeId: 7,
@@ -96,6 +121,80 @@ export const initialComplaints: Complaint[] = [
     createdAt: '2026-09-14T16:15:00',
     updatedAt: '2026-09-14T16:15:00',
   },
+  {
+    id: 'cmp-1005',
+    kind: 'customer',
+    baId: 'ayesha',
+    baName: 'Ayesha Khan',
+    storeId: 12,
+    storeName: 'Carrefour DHA',
+    city: 'Lahore',
+    category: 'Product stock',
+    productCategory: 'Cooking Oil',
+    brand: 'Kashmir',
+    sku: 'Pouch 1LTR',
+    customerName: 'Nadia Rahman',
+    customerPhone: '03001234567',
+    subject: 'Cooking Oil · Pouch 1LTR',
+    details:
+      'Seal was already open and the oil smelled off. Customer asked for a replacement pack.',
+    status: 'Open',
+    createdAt: '2026-09-15T11:05:00',
+    updatedAt: '2026-09-15T11:05:00',
+  },
+  {
+    id: 'cmp-1006',
+    kind: 'customer',
+    baId: 'ayesha',
+    baName: 'Ayesha Khan',
+    storeId: 12,
+    storeName: 'Carrefour DHA',
+    city: 'Lahore',
+    category: 'Product stock',
+    productCategory: 'Banaspati Ghee',
+    brand: 'Kashmir',
+    sku: 'BKT 5KG',
+    customerName: 'Imran Qureshi',
+    customerPhone: '03219876543',
+    subject: 'Banaspati Ghee · BKT 5KG',
+    details: 'Bucket lid was dented and partially loose on the shelf. Customer refused to buy.',
+    status: 'In Review',
+    createdAt: '2026-09-15T12:40:00',
+    updatedAt: '2026-09-15T13:10:00',
+    hoNote: 'Checking warehouse batch for packaging issues.',
+  },
+  {
+    id: 'cmp-1007',
+    kind: 'insights',
+    baId: 'sara',
+    baName: 'Sara Ahmed',
+    storeId: 19,
+    storeName: 'Al-Fatah Blue Area',
+    city: 'Islamabad',
+    category: 'Other',
+    subject: 'Shoppers prefer smaller oil pouches at this store',
+    details:
+      'Most interceptions ask for 1 LTR pouches. 3 LTR and 4.5 LTR bottles move slowly. Recommend more 1 LTR allocation for next week.',
+    status: 'Open',
+    createdAt: '2026-09-15T15:20:00',
+    updatedAt: '2026-09-15T15:20:00',
+  },
+  {
+    id: 'cmp-1008',
+    kind: 'insights',
+    baId: 'hamza',
+    baName: 'Hamza Ali',
+    storeId: 7,
+    storeName: 'Imtiaz Clifton',
+    city: 'Karachi',
+    category: 'Other',
+    subject: 'Competitor price gap on 5 KG ghee',
+    details:
+      'Dalda 5 KG is Rs. 80 cheaper this week. Several productive calls dropped at price comparison. Flagging for trade marketing.',
+    status: 'In Review',
+    createdAt: '2026-09-14T18:00:00',
+    updatedAt: '2026-09-15T09:00:00',
+  },
 ]
 
 export function formatComplaintDate(iso: string) {
@@ -108,4 +207,10 @@ export function formatComplaintDate(iso: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+export function kindLabel(kind: ComplaintKind) {
+  if (kind === 'customer') return 'Customer'
+  if (kind === 'insights') return 'Insights'
+  return 'BA'
 }

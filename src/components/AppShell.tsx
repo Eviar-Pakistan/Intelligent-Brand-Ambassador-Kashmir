@@ -41,13 +41,12 @@ type NavItem = {
 }
 
 const headOfficeNav: NavItem[] = [
-  { to: '/ho/dashboard', label: 'Campaign Metrics', icon: LayoutDashboard, end: true, section: 'Command' },
-  { to: '/ho/ba-performance', label: 'Dashboard', icon: BarChart3, section: 'Command' },
+  { to: '/ho/ba-performance', label: 'Dashboard', icon: BarChart3, end: true, section: 'Command' },
   { to: '/ho/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
   { to: '/ho/stores', label: 'Stores', icon: Store, section: 'Operations' },
   { to: '/ho/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
   { to: '/ho/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
-  { to: '/ho/complaints', label: 'Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
+  { to: '/ho/complaints', label: 'Insights / Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
   { to: '/ho/market-visits', label: 'Market Visits', icon: ClipboardList, section: 'Operations' },
   { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
   { to: '/ho/optimization', label: 'AI Optimization', icon: Brain, section: 'Intelligence' },
@@ -127,7 +126,7 @@ const titles: Record<string, string> = {
   '/supervisor/bas': 'BA Performance',
   '/supervisor/market-visit': 'Market Visit Report',
   '/ho/deployment': 'Intelligent Deployment',
-  '/ho/complaints': 'Complaint Center',
+  '/ho/complaints': 'Insights / Complaint Center',
   '/ho/market-visits': 'Market Visit Reports',
   '/ho/consumers': 'Consumer Intelligence',
   '/ho/optimization': 'AI Optimization',

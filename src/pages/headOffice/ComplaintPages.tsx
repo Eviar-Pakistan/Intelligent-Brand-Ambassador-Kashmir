@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { MessageSquareWarning, CheckCircle2, Clock3, Eye } from 'lucide-react'
+import { MessageSquareWarning, CheckCircle2, Clock3, Eye, User } from 'lucide-react'
 import {
   Button,
   Card,
@@ -8,24 +8,48 @@ import {
   StatusBadge,
   TableScroll,
   Tabs,
+  cn,
 } from '../../components/ui'
 import { useComplaints } from '../../context/ComplaintsContext'
-import { formatComplaintDate, type Complaint, type ComplaintStatus } from '../../data/complaints'
+import {
+  formatComplaintDate,
+  kindLabel,
+  type Complaint,
+  type ComplaintKind,
+  type ComplaintStatus,
+} from '../../data/complaints'
+
+type KindFilter = 'All' | 'Customer Complaint' | 'BA Complaint' | 'Insights'
+
+const KIND_TABS: { id: KindFilter; match: ComplaintKind | null }[] = [
+  { id: 'All', match: null },
+  { id: 'Customer Complaint', match: 'customer' },
+  { id: 'BA Complaint', match: 'ba' },
+  { id: 'Insights', match: 'insights' },
+]
 
 export function ComplaintsPage() {
   const { complaints, updateComplaintStatus } = useComplaints()
-  const [tab, setTab] = useState('All')
+  const [kindTab, setKindTab] = useState<KindFilter>('All')
+  const [statusTab, setStatusTab] = useState('All')
   const [selected, setSelected] = useState<Complaint | null>(null)
   const [note, setNote] = useState('')
   const [toast, setToast] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
-    if (tab === 'All') return complaints
-    return complaints.filter((c) => c.status === tab)
-  }, [complaints, tab])
+    const kindMatch = KIND_TABS.find((t) => t.id === kindTab)?.match
+    return complaints.filter((c) => {
+      if (kindMatch && c.kind !== kindMatch) return false
+      if (statusTab !== 'All' && c.status !== statusTab) return false
+      return true
+    })
+  }, [complaints, kindTab, statusTab])
 
   const counts = useMemo(
     () => ({
+      customer: complaints.filter((c) => c.kind === 'customer').length,
+      ba: complaints.filter((c) => c.kind === 'ba').length,
+      insights: complaints.filter((c) => c.kind === 'insights').length,
       open: complaints.filter((c) => c.status === 'Open').length,
       review: complaints.filter((c) => c.status === 'In Review').length,
       resolved: complaints.filter((c) => c.status === 'Resolved').length,
@@ -46,11 +70,16 @@ export function ComplaintsPage() {
     setTimeout(() => setToast(null), 2800)
   }
 
+  const showCustomerCols = kindTab === 'Customer Complaint'
+  const showInsightsCols = kindTab === 'Insights'
+  const showBaCols = kindTab === 'BA Complaint'
+  const showAllCols = kindTab === 'All'
+
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Complaint Center"
-        description="Review and resolve Brand Ambassador store complaints"
+        title="Insights / Complaint Center"
+        description="Review customer product complaints, BA store complaints, and field insights"
       />
 
       {toast && (
@@ -59,7 +88,19 @@ export function ComplaintsPage() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Card>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <User size={14} /> Customer
+          </div>
+          <div className="mt-1 text-2xl font-bold text-navy-900">{counts.customer}</div>
+        </Card>
+        <Card>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <MessageSquareWarning size={14} /> BA
+          </div>
+          <div className="mt-1 text-2xl font-bold text-navy-900">{counts.ba}</div>
+        </Card>
         <Card>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <MessageSquareWarning size={14} /> Open
@@ -80,57 +121,236 @@ export function ComplaintsPage() {
         </Card>
       </div>
 
-      <Tabs
-        tabs={['All', 'Open', 'In Review', 'Resolved', 'Rejected']}
-        value={tab}
-        onChange={setTab}
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+          {KIND_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setKindTab(t.id)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition',
+                kindTab === t.id
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              {t.id}
+            </button>
+          ))}
+        </div>
+        <Tabs
+          tabs={['All', 'Open', 'In Review', 'Resolved', 'Rejected']}
+          value={statusTab}
+          onChange={setStatusTab}
+        />
+      </div>
 
       <Card padding={false}>
-        <TableScroll minWidth={860}>
+        <TableScroll minWidth={showCustomerCols ? 980 : 920}>
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-              <tr>
-                <th className="px-4 py-3 font-semibold">ID</th>
-                <th className="px-4 py-3 font-semibold">BA</th>
-                <th className="px-4 py-3 font-semibold">Store</th>
-                <th className="px-4 py-3 font-semibold">Category</th>
-                <th className="px-4 py-3 font-semibold">Subject</th>
-                <th className="px-4 py-3 font-semibold">Submitted</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 font-semibold" />
-              </tr>
+              {showCustomerCols && (
+                <tr>
+                  <th className="px-4 py-3 font-semibold">ID</th>
+                  <th className="px-4 py-3 font-semibold">Name</th>
+                  <th className="px-4 py-3 font-semibold">Number</th>
+                  <th className="px-4 py-3 font-semibold">Brand</th>
+                  <th className="px-4 py-3 font-semibold">SKU</th>
+                  <th className="px-4 py-3 font-semibold">Complaint</th>
+                  <th className="px-4 py-3 font-semibold">Image</th>
+                  <th className="px-4 py-3 font-semibold">Submitted</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold" />
+                </tr>
+              )}
+              {showBaCols && (
+                <tr>
+                  <th className="px-4 py-3 font-semibold">ID</th>
+                  <th className="px-4 py-3 font-semibold">Reported by</th>
+                  <th className="px-4 py-3 font-semibold">Detail</th>
+                  <th className="px-4 py-3 font-semibold">Complaint</th>
+                  <th className="px-4 py-3 font-semibold">Submitted</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold" />
+                </tr>
+              )}
+              {showInsightsCols && (
+                <tr>
+                  <th className="px-4 py-3 font-semibold">ID</th>
+                  <th className="px-4 py-3 font-semibold">BA</th>
+                  <th className="px-4 py-3 font-semibold">Store</th>
+                  <th className="px-4 py-3 font-semibold">Subject</th>
+                  <th className="px-4 py-3 font-semibold">Details</th>
+                  <th className="px-4 py-3 font-semibold">Submitted</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold" />
+                </tr>
+              )}
+              {showAllCols && (
+                <tr>
+                  <th className="px-4 py-3 font-semibold">ID</th>
+                  <th className="px-4 py-3 font-semibold">Type</th>
+                  <th className="px-4 py-3 font-semibold">Reported by</th>
+                  <th className="px-4 py-3 font-semibold">Detail</th>
+                  <th className="px-4 py-3 font-semibold">Complaint</th>
+                  <th className="px-4 py-3 font-semibold">Submitted</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold" />
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.id}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{c.baName}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-slate-800">{c.storeName}</div>
-                    <div className="text-xs text-slate-500">{c.city}</div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">{c.category}</td>
-                  <td className="max-w-[220px] truncate px-4 py-3 text-slate-700">{c.subject}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock3 size={12} />
-                      {formatComplaintDate(c.createdAt)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={c.status} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button size="sm" variant="secondary" onClick={() => openDetail(c)}>
-                      Review
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((c) => {
+                if (showCustomerCols) {
+                  return (
+                    <tr key={c.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.id}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        {c.customerName ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-slate-700">
+                        {c.customerPhone ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{c.brand ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-700">{c.sku ?? '—'}</td>
+                      <td className="max-w-[220px] truncate px-4 py-3 text-slate-700">
+                        {c.details}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">{c.imageName ?? '—'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={12} />
+                          {formatComplaintDate(c.createdAt)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button size="sm" variant="secondary" onClick={() => openDetail(c)}>
+                          Review
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                }
+
+                if (showBaCols) {
+                  return (
+                    <tr key={c.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.id}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">{c.baName}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-800">{c.storeName}</div>
+                        <div className="text-xs text-slate-500">{c.category}</div>
+                      </td>
+                      <td className="max-w-[240px] truncate px-4 py-3 text-slate-700">
+                        {c.subject}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={12} />
+                          {formatComplaintDate(c.createdAt)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button size="sm" variant="secondary" onClick={() => openDetail(c)}>
+                          Review
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                }
+
+                if (showInsightsCols) {
+                  return (
+                    <tr key={c.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.id}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">{c.baName}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {c.storeName} · {c.city}
+                      </td>
+                      <td className="max-w-[180px] truncate px-4 py-3 font-semibold text-slate-900">
+                        {c.subject}
+                      </td>
+                      <td className="max-w-[240px] truncate px-4 py-3 text-slate-600">
+                        {c.details}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={12} />
+                          {formatComplaintDate(c.createdAt)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button size="sm" variant="secondary" onClick={() => openDetail(c)}>
+                          Review
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                }
+
+                return (
+                  <tr key={c.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.id}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase',
+                          c.kind === 'customer' && 'bg-rose-50 text-rose-700',
+                          c.kind === 'ba' && 'bg-sky-50 text-sky-700',
+                          c.kind === 'insights' && 'bg-brand-50 text-brand-700',
+                        )}
+                      >
+                        {kindLabel(c.kind)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {c.kind === 'customer' ? (c.customerName ?? c.baName) : c.baName}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-800">
+                        {c.kind === 'customer'
+                          ? `${c.brand ?? 'Kashmir'}`
+                          : c.storeName}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {c.kind === 'customer'
+                          ? c.sku ?? c.productCategory
+                          : c.category}
+                      </div>
+                    </td>
+                    <td className="max-w-[240px] truncate px-4 py-3 text-slate-700">
+                      {c.kind === 'customer' ? c.details : c.subject}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock3 size={12} />
+                        {formatComplaintDate(c.createdAt)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={c.status} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button size="sm" variant="secondary" onClick={() => openDetail(c)}>
+                        Review
+                      </Button>
+                    </td>
+                  </tr>
+                )
+              })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+                  <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500">
                     No complaints in this view.
                   </td>
                 </tr>
@@ -143,28 +363,69 @@ export function ComplaintsPage() {
       <Modal
         open={!!selected}
         onClose={() => setSelected(null)}
-        title={selected ? `Complaint ${selected.id}` : 'Complaint'}
+        title={
+          selected
+            ? selected.kind === 'customer'
+              ? `Customer complaint ${selected.id}`
+              : selected.kind === 'insights'
+                ? `Insights ${selected.id}`
+                : `BA complaint ${selected.id}`
+            : 'Complaint'
+        }
       >
         {selected && (
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Meta label="Brand Ambassador" value={selected.baName} />
-              <Meta label="Store" value={`${selected.storeName} · ${selected.city}`} />
-              <Meta label="Category" value={selected.category} />
-              <Meta label="Status" value={selected.status} />
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Subject</div>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{selected.subject}</p>
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Details</div>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                {selected.details}
-              </p>
-            </div>
+            {selected.kind === 'customer' ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Meta label="Type" value="Customer Complaint" />
+                  <Meta label="Store" value={`${selected.storeName} · ${selected.city}`} />
+                  <Meta label="Logged by" value={selected.baName} />
+                  <Meta label="Name" value={selected.customerName ?? '—'} />
+                  <Meta label="Number" value={selected.customerPhone ?? '—'} />
+                  <Meta label="Brand" value={selected.brand ?? '—'} />
+                  <Meta label="SKU" value={selected.sku ?? '—'} />
+                  <Meta label="Status" value={selected.status} />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Complaint
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                    {selected.details}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Meta
+                    label="Type"
+                    value={selected.kind === 'insights' ? 'Insights' : 'BA Complaint'}
+                  />
+                  <Meta label="Brand Ambassador" value={selected.baName} />
+                  <Meta label="Store" value={`${selected.storeName} · ${selected.city}`} />
+                  {selected.kind === 'ba' && (
+                    <Meta label="Category" value={selected.category} />
+                  )}
+                  <Meta label="Status" value={selected.status} />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Subject
+                  </div>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{selected.subject}</p>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Details
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                    {selected.details}
+                  </p>
+                </div>
+              </>
+            )}
 
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-slate-600">HO note</span>

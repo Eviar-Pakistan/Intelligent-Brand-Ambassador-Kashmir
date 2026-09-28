@@ -766,6 +766,10 @@ export function BaPerformancePage() {
   const incentive = me?.incentive ?? 0
   const totalPkr = basePay + incentive
   const daysWorked = 18
+  const targetKg = 120
+  const salesKg = 96
+  const achievementPct = Math.round((salesKg / targetKg) * 100)
+  const sku = 'Pouch 1LTR'
 
   return (
     <div className="space-y-4 bg-[#f7f4ec] p-4 pb-6">
@@ -790,6 +794,37 @@ export function BaPerformancePage() {
         <div className="mt-4 rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
           <div className="text-[10px] font-medium text-white/70 uppercase">Earned</div>
           <div className="mt-0.5 text-lg font-bold text-gold-400">{formatPkr(totalPkr)}</div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-sm font-bold text-slate-900">Target vs achievement</div>
+          <div className="shrink-0 text-xs text-slate-400">September 2026</div>
+        </div>
+        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+          <div>
+            <div className="text-xl font-bold text-slate-900">{targetKg}</div>
+            <div className="mt-0.5 text-[10px] font-medium text-slate-500">Target Kg</div>
+          </div>
+          <div>
+            <div className="text-xl font-bold text-slate-900">{salesKg}</div>
+            <div className="mt-0.5 text-[10px] font-medium text-slate-500">Sales Kg</div>
+          </div>
+          <div>
+            <div
+              className={`text-xl font-bold ${
+                achievementPct >= 100 ? 'text-brand-600' : 'text-rose-600'
+              }`}
+            >
+              {achievementPct}%
+            </div>
+            <div className="mt-0.5 text-[10px] font-medium text-slate-500">Achievement</div>
+          </div>
+          <div>
+            <div className="truncate text-sm font-bold text-slate-900 sm:text-base">{sku}</div>
+            <div className="mt-0.5 text-[10px] font-medium text-slate-500">SKU</div>
+          </div>
         </div>
       </div>
 

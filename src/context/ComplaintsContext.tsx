@@ -10,10 +10,13 @@ import {
   initialComplaints,
   type Complaint,
   type ComplaintCategory,
+  type ComplaintKind,
   type ComplaintStatus,
+  type ProductComplaintCategory,
 } from '../data/complaints'
 
 type SubmitComplaintInput = {
+  kind: ComplaintKind
   baId: string
   baName: string
   storeId: number
@@ -22,6 +25,12 @@ type SubmitComplaintInput = {
   category: ComplaintCategory
   subject: string
   details: string
+  productCategory?: ProductComplaintCategory
+  brand?: string
+  sku?: string
+  customerName?: string
+  customerPhone?: string
+  imageName?: string
 }
 
 type ComplaintsContextValue = {
