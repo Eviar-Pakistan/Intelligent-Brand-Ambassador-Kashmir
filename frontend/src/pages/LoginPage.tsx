@@ -288,23 +288,10 @@ export function LoginPage() {
               </label>
             )}
 
-            {mode === 'headOffice' && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
-                <p className="font-medium text-slate-900">Head Office login</p>
-                <p className="mt-1">
-                  Email: <span className="font-mono">{brand.loginEmail}</span>
-                </p>
-                <p>
-                  Password: <span className="font-mono">{brand.loginPassword}</span>
-                </p>
-                <p className="mt-1.5 text-xs text-slate-500">Fields are pre-filled — press Sign In.</p>
-              </div>
-            )}
-
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Password</span>
               <input
-                type={mode === 'headOffice' ? 'text' : 'password'}
+                type="password"
                 required
                 minLength={4}
                 autoComplete="current-password"
