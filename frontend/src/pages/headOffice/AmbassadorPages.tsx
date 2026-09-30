@@ -41,7 +41,7 @@ import {
   fetchAmbassadorShifts,
   type ApiShift,
 } from '../../lib/deploymentApi'
-import { syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
+import { findCreatedStore, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
 import { isApiAuthenticated } from '../../lib/api'
 import {
   monthInputValue,
@@ -834,7 +834,15 @@ export function AmbassadorsPage() {
               disabled={filteredAccounts.length === 0}
               onClick={() =>
                 void downloadBaLinks(
-                  filteredAccounts.map((a) => ({ name: a.name, url: baAccessUrl(a) })),
+                  filteredAccounts.map((a) => {
+                    const store = a.storeId != null ? findCreatedStore(a.storeId) : undefined
+                    return {
+                      name: a.name,
+                      url: baAccessUrl(a),
+                      storeName: a.storeName || store?.name || '',
+                      city: store?.city || a.city || '',
+                    }
+                  }),
                 )
               }
             >
@@ -1003,7 +1011,15 @@ export function AmbassadorsPage() {
               <Button
                 onClick={() =>
                   void downloadBaLinks(
-                    bulkCreated.map((a) => ({ name: a.name, url: baAccessUrl(a) })),
+                    bulkCreated.map((a) => {
+                      const store = a.storeId != null ? findCreatedStore(a.storeId) : undefined
+                      return {
+                        name: a.name,
+                        url: baAccessUrl(a),
+                        storeName: a.storeName || store?.name || '',
+                        city: store?.city || a.city || '',
+                      }
+                    }),
                   )
                 }
               >

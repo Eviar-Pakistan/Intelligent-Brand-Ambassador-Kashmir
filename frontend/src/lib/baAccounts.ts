@@ -809,16 +809,16 @@ export async function parseAmbassadorFile(file: File): Promise<AmbassadorParseRe
   return { rows, errors, skippedNoEmail: 0 }
 }
 
-/** Downloads BA names with their personal profile / account links. */
+/** Downloads BA names with store + personal profile links. */
 export async function downloadBaLinks(
-  list: { name: string; url: string; email?: string; code?: string }[],
+  list: { name: string; url: string; storeName?: string; city?: string }[],
 ) {
   const XLSX = await import('xlsx')
   const sheet = XLSX.utils.aoa_to_sheet([
-    ['Name', 'Profile Link'],
-    ...list.map((a) => [a.name, a.url]),
+    ['Name', 'Store', 'City', 'Profile Link'],
+    ...list.map((a) => [a.name, a.storeName || '', a.city || '', a.url]),
   ])
-  sheet['!cols'] = [{ wch: 28 }, { wch: 72 }]
+  sheet['!cols'] = [{ wch: 28 }, { wch: 28 }, { wch: 16 }, { wch: 72 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, sheet, 'BA links')
   XLSX.writeFile(wb, 'Kashmir_BA_Profile_Links.xlsx')
