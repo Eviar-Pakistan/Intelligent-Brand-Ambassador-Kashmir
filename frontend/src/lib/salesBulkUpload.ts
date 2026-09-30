@@ -1,7 +1,7 @@
 /**
  * Kashmir targets bulk upload: download template → fill → upload.
- * Columns: BA Name, Month, Category, SKU, Target
- * BA Code is not in the template — it is resolved from Ambassadors by BA Name on upload.
+ * Columns: BA Code, BA Name, Month, Category, SKU, Target
+ * BA Code is required and uniquely identifies the ambassador (same names are OK).
  *
  * Categories (LMT):
  *   Kashmir Cooking Oil (KCO / KPGO) · Kashmir Banaspati (KBP) · Waadi Banaspati (WBP)
@@ -18,6 +18,7 @@ import {
 const SHEET = 'Targets'
 
 const COLUMNS = [
+  { key: 'code', header: 'BA Code', width: 12 },
   { key: 'baName', header: 'BA Name', width: 22 },
   { key: 'month', header: 'Month', width: 14 },
   { key: 'category', header: 'Category', width: 24 },
@@ -143,41 +144,60 @@ export async function downloadSalesBulkTemplate(opts?: {
     ['How to fill the Kashmir targets upload template'],
     [],
     [`1. Add rows on the "${SHEET}" sheet. Do not change the header row.`],
-    ['2. BA Name — required. Must match Ambassadors (code is looked up from the database).'],
-    ['3. Month — full month name (e.g. September) or YYYY-MM. Blank = current month.'],
     [
-      '4. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP).',
+      '2. BA Code — required. Must match Ambassadors exactly (e.g. BA-016). This uniquely identifies the BA when names are shared.',
+    ],
+    ['3. BA Name — optional helper (for your reference). Matching uses BA Code, not name.'],
+    ['4. Month — full month name (e.g. September) or YYYY-MM. Blank = current month.'],
+    [
+      '5. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP).',
     ],
     [
-      '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category).',
+      '6. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category).',
     ],
     [
-      '6. Same BA can appear on many rows — e.g. three categories (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).',
+      '7. Same BA Code can appear on many rows — e.g. three categories (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).',
     ],
-    ['7. Target — numeric target for that row (required). Do not use 0.'],
-    ['8. Save the file, then upload it via Upload targets on Ambassadors.'],
+    ['8. Target — numeric target for that row (required). Do not use 0.'],
+    ['9. Save the file, then upload it via Upload targets on Ambassadors.'],
     [],
     COLUMNS.map((c) => c.header),
     [],
-    ['Example (three category rows; comma-separated SKUs OK)'],
+    ['Example (three category rows; use the real BA Code from Ambassadors)'],
     [
-      'Kinza',
-      '2026-09',
+      opts?.baSamples?.[0]?.code || 'BA-016',
+      opts?.baSamples?.[0]?.name || 'Rimsha',
+      '2026-10',
       'Kashmir Cooking Oil',
       'KPGO 10 LTR CAN Cons. RED, KPGO 5 LTR TIN Cons. RED',
       120,
     ],
-    ['Kinza', '2026-09', 'Kashmir Banaspati', 'KBP GOLD 10 KG BKT', 80],
-    ['Kinza', '2026-09', 'Waadi Banaspati', 'WBP 5 KG BKT', 40],
+    [
+      opts?.baSamples?.[0]?.code || 'BA-016',
+      opts?.baSamples?.[0]?.name || 'Rimsha',
+      '2026-10',
+      'Kashmir Banaspati',
+      'KBP GOLD 10 KG BKT',
+      80,
+    ],
+    [
+      opts?.baSamples?.[0]?.code || 'BA-016',
+      opts?.baSamples?.[0]?.name || 'Rimsha',
+      '2026-10',
+      'Waadi Banaspati',
+      'WBP 5 KG BKT',
+      40,
+    ],
     [],
-    ['BA name reference (code is filled automatically from Ambassadors)'],
-    ['BA Name', 'BA Code (from database)'],
+    ['BA Code reference (from Ambassadors)'],
+    ['BA Code', 'BA Name'],
     ...(opts?.baSamples?.length
-      ? opts.baSamples.map((b) => [b.name, b.code])
-      : [['Use names from Ambassadors', '']]),
+      ? opts.baSamples.map((b) => [b.code, b.name])
+      : [['BA-001', 'Use codes from Ambassadors']]),
   ])
   help['!cols'] = [
-    { wch: 28 },
+    { wch: 12 },
+    { wch: 22 },
     { wch: 14 },
     { wch: 24 },
     { wch: 42 },
@@ -246,11 +266,11 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     target: headers.findIndex((h) => h === 'target'),
   }
 
-  if (idx.baName < 0) {
+  if (idx.code < 0) {
     return {
       rows: [],
       errors: [
-        'This is not the targets template (need "BA Name"). Download the latest template and fill that.',
+        'This is not the targets template (need "BA Code"). Download the latest template and fill BA Code for each row.',
       ],
     }
   }
@@ -265,16 +285,16 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     if (isBlank) continue
 
     const rowNum = r + 1
-    const code = idx.code >= 0 ? String(line[idx.code] ?? '').trim() : ''
-    const baName = String(line[idx.baName] ?? '').trim()
+    const code = String(line[idx.code] ?? '').trim()
+    const baName = idx.baName >= 0 ? String(line[idx.baName] ?? '').trim() : ''
     const monthRaw = idx.month >= 0 ? String(line[idx.month] ?? '').trim() : ''
     const month = monthRaw || defaultMonth
     const categoryRaw = idx.category >= 0 ? String(line[idx.category] ?? '').trim() : ''
     const skuRaw = idx.sku >= 0 ? String(line[idx.sku] ?? '').trim() : ''
     const rowErrors: string[] = []
 
-    if (!baName) {
-      rowErrors.push(`Row ${rowNum}: BA Name is required.`)
+    if (!code) {
+      rowErrors.push(`Row ${rowNum}: BA Code is required (e.g. BA-016).`)
     }
 
     const category = resolveProductCategory(categoryRaw)

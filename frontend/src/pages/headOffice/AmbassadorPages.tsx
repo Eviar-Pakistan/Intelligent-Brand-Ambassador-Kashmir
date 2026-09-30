@@ -46,13 +46,11 @@ import {
 import { findCreatedStore, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
 import { isApiAuthenticated } from '../../lib/api'
 import {
-  listBaTargets,
   monthInputValue,
-  refreshBaTargetsFromApi,
   upsertBaTargets,
   useBaTargetsSync,
 } from '../../lib/baTargets'
-import { baCodeForId, resolveBaByCode, resolveBaByNameForTargets } from '../../lib/baCodes'
+import { baCodeForId, resolveBaByCode } from '../../lib/baCodes'
 import {
   downloadSalesBulkTemplate,
   parseSalesBulkFile,
@@ -640,7 +638,6 @@ function UploadTargetsModal({
     if (!result?.rows.length) return
     setBusy(true)
     await syncAmbassadorsFromApi().catch(() => {})
-    await refreshBaTargetsFromApi().catch(() => {})
     const liveAccounts = getBaAccounts().filter((a) => !isDemoBa(a.id))
     const extras = liveAccounts.map((a) => ({
       id: a.id,
@@ -649,17 +646,12 @@ function UploadTargetsModal({
       storeId: a.storeId,
       status: a.status,
     }))
-    const existingTargets = listBaTargets()
     const valid: Parameters<typeof upsertBaTargets>[0] = []
     const unknown: string[] = []
-    // Same BA Name across category rows must reuse one DB ambassador (and their code).
-    const baByNormalizedName = new Map<
-      string,
-      NonNullable<ReturnType<typeof resolveBaByNameForTargets>>
-    >()
+    // Same BA Code across category rows must reuse one ambassador.
+    const baByCode = new Map<string, NonNullable<ReturnType<typeof resolveBaByCode>>>()
 
     for (const r of result.rows) {
-      const nameKey = r.input.baName.trim().toLowerCase().replace(/\s+/g, ' ')
       const month = (() => {
         const m = r.input.month.trim()
         if (/^\d{4}-\d{2}$/.test(m)) return m
@@ -668,35 +660,23 @@ function UploadTargetsModal({
         return monthInputValue()
       })()
 
-      // Prefer BAs that still have no target for this month when names collide.
-      const alreadyHasTargetIds = new Set(
-        existingTargets.filter((t) => t.month === month && (t.targetKg ?? 0) > 0).map((t) => t.baId),
-      )
-
-      // Primary: match BA Name → reuse same DB ambassador (and code) for every category row.
-      let ba = nameKey ? baByNormalizedName.get(nameKey) ?? null : null
+      const codeKey = (r.input.code || '').trim().toUpperCase()
+      let ba = codeKey ? baByCode.get(codeKey) ?? null : null
       if (!ba || isDemoBa(ba.id)) {
-        ba = r.input.baName
-          ? resolveBaByNameForTargets(r.input.baName, extras, alreadyHasTargetIds)
-          : null
-        if (ba && !isDemoBa(ba.id) && nameKey) {
-          baByNormalizedName.set(nameKey, ba)
+        ba = r.input.code ? resolveBaByCode(r.input.code, extras) : null
+        if (ba && !isDemoBa(ba.id) && codeKey) {
+          baByCode.set(codeKey, ba)
         }
-      }
-      // Optional: Excel BA Code only if name did not match.
-      if ((!ba || isDemoBa(ba.id)) && r.input.code) {
-        ba = resolveBaByCode(r.input.code, extras)
       }
 
       if (!ba || isDemoBa(ba.id)) {
         unknown.push(
-          `Row ${r.row}: unknown BA Name "${r.input.baName}" — must match a name on Ambassadors (code is filled from the database).`,
+          `Row ${r.row}: unknown BA Code "${r.input.code || '—'}" — use the exact code from Ambassadors (e.g. BA-016).`,
         )
         continue
       }
 
-      // Always take code from the matched DB / roster entry (Excel code not required).
-      const baCode = ba.code || baCodeForId(ba.id, extras) || ''
+      const baCode = ba.code || baCodeForId(ba.id, extras) || codeKey
       ba = { ...ba, code: baCode }
 
       valid.push({
@@ -749,9 +729,10 @@ function UploadTargetsModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: BA Name, Month, Category, SKU, Target. BA Code is not required — it is taken from
-            Ambassadors using the BA Name. Same BA can have many rows (e.g. all three categories). SKU
-            must match the category — see sheet &quot;Categories &amp; SKUs&quot; in the file.
+            Columns: BA Code, BA Name, Month, Category, SKU, Target. BA Code is required and uniquely
+            identifies each ambassador (use this when names are shared). Same BA Code can have many
+            rows (e.g. all three categories). SKU must match the category — see sheet
+            &quot;Categories &amp; SKUs&quot; in the file.
           </p>
           <Button
             variant="secondary"

@@ -239,8 +239,8 @@ class BaTargetViewSet(viewsets.ModelViewSet):
 def ba_targets_bulk(request):
     """
     POST /api/ba-targets/bulk/
-    Body: { rows: [{ baId|ambassador|baName|code, month, sku?, targetKg, salesKg }, ...] }
-    BA code is optional — when omitted, ambassador is resolved by baName / name.
+    Body: { rows: [{ baId|ambassador|code|baCode, baName?, month, sku?, targetKg, salesKg }, ...] }
+    Resolve order: baId, then BA Code (unique), then BA Name as last resort.
     """
     rows = request.data.get('rows') if isinstance(request.data, dict) else None
     if not isinstance(rows, list) or not rows:
@@ -273,37 +273,21 @@ def ba_targets_bulk(request):
                     ba = by_id.get(int(ambassador_id))
                 except (TypeError, ValueError):
                     ba = None
-            if ba is None and ba_name:
-                name_key = re.sub(r'\s+', ' ', ba_name.lower())
-                ba = by_name.get(name_key)
-                if ba is None and len(name_key) >= 4:
-                    # Prefix / contains when unique (short Excel names).
-                    prefix_hits = [
-                        a
-                        for a in ambassadors
-                        if re.sub(r'\s+', ' ', (a.name or '').strip().lower()).startswith(name_key)
-                    ]
-                    if len(prefix_hits) == 1:
-                        ba = prefix_hits[0]
-                    elif not prefix_hits:
-                        contains = [
-                            a
-                            for a in ambassadors
-                            if name_key in re.sub(r'\s+', ' ', (a.name or '').strip().lower())
-                        ]
-                        if len(contains) == 1:
-                            ba = contains[0]
             if ba is None and code:
                 # Normalize BA-1 → BA-001 style
                 m = re.match(r'^BA-?0*(\d+)$', code, re.I)
                 if m:
                     code = f'BA-{int(m.group(1)):03d}'
                 ba = codes.get(code)
+            if ba is None and ba_name:
+                name_key = re.sub(r'\s+', ' ', ba_name.lower())
+                ba = by_name.get(name_key)
 
             if ba is None:
-                hint = ba_name or code or ambassador_id or '?'
+                hint = code or ba_name or ambassador_id or '?'
                 errors.append(f'Row {i}: unknown ambassador ({hint}).')
                 continue
+
             month = _normalize_month(row.get('month'))
             if not month:
                 errors.append(f'Row {i}: invalid month.')
