@@ -28,15 +28,23 @@ type FlatReport = DailyReportRow & {
   baCity: string
 }
 
-const STOCK_FIELDS: FieldDef[] = [...stockOilFields, ...stockGheeFields, ...stockWaadiFields]
-const SALES_FIELDS: FieldDef[] = [
-  ...interceptionFields,
-  ...competitiveFields,
-  ...whyNotFields,
-  ...oilSalesFields,
-  ...gheeSalesFields,
-  ...waadiSalesFields,
+const STOCK_SECTIONS: { title: string; fields: FieldDef[] }[] = [
+  { title: 'Kashmir Cooking Oil', fields: stockOilFields },
+  { title: 'Kashmir Banaspati', fields: stockGheeFields },
+  { title: 'Waadi Banaspati', fields: stockWaadiFields },
 ]
+
+const SALES_SECTIONS: { title: string; fields: FieldDef[] }[] = [
+  { title: 'Interceptions', fields: interceptionFields },
+  { title: 'Competitive User', fields: competitiveFields },
+  { title: 'Why Not Kashmir', fields: whyNotFields },
+  { title: 'Kashmir Cooking Oil', fields: oilSalesFields },
+  { title: 'Kashmir Banaspati', fields: gheeSalesFields },
+  { title: 'Waadi Banaspati', fields: waadiSalesFields },
+]
+
+const STOCK_FIELDS: FieldDef[] = STOCK_SECTIONS.flatMap((s) => s.fields)
+const SALES_FIELDS: FieldDef[] = SALES_SECTIONS.flatMap((s) => s.fields)
 
 const LABEL_BY_KEY = Object.fromEntries(
   [...STOCK_FIELDS, ...SALES_FIELDS].map((f) => [f.key, f.label]),
@@ -66,34 +74,51 @@ function flattenCards(cards: DailyReportBaCard[]): FlatReport[] {
   })
 }
 
-function stockRows(report: DailyReportRow) {
-  const stock = report.stock || {}
-  const known = STOCK_FIELDS.map((f) => ({
-    key: f.key,
-    label: f.label,
-    value: stock[f.key] != null && stock[f.key] !== '' ? String(stock[f.key]) : null,
-  })).filter((r) => r.value != null)
+type ValueRow = { key: string; label: string; value: string }
+type GroupedSection = { title: string; rows: ValueRow[] }
 
-  if (known.length) return known
-
-  return Object.entries(stock)
-    .filter(([, v]) => v !== '' && v != null)
-    .map(([k, v]) => ({ key: k, label: labelFor(k), value: String(v) }))
+function rowsForFields(
+  data: Record<string, string> | null | undefined,
+  fields: FieldDef[],
+): ValueRow[] {
+  const map = data || {}
+  return fields
+    .map((f) => ({
+      key: f.key,
+      label: f.label,
+      value: map[f.key] != null && map[f.key] !== '' ? String(map[f.key]) : null,
+    }))
+    .filter((r): r is ValueRow => r.value != null)
 }
 
-function salesRows(report: DailyReportRow) {
-  const sales = report.sales || {}
-  const known = SALES_FIELDS.map((f) => ({
-    key: f.key,
-    label: f.label,
-    value: sales[f.key] != null && sales[f.key] !== '' ? String(sales[f.key]) : null,
-  })).filter((r) => r.value != null)
+function stockGroups(report: DailyReportRow): GroupedSection[] {
+  const stock = report.stock || {}
+  const groups = STOCK_SECTIONS.map((s) => ({
+    title: s.title,
+    rows: rowsForFields(stock, s.fields),
+  })).filter((g) => g.rows.length > 0)
 
-  if (known.length) return known
+  if (groups.length) return groups
 
-  return Object.entries(sales)
+  const leftover = Object.entries(stock)
     .filter(([, v]) => v !== '' && v != null)
     .map(([k, v]) => ({ key: k, label: labelFor(k), value: String(v) }))
+  return leftover.length ? [{ title: 'Stock', rows: leftover }] : []
+}
+
+function salesGroups(report: DailyReportRow): GroupedSection[] {
+  const sales = report.sales || {}
+  const groups = SALES_SECTIONS.map((s) => ({
+    title: s.title,
+    rows: rowsForFields(sales, s.fields),
+  })).filter((g) => g.rows.length > 0)
+
+  if (groups.length) return groups
+
+  const leftover = Object.entries(sales)
+    .filter(([, v]) => v !== '' && v != null)
+    .map(([k, v]) => ({ key: k, label: labelFor(k), value: String(v) }))
+  return leftover.length ? [{ title: 'Sales', rows: leftover }] : []
 }
 
 function competitorRows(report: DailyReportRow) {
@@ -122,7 +147,7 @@ function ReportSectionPanel({
   emptyLabel = 'Nothing submitted.',
 }: {
   title: string
-  rows: { key: string; label: string; value: string }[]
+  rows: ValueRow[]
   emptyLabel?: string
 }) {
   return (
@@ -139,6 +164,46 @@ function ReportSectionPanel({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+function GroupedReportPanel({
+  title,
+  groups,
+  emptyLabel = 'Nothing submitted.',
+}: {
+  title: string
+  groups: GroupedSection[]
+  emptyLabel?: string
+}) {
+  return (
+    <div className="flex min-h-[12rem] flex-col rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+      <h4 className="mb-3 text-[11px] font-bold tracking-wide text-slate-500 uppercase">{title}</h4>
+      {groups.length === 0 ? (
+        <p className="text-sm text-slate-400">{emptyLabel}</p>
+      ) : (
+        <div className="max-h-72 space-y-3 overflow-y-auto pr-1 text-sm">
+          {groups.map((g) => (
+            <div key={g.title}>
+              <div className="mb-1.5 text-[10px] font-bold tracking-wide text-brand-700 uppercase">
+                {g.title}
+              </div>
+              <ul className="space-y-2">
+                {g.rows.map((r) => (
+                  <li
+                    key={r.key}
+                    className="flex items-start justify-between gap-3 border-b border-slate-50 pb-1.5 last:border-0"
+                  >
+                    <span className="min-w-0 text-slate-600">{r.label}</span>
+                    <span className="shrink-0 font-medium text-slate-900">{r.value}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -162,8 +227,8 @@ function CheckoutReportCard({
         : report.hasFieldReport
           ? 'Checkout'
           : 'Check-out only'
-  const stock = stockRows(report)
-  const sales = salesRows(report)
+  const stock = stockGroups(report)
+  const sales = salesGroups(report)
   const competitors = competitorRows(report)
 
   return (
@@ -201,8 +266,8 @@ function CheckoutReportCard({
             </p>
           ) : (
             <div className="grid gap-3 lg:grid-cols-3">
-              <ReportSectionPanel title="Stock report" rows={stock} />
-              <ReportSectionPanel title="Daily sales" rows={sales} />
+              <GroupedReportPanel title="Stock report" groups={stock} />
+              <GroupedReportPanel title="Daily sales" groups={sales} />
               <ReportSectionPanel title="Competitor data" rows={competitors} />
             </div>
           )}
