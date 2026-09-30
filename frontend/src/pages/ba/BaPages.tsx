@@ -80,7 +80,6 @@ export function BaHomePage() {
     reportSubmitted,
     isEarlyCheckout,
     checkIn,
-    checkOut,
     refresh: refreshShift,
   } = useBaShift()
 

@@ -78,7 +78,7 @@ type ValueRow = { key: string; label: string; value: string }
 type GroupedSection = { title: string; rows: ValueRow[] }
 
 function rowsForFields(
-  data: Record<string, string> | null | undefined,
+  data: Record<string, string | number> | null | undefined,
   fields: FieldDef[],
 ): ValueRow[] {
   const map = data || {}
