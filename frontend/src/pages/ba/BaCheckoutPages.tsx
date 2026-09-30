@@ -1,9 +1,14 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useBaShift } from '../../context/BaShiftContext'
 import { useBaSession } from '../../lib/baAccounts'
 import { submitBaDailyReportApi } from '../../lib/earlyCheckoutApi'
+import { fetchBaOwnTargets, monthInputValue } from '../../lib/baTargets'
+import {
+  baPerformanceCategories,
+  type ProductCategory,
+} from '../../data/baPerformance'
 
 import {
   DEFAULT_OTHER_BRANDS,
@@ -30,6 +35,25 @@ function emptyStock(fields: FieldDef[]) {
   return Object.fromEntries(fields.map((f) => [f.key, ''])) as Record<string, string>
 }
 
+/** Blank is OK; entered numbers must be > 0 (no default 0, no zero allowed). */
+function sanitizePositiveInput(raw: string): string {
+  const v = raw.trim()
+  if (v === '' || v === '.' || v === '-') return ''
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  if (n <= 0) return ''
+  return raw
+}
+
+function hasInvalidZero(values: Record<string, string>, fields: FieldDef[]) {
+  return fields.some((f) => {
+    const raw = (values[f.key] ?? '').trim()
+    if (!raw) return false
+    const n = Number(raw)
+    return Number.isFinite(n) && n <= 0
+  })
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -53,11 +77,12 @@ function NumberField({
       <span className="mb-1 block text-xs font-semibold text-slate-600">{label}</span>
       <input
         type="number"
-        min={0}
+        min={0.01}
+        step="any"
         inputMode="decimal"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="0"
+        onChange={(e) => onChange(sanitizePositiveInput(e.target.value))}
+        placeholder="Enter value"
         className="w-full rounded-xl border border-slate-200 bg-[#faf6ee] px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/15"
       />
     </label>
@@ -125,30 +150,105 @@ function PageChrome({
   )
 }
 
+function categoryFromSkuLabel(sku: string): ProductCategory | null {
+  const t = sku.trim().toLowerCase()
+  if (!t) return null
+  if (baPerformanceCategories.includes(sku as ProductCategory)) return sku as ProductCategory
+  if (t.includes('waadi') || t.startsWith('wbp')) return 'Waadi Banaspati'
+  if (t.includes('banaspati') || t.startsWith('kbp')) return 'Kashmir Banaspati'
+  if (t.includes('cooking oil') || t.startsWith('kpgo') || t.includes('oil')) return 'Kashmir Cooking Oil'
+  return null
+}
+
+/** Categories this BA has targets for this month; empty = show all. */
+function useTargetCategories(token: string | undefined) {
+  const [cats, setCats] = useState<Set<ProductCategory> | null>(null)
+
+  useEffect(() => {
+    if (!token || token.startsWith('demo-')) {
+      setCats(null)
+      return
+    }
+    let cancelled = false
+    void fetchBaOwnTargets(token, monthInputValue())
+      .then((data) => {
+        if (cancelled) return
+        const next = new Set<ProductCategory>()
+        for (const row of data.rows ?? []) {
+          const sku = String(row.sku ?? '')
+          const cat = categoryFromSkuLabel(sku)
+          if (cat) next.add(cat)
+        }
+        setCats(next.size ? next : null)
+      })
+      .catch(() => {
+        if (!cancelled) setCats(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  return cats
+}
+
+function showCategory(active: Set<ProductCategory> | null, cat: ProductCategory) {
+  return !active || active.has(cat)
+}
+
 export function BaDailySalesPage() {
   const navigate = useNavigate()
   const { city } = useBaShift()
+  const { account } = useBaSession()
+  const targetCats = useTargetCategories(account?.accessToken)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const salesSections = useMemo(() => {
+    const sections: { title: string; fields: FieldDef[] }[] = [
+      { title: 'Interceptions', fields: interceptionFields },
+      { title: 'Competitive User', fields: competitiveFields },
+      { title: 'Why Not Kashmir', fields: whyNotFields },
+    ]
+    if (showCategory(targetCats, 'Kashmir Cooking Oil')) {
+      sections.push({ title: 'Kashmir Cooking Oil', fields: oilSalesFields })
+    }
+    if (showCategory(targetCats, 'Kashmir Banaspati')) {
+      sections.push({ title: 'Kashmir Banaspati', fields: gheeSalesFields })
+    }
+    if (showCategory(targetCats, 'Waadi Banaspati')) {
+      sections.push({ title: 'Waadi Banaspati', fields: waadiSalesFields })
+    }
+    return sections
+  }, [targetCats])
 
   const allFields = useMemo(
-    () => [
-      ...interceptionFields,
-      ...competitiveFields,
-      ...whyNotFields,
-      ...oilSalesFields,
-      ...gheeSalesFields,
-      ...waadiSalesFields,
-    ],
-    [],
+    () => salesSections.flatMap((s) => s.fields),
+    [salesSections],
   )
 
   const [values, setValues] = useState(() => emptyNumeric(allFields))
 
+  useEffect(() => {
+    setValues((prev) => {
+      const next = emptyNumeric(allFields)
+      for (const f of allFields) {
+        if (prev[f.key] != null && prev[f.key] !== '') next[f.key] = prev[f.key]
+      }
+      return next
+    })
+  }, [allFields])
+
   function setField(key: string, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }))
+    setFormError(null)
   }
 
   function handleContinue(e: FormEvent) {
     e.preventDefault()
+    if (hasInvalidZero(values, allFields)) {
+      setFormError('Values must be greater than 0 (leave blank if none).')
+      return
+    }
     sessionStorage.setItem(SESSION_KEYS.sales, JSON.stringify(values))
     navigate('/ba/other-brands')
   }
@@ -157,75 +257,28 @@ export function BaDailySalesPage() {
     <form onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Daily Sales"
-        subtitle={`${city} · enter today's interceptions & SKU sales`}
+        subtitle={`${city} · enter today's interceptions & SKU sales by category`}
         onBack={() => navigate('/ba/stock-report')}
       />
 
-      <Section title="Interceptions">
-        {interceptionFields.map((f) => (
-          <NumberField
-            key={f.key}
-            label={f.label}
-            value={values[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
+      {salesSections.map((section) => (
+        <Section key={section.title} title={section.title}>
+          {section.fields.map((f) => (
+            <NumberField
+              key={f.key}
+              label={f.label}
+              value={values[f.key] ?? ''}
+              onChange={(v) => setField(f.key, v)}
+            />
+          ))}
+        </Section>
+      ))}
 
-      <Section title="Competitive User">
-        {competitiveFields.map((f) => (
-          <NumberField
-            key={f.key}
-            label={f.label}
-            value={values[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Why Not Kashmir">
-        {whyNotFields.map((f) => (
-          <NumberField
-            key={f.key}
-            label={f.label}
-            value={values[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Kashmir Cooking Oil">
-        {oilSalesFields.map((f) => (
-          <NumberField
-            key={f.key}
-            label={f.label}
-            value={values[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Kashmir Banaspati">
-        {gheeSalesFields.map((f) => (
-          <NumberField
-            key={f.key}
-            label={f.label}
-            value={values[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Waadi Banaspati">
-        {waadiSalesFields.map((f) => (
-          <NumberField
-            key={f.key}
-            label={f.label}
-            value={values[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
+      {formError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {formError}
+        </div>
+      )}
 
       <button
         type="submit"
@@ -240,19 +293,49 @@ export function BaDailySalesPage() {
 export function BaStockReportPage() {
   const navigate = useNavigate()
   const { checkOut } = useBaShift()
-  const [stock, setStock] = useState(() =>
-    emptyStock([...stockOilFields, ...stockGheeFields, ...stockWaadiFields]),
-  )
+  const { account } = useBaSession()
+  const targetCats = useTargetCategories(account?.accessToken)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const stockSections = useMemo(() => {
+    const sections: { title: string; fields: FieldDef[] }[] = []
+    if (showCategory(targetCats, 'Kashmir Cooking Oil')) {
+      sections.push({ title: 'Kashmir Cooking Oil', fields: stockOilFields })
+    }
+    if (showCategory(targetCats, 'Kashmir Banaspati')) {
+      sections.push({ title: 'Kashmir Banaspati', fields: stockGheeFields })
+    }
+    if (showCategory(targetCats, 'Waadi Banaspati')) {
+      sections.push({ title: 'Waadi Banaspati', fields: stockWaadiFields })
+    }
+    return sections.length
+      ? sections
+      : [
+          { title: 'Kashmir Cooking Oil', fields: stockOilFields },
+          { title: 'Kashmir Banaspati', fields: stockGheeFields },
+          { title: 'Waadi Banaspati', fields: stockWaadiFields },
+        ]
+  }, [targetCats])
+
+  const stockFields = useMemo(() => stockSections.flatMap((s) => s.fields), [stockSections])
+  const [stock, setStock] = useState(() => emptyStock(stockFields))
+
+  useEffect(() => {
+    setStock((prev) => {
+      const next = emptyStock(stockFields)
+      for (const f of stockFields) {
+        if (prev[f.key]) next[f.key] = prev[f.key]
+      }
+      return next
+    })
+  }, [stockFields])
 
   function setField(key: string, value: string) {
     setStock((prev) => ({ ...prev, [key]: value }))
     setFormError(null)
   }
 
-  const allFilled = [...stockOilFields, ...stockGheeFields, ...stockWaadiFields].every(
-    (f) => stock[f.key],
-  )
+  const allFilled = stockFields.every((f) => stock[f.key])
 
   function handleContinue(e: FormEvent) {
     e.preventDefault()
@@ -276,42 +359,22 @@ export function BaStockReportPage() {
     <form onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Stock Report"
-        subtitle="Mark In Stock, Out of Stock, or Near Out of Stock for each SKU"
+        subtitle="Mark stock by category — In Stock, Out of Stock, or Near Out of Stock"
         onBack={() => navigate('/ba/home')}
       />
 
-      <Section title="Kashmir Cooking Oil">
-        {stockOilFields.map((f) => (
-          <StockCheckboxes
-            key={f.key}
-            label={f.label}
-            value={stock[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Kashmir Banaspati">
-        {stockGheeFields.map((f) => (
-          <StockCheckboxes
-            key={f.key}
-            label={f.label}
-            value={stock[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Waadi Banaspati">
-        {stockWaadiFields.map((f) => (
-          <StockCheckboxes
-            key={f.key}
-            label={f.label}
-            value={stock[f.key]}
-            onChange={(v) => setField(f.key, v)}
-          />
-        ))}
-      </Section>
+      {stockSections.map((section) => (
+        <Section key={section.title} title={section.title}>
+          {section.fields.map((f) => (
+            <StockCheckboxes
+              key={f.key}
+              label={f.label}
+              value={stock[f.key] ?? ''}
+              onChange={(v) => setField(f.key, v)}
+            />
+          ))}
+        </Section>
+      ))}
 
       {formError && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -340,16 +403,23 @@ export function BaOtherBrandsPage() {
   const [error, setError] = useState<string | null>(null)
 
   function updateRow(id: string, patch: Partial<OtherBrandRow>) {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r
+        const next = { ...r, ...patch }
+        if (patch.price != null) next.price = sanitizePositiveInput(patch.price)
+        return next
+      }),
+    )
   }
 
-  const canSubmit = rows.some((r) => r.name.trim() && r.price.trim())
+  const canSubmit = rows.some((r) => r.name.trim() && r.price.trim() && Number(r.price) > 0)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (busy) return
     if (!canSubmit) {
-      setError('Enter at least one brand name and price.')
+      setError('Enter at least one brand price greater than 0.')
       return
     }
     const payload = rows.filter((r) => r.name.trim() || r.price.trim())
@@ -448,11 +518,12 @@ export function BaOtherBrandsPage() {
               <span className="mb-1 block text-xs font-semibold text-slate-600">Price (Rs.)</span>
               <input
                 type="number"
-                min={0}
+                min={0.01}
+                step="any"
                 inputMode="decimal"
                 value={row.price}
                 onChange={(e) => updateRow(row.id, { price: e.target.value })}
-                placeholder="0"
+                placeholder="Enter price"
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
               />
             </label>

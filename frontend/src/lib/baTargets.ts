@@ -162,7 +162,7 @@ export async function upsertBaTargets(entries: Omit<BaTargetEntry, 'updatedAt' |
 /** BA invite-token fetch for current month (or all). */
 export async function fetchBaOwnTargets(token: string, month?: string): Promise<{
   targetKg: number
-  salesKg: number
+  salesKg: number | null
   skus: string[]
   rows: BaTargetEntry[]
 }> {

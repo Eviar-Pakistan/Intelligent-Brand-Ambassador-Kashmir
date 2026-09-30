@@ -64,30 +64,53 @@ export function resolveProductCategory(raw: string): ProductCategory | null {
   }
   if (
     t === 'kashmir banaspati' ||
+    t === 'kashmir banaspati oil' ||
     t === 'kbp' ||
     t === 'banaspati' ||
     t === 'kashmir ghee'
   ) {
     return 'Kashmir Banaspati'
   }
-  if (t === 'waadi banaspati' || t === 'wbp' || t === 'waadi' || t === 'waadi ghee') {
+  if (
+    t === 'waadi banaspati' ||
+    t === 'waadi banaspati oil' ||
+    t === 'wbp' ||
+    t === 'waadi' ||
+    t === 'waadi ghee'
+  ) {
     return 'Waadi Banaspati'
   }
   const exact = baPerformanceCategories.find((c) => normalizeLabel(c) === t)
   return exact ?? null
 }
 
+/** Split a cell that lists several SKUs (comma / semicolon / newline). */
+export function splitSkuCell(raw: string): string[] {
+  return String(raw ?? '')
+    .split(/[,;\n|]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 function resolveSkuInCategory(skuRaw: string, category: ProductCategory): string | null {
   const want = normalizeLabel(skuRaw)
   if (!want) return null
+  const wantKey = want.replace(/[^a-z0-9]+/g, '')
   const pool = getSkusForCategory(category)
   const exact = pool.find((s) => normalizeLabel(s) === want)
   if (exact) return exact
+  const byKey = pool.find((s) => normalizeLabel(s).replace(/[^a-z0-9]+/g, '') === wantKey)
+  if (byKey) return byKey
   // Prefix / contains for slightly truncated Excel cells
   const prefix = pool.filter((s) => normalizeLabel(s).startsWith(want) || want.startsWith(normalizeLabel(s)))
   if (prefix.length === 1) return prefix[0]
-  const contains = pool.filter((s) => normalizeLabel(s).includes(want))
+  const contains = pool.filter((s) => normalizeLabel(s).includes(want) || want.includes(normalizeLabel(s)))
   if (contains.length === 1) return contains[0]
+  const keyContains = pool.filter((s) => {
+    const k = normalizeLabel(s).replace(/[^a-z0-9]+/g, '')
+    return k.includes(wantKey) || wantKey.includes(k)
+  })
+  if (keyContains.length === 1) return keyContains[0]
   return null
 }
 
@@ -123,18 +146,24 @@ export async function downloadSalesBulkTemplate(opts?: {
       '4. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP).',
     ],
     [
-      '5. SKU — must belong to that category (see sheet "Categories & SKUs"). One SKU per row; use several rows for several SKUs.',
+      '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category).',
     ],
     [
-      '6. Same BA can appear on many rows — e.g. Kinza × 3 categories, and one or more SKUs under each.',
+      '6. Same BA can appear on many rows — e.g. Kinza × 3 categories (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).',
     ],
-    ['7. Target — numeric target for that row (required).'],
+    ['7. Target — numeric target for that row (required). Do not use 0.'],
     ['8. Save the file, then upload it via Upload targets on Ambassadors.'],
     [],
     COLUMNS.map((c) => c.header),
     [],
-    ['Example (Kinza — three categories, one SKU each)'],
-    ['Kinza', '2026-09', 'Kashmir Cooking Oil', 'KPGO 10 LTR CAN Cons. RED', 120],
+    ['Example (Kinza — three category rows; comma-separated SKUs OK)'],
+    [
+      'Kinza',
+      '2026-09',
+      'Kashmir Cooking Oil',
+      'KPGO 10 LTR CAN Cons. RED, KPGO 5 LTR TIN Cons. RED',
+      120,
+    ],
     ['Kinza', '2026-09', 'Kashmir Banaspati', 'KBP GOLD 10 KG BKT', 80],
     ['Kinza', '2026-09', 'Waadi Banaspati', 'WBP 5 KG BKT', 40],
     [],
@@ -262,13 +291,30 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
 
     let sku = skuRaw
     if (category && skuRaw) {
-      const matched = resolveSkuInCategory(skuRaw, category)
-      if (!matched) {
-        rowErrors.push(
-          `Row ${rowNum}: SKU "${skuRaw}" is not valid for ${category}. See template sheet "Categories & SKUs".`,
-        )
+      const parts = splitSkuCell(skuRaw)
+      if (parts.length > 1) {
+        // Category-level target: many SKUs in one cell, one Target for the category.
+        const bad: string[] = []
+        for (const part of parts) {
+          if (!resolveSkuInCategory(part, category)) bad.push(part)
+        }
+        if (bad.length) {
+          rowErrors.push(
+            `Row ${rowNum}: SKU(s) not valid for ${category}: ${bad.slice(0, 3).join('; ')}${bad.length > 3 ? '…' : ''}`,
+          )
+        } else {
+          // Store against the category name so monthly totals stay correct (one target, not × SKUs).
+          sku = category
+        }
       } else {
-        sku = matched
+        const matched = resolveSkuInCategory(skuRaw, category)
+        if (!matched) {
+          rowErrors.push(
+            `Row ${rowNum}: SKU "${skuRaw}" is not valid for ${category}. See template sheet "Categories & SKUs".`,
+          )
+        } else {
+          sku = matched
+        }
       }
     }
 
