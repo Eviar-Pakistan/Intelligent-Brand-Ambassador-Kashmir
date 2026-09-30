@@ -55,7 +55,7 @@ import {
   parseSalesBulkFile,
   type SalesParseResult,
 } from '../../lib/salesBulkUpload'
-import { getSkusForCategory } from '../../data/baPerformance'
+import { getSkusForCategory, baPerformanceCategories, type ProductCategory } from '../../data/baPerformance'
 
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
@@ -80,20 +80,24 @@ function SetTargetSalesModal({
   )
   const [baId, setBaId] = useState('')
   const [month, setMonth] = useState(() => monthInputValue())
+  const [category, setCategory] = useState<ProductCategory>('Kashmir Cooking Oil')
   const [sku, setSku] = useState('')
   const [targetKg, setTargetKg] = useState('120')
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const skuOptions = useMemo(() => getSkusForCategory(null), [])
+  const skuOptions = useMemo(() => getSkusForCategory(category), [category])
 
   useEffect(() => {
     if (!open) return
     setBaId((prev) => (prev && baOptions.some((b) => b.id === prev) ? prev : baOptions[0]?.id ?? ''))
-    setSku((prev) => (prev && skuOptions.includes(prev) ? prev : skuOptions[0] ?? ''))
     setSaveError(null)
-  }, [open, baOptions, skuOptions])
+  }, [open, baOptions])
+
+  useEffect(() => {
+    setSku((prev) => (prev && skuOptions.includes(prev) ? prev : skuOptions[0] ?? ''))
+  }, [skuOptions])
 
   async function save() {
     const ba = baOptions.find((b) => b.id === baId)
@@ -171,6 +175,20 @@ function SetTargetSalesModal({
             onChange={(e) => setMonth(e.target.value)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
           />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">Category</span>
+          <Select
+            className="w-full"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as ProductCategory)}
+          >
+            {baPerformanceCategories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
         </label>
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">SKU</span>
@@ -677,8 +695,9 @@ function UploadTargetsModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: BA Name, Month, SKU, Target. Names must match Ambassadors. Blank Month = current month.
-            The downloaded file is headers only — no sample rows.
+            Columns: BA Name, Month, Category, SKU, Target. Same BA can have many rows (e.g. all three
+            categories; one or more SKUs each). SKU must match the category — see sheet
+            &quot;Categories &amp; SKUs&quot; in the file.
           </p>
           <Button
             variant="secondary"
