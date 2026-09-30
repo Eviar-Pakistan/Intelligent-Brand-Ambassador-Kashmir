@@ -1049,7 +1049,12 @@ export function BaPerformancePage() {
   // Live API only — never fall back to demo roster (that caused Rank #2 / fake pay).
   const rank = pay?.rank ?? 0
   const basePay = pay?.base ?? 0
-  const incentive = pay?.incentive ?? 0
+  const targetAchPay = pay?.targetAchPay ?? pay?.conversionPay ?? 0
+  const disciplinePay = pay?.disciplinePay ?? 0
+  const travelPay = pay?.travelPay ?? pay?.sessionPay ?? 0
+  const groomingPay = pay?.groomingPay ?? 0
+  const mobilePay = pay?.mobilePay ?? 0
+  const travelPerDay = pay?.baTravelPerDay ?? 300
   const totalPkr = pay?.totalPkr ?? 0
   const daysWorked = pay?.daysWorked ?? 0
   const rating =
@@ -1136,7 +1141,14 @@ export function BaPerformancePage() {
         <div className="text-sm font-bold text-slate-900">PKR breakdown</div>
         <div className="mt-3 space-y-2.5">
           <BaPayRow label="BA salary" value={basePay} />
-          <BaPayRow label="Target Ach + allowances" value={incentive} />
+          <BaPayRow label="Target Ach" value={targetAchPay} />
+          <BaPayRow label="Discipline" value={disciplinePay} />
+          <BaPayRow
+            label={`Travelling Allowance ${travelPerDay}/-PKR per day`}
+            value={travelPay}
+          />
+          <BaPayRow label="Grooming" value={groomingPay} />
+          <BaPayRow label="Mobile/Data" value={mobilePay} />
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
           <span className="text-sm font-bold text-slate-900">Total earned</span>

@@ -226,14 +226,18 @@ export function IncentivesPage() {
       </div>
 
       <Card padding={false}>
-        <TableScroll minWidth={800}>
+        <TableScroll minWidth={1180}>
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
                 <th className="px-4 py-3">Rank</th>
                 <th className="px-4 py-3">Ambassador</th>
-                <th className="px-4 py-3">Base pay</th>
-                <th className="px-4 py-3">Incentive</th>
+                <th className="px-4 py-3">BA salary</th>
+                <th className="px-4 py-3">Target Ach</th>
+                <th className="px-4 py-3">Discipline</th>
+                <th className="px-4 py-3">Travelling</th>
+                <th className="px-4 py-3">Grooming</th>
+                <th className="px-4 py-3">Mobile/Data</th>
                 <th className="px-4 py-3">Total (PKR)</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
@@ -242,7 +246,7 @@ export function IncentivesPage() {
             <tbody>
               {!loading && filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-sm text-slate-500">
                     No certified / deployed BAs yet — incentives appear once ambassadors are on the
                     leaderboard.
                   </td>
@@ -267,10 +271,14 @@ export function IncentivesPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.base)}</td>
                       <td className="px-4 py-3 font-semibold text-slate-800">
-                        {formatPkr(r.incentive)}
+                        {formatPkr(r.salary ?? r.base)}
                       </td>
+                      <td className="px-4 py-3">{formatPkr(r.targetAchPay ?? r.conversionPay)}</td>
+                      <td className="px-4 py-3">{formatPkr(r.disciplinePay ?? 0)}</td>
+                      <td className="px-4 py-3">{formatPkr(r.travelPay ?? r.sessionPay)}</td>
+                      <td className="px-4 py-3">{formatPkr(r.groomingPay ?? 0)}</td>
+                      <td className="px-4 py-3">{formatPkr(r.mobilePay ?? 0)}</td>
                       <td className="px-4 py-3">
                         <button
                           className="font-bold text-slate-900 hover:text-brand-600"
@@ -389,14 +397,13 @@ function BreakdownBody({
 
       <Row label="BA salary" value={selected.salary ?? selected.base} />
       <Row label="Target Ach" value={selected.targetAchPay ?? selected.conversionPay} />
-      <Row label="Discipline / attendance" value={selected.disciplinePay ?? 0} />
+      <Row label="Discipline" value={selected.disciplinePay ?? 0} />
       <Row
-        label={`Travelling (${formatPkr(selected.baTravelPerDay ?? kpiConfig.baTravelPerDay)}/day)`}
+        label={`Travelling Allowance ${selected.baTravelPerDay ?? kpiConfig.baTravelPerDay}/-PKR per day`}
         value={selected.travelPay ?? selected.sessionPay}
       />
       <Row label="Grooming" value={selected.groomingPay ?? kpiConfig.baGrooming} />
-      <Row label="Mobile / data" value={selected.mobilePay ?? kpiConfig.baMobile} />
-      <Row label="Incentive (excl. salary)" value={selected.incentive} />
+      <Row label="Mobile/Data" value={selected.mobilePay ?? kpiConfig.baMobile} />
       <Row label="Total" value={selected.totalPkr} />
 
       <div className="flex justify-end gap-2 pt-2">

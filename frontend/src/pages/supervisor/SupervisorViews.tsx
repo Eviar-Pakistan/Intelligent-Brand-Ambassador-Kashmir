@@ -191,9 +191,13 @@ export function SupervisorIncentiveCard({ supervisor }: { supervisor: Supervisor
       <div className="mt-1 text-2xl font-black">{formatPkr(pay.totalPkr)}</div>
       <div className="mt-3 space-y-2 text-sm">
         <PayRow label="Sup salary" value={formatPkr(pay.salary)} />
-        <PayRow label="Fuel / DA" value={formatPkr(pay.fuelDa)} />
-        <PayRow label="Discipline / attendance" value={formatPkr(pay.discipline)} />
-        <PayRow label="Mobile / data" value={formatPkr(pay.mobile)} />
+        <PayRow label="Fuel/DA" value={formatPkr(pay.fuelDa)} />
+        <PayRow label="Discipline/Attendance" value={formatPkr(pay.discipline)} />
+        <PayRow label="Mobile/Data" value={formatPkr(pay.mobile)} />
+        <div className="flex items-center justify-between border-t border-slate-100 pt-2 font-bold text-slate-900">
+          <span>Total</span>
+          <span className="text-brand-700">{formatPkr(pay.totalPkr)}</span>
+        </div>
       </div>
     </Card>
   )

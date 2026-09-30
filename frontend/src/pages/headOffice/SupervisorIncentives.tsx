@@ -70,10 +70,10 @@ export function SupervisorIncentives() {
               <tr>
                 <th className="px-4 py-3">Supervisor</th>
                 <th className="px-4 py-3">Stores</th>
-                <th className="px-4 py-3">Salary</th>
+                <th className="px-4 py-3">Sup salary</th>
                 <th className="px-4 py-3">Fuel/DA</th>
-                <th className="px-4 py-3">Discipline</th>
-                <th className="px-4 py-3">Mobile</th>
+                <th className="px-4 py-3">Discipline/Attendance</th>
+                <th className="px-4 py-3">Mobile/Data</th>
                 <th className="px-4 py-3">Total (PKR)</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
@@ -163,9 +163,9 @@ export function SupervisorIncentives() {
               </div>
             </div>
             <Row label="Sup salary" value={selected.salary} />
-            <Row label="Fuel / DA" value={selected.fuelDa} />
-            <Row label="Discipline / attendance" value={selected.discipline} />
-            <Row label="Mobile / data" value={selected.mobile} />
+            <Row label="Fuel/DA" value={selected.fuelDa} />
+            <Row label="Discipline/Attendance" value={selected.discipline} />
+            <Row label="Mobile/Data" value={selected.mobile} />
             <Row label="Total" value={selected.totalPkr} />
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setSelected(null)}>
