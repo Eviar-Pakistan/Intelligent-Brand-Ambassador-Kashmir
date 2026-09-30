@@ -100,7 +100,7 @@ class SupervisorViewSet(viewsets.ModelViewSet):
             )
             user.set_password(password)
             user.save()
-            supervisor = Supervisor.objects.create(user=user, city=city)
+            supervisor = Supervisor.objects.create(user=user, city=city, login_password=password)
             supervisor.set_stores(ids)
 
         return Response(SupervisorSerializer(supervisor).data, status=status.HTTP_201_CREATED)
@@ -142,6 +142,7 @@ class SupervisorViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             user.set_password(password)
+            supervisor.login_password = password
 
         store_ids = data.get('storeIds', data.get('store_ids', None))
         with transaction.atomic():
@@ -196,7 +197,10 @@ class SupervisorViewSet(viewsets.ModelViewSet):
         user.email = email
         user.username = email
         user.set_password(password)
-        user.save(update_fields=['email', 'username', 'password', 'updated_at'])
+        supervisor.login_password = password
+        with transaction.atomic():
+            user.save(update_fields=['email', 'username', 'password', 'updated_at'])
+            supervisor.save(update_fields=['login_password', 'updated_at'])
         return Response(SupervisorSerializer(supervisor).data)
 
     @action(detail=True, methods=['get'], url_path='overview')

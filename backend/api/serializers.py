@@ -763,6 +763,8 @@ class SupervisorSerializer(serializers.ModelSerializer):
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     # FE used passwordHash emptiness to show "no password"; always true for API users
     passwordHash = serializers.SerializerMethodField()
+    # Plaintext copy for HO Login screen (auth still uses hashed User.password)
+    loginPassword = serializers.CharField(source='login_password', read_only=True)
 
     class Meta:
         model = Supervisor
@@ -776,6 +778,7 @@ class SupervisorSerializer(serializers.ModelSerializer):
             'storeCount',
             'hasPassword',
             'passwordHash',
+            'loginPassword',
             'createdAt',
         )
 

@@ -21,6 +21,8 @@ export type Supervisor = {
   passwordSalt: string
   /** non-empty when a password is set (API users always "set") */
   passwordHash: string
+  /** Last password HO set — shown on Login screen (auth uses the hash). */
+  loginPassword: string
 }
 
 const STORAGE_KEY = 'supervisors-v2'
@@ -53,6 +55,7 @@ function mapApi(row: Record<string, unknown>): Supervisor {
     createdAt: String(row.createdAt ?? new Date().toISOString()),
     passwordSalt: '',
     passwordHash: (row.passwordHash || row.hasPassword) ? 'set' : '',
+    loginPassword: String(row.loginPassword ?? ''),
   }
 }
 
@@ -69,6 +72,7 @@ function loadLocal(): Supervisor[] {
     createdAt: s.createdAt ?? new Date().toISOString(),
     passwordSalt: s.passwordSalt ?? '',
     passwordHash: s.passwordHash ?? '',
+    loginPassword: s.loginPassword ?? '',
   }))
 }
 
@@ -209,6 +213,7 @@ export async function createSupervisor(
     createdAt: new Date().toISOString(),
     passwordSalt: 'local',
     passwordHash: hashPassword('local', fields.password),
+    loginPassword: fields.password,
   }
   commit([supervisor, ...supervisors.filter((s) => s.id !== supervisor.id)])
   return supervisor
@@ -227,7 +232,13 @@ export async function setLogin(supervisorId: string, email: string, password: st
   commit(
     supervisors.map((s) =>
       s.id === supervisorId
-        ? { ...s, email: email.trim(), passwordSalt: 'local', passwordHash: hashPassword('local', password) }
+        ? {
+            ...s,
+            email: email.trim(),
+            passwordSalt: 'local',
+            passwordHash: hashPassword('local', password),
+            loginPassword: password,
+          }
         : s,
     ),
   )

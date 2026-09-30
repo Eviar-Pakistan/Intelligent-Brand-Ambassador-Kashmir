@@ -214,12 +214,16 @@ function AddSupervisorModal({
 function LoginDetailsModal({ supervisor, onClose, onSaved }: { supervisor: Supervisor | null; onClose: () => void; onSaved: (c: Credentials) => void }) {
   const [draft, setDraft] = useState<{ id: string; email: string; password: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // start fresh (current email + a new password) each time a supervisor is opened
+  // Show the last password HO saved; only invent a new one if none is stored yet.
   const current =
     supervisor && draft?.id === supervisor.id
       ? draft
       : supervisor
-        ? { id: supervisor.id, email: supervisor.email, password: generatePassword() }
+        ? {
+            id: supervisor.id,
+            email: supervisor.email,
+            password: supervisor.loginPassword || generatePassword(),
+          }
         : null
 
   function close() {
@@ -271,6 +275,11 @@ function LoginDetailsModal({ supervisor, onClose, onSaved }: { supervisor: Super
               setError(null)
             }}
           />
+          <p className="text-xs text-slate-500">
+            {supervisor.loginPassword
+              ? 'This is the saved password. Change it and click Save login to update sign-in.'
+              : 'No saved password on file yet (older accounts). Generate or type one, then Save login.'}
+          </p>
           {!supervisor.passwordHash && (
             <p className="text-xs text-amber-700">This supervisor has no password yet, so they cannot sign in.</p>
           )}
@@ -289,7 +298,7 @@ function LoginDetailsModal({ supervisor, onClose, onSaved }: { supervisor: Super
   )
 }
 
-/** The sign-in details, shown once — passwords are stored hashed and cannot be looked up later. */
+/** Sign-in details after create / password update. */
 function CredentialsModal({ credentials, onClose }: { credentials: Credentials | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const url = `${window.location.origin}/login`
@@ -314,8 +323,8 @@ function CredentialsModal({ credentials, onClose }: { credentials: Credentials |
       {credentials && (
         <div className="space-y-4 text-sm">
           <p className="text-slate-600">
-            Share these sign-in details with {credentials.name}. The password is shown only now — it is stored
-            hashed and cannot be looked up later (use “Login” to set a new one).
+            Share these sign-in details with {credentials.name}. You can also open Login anytime to view or change
+            the password.
           </p>
           <pre className="rounded-xl bg-slate-50 px-4 py-3 font-mono text-xs break-all whitespace-pre-wrap text-slate-700">
             {text}

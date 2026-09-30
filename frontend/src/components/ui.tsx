@@ -225,7 +225,7 @@ export function PasswordField({
   value,
   onChange,
   onGenerate,
-  hint = 'At least 6 characters. You will see it once after saving.',
+  hint = 'At least 6 characters. Head Office can view it again from Login.',
   autoFocus,
   required = true,
   minLength = 6,

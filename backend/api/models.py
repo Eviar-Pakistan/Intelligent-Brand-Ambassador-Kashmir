@@ -598,6 +598,8 @@ class Supervisor(models.Model):
         blank=True,
         related_name='field_supervisors',
     )
+    # Last password set by HO — auth uses the hashed User.password; this copy is for HO Login view only.
+    login_password = models.CharField(max_length=128, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
