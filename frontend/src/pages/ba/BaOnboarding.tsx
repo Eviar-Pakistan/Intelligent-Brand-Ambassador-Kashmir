@@ -117,7 +117,7 @@ function VideoStep({ account, module }: { account: BaAccount; module: TrainingMo
           onClick={() => updateBaAccount(account.id, { videoWatched: true, status: 'Training' })}
           className={`mt-3 w-full ${primaryButton}`}
         >
-          {finished ? 'Continue to assessment' : 'Finish the video first'}
+          Start assessment
         </button>
       </section>
     </div>

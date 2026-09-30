@@ -33,43 +33,30 @@ export type BulkShiftParseResult = { rows: ParsedBulkShiftRow[]; errors: string[
 export type StoreCodeSample = { id: number; name: string; city: string; code?: string }
 
 export function storeCodeForId(id: number, code?: string) {
-  return (code || '').trim() || `ST-${String(id).padStart(3, '0')}`
+  return (code || '').trim() || String(id)
 }
 
 export function normalizeStoreCode(raw: string) {
-  const t = raw.trim().toUpperCase()
-  if (!t) return ''
-  const m = t.match(/^ST-?0*(\d+)$/i)
-  if (m) return `ST-${m[1].padStart(3, '0')}`
-  if (/^\d+$/.test(t)) return `ST-${t.padStart(3, '0')}`
-  return t
+  return raw.trim().toUpperCase()
 }
 
 export function resolveStoreByCode(code: string, extras?: StoreCodeSample[]) {
   const want = normalizeStoreCode(code)
-  const wantRaw = code.trim().toUpperCase()
-  if (!want && !wantRaw) return null
+  if (!want) return null
 
   const pool: StoreCodeSample[] =
     extras && extras.length
       ? extras
-      : stores.map((s) => ({ id: s.id, name: s.name, city: s.city, code: storeCodeForId(s.id) }))
+      : stores.map((s) => ({ id: s.id, name: s.name, city: s.city, code: storeCodeForId(s.id, s.code) }))
 
   const byExact = pool.find((s) => {
     const c = storeCodeForId(s.id, s.code).toUpperCase()
-    return c === wantRaw || c === want || normalizeStoreCode(c) === want
+    return c === want
   })
   if (byExact) {
     return stores.find((s) => s.id === byExact.id) ?? { id: byExact.id, name: byExact.name, city: byExact.city, peak: [] as string[] }
   }
-
-  const id = Number(want.replace(/^ST-0*/, '') || want.replace(/^ST-/, ''))
-  if (!Number.isFinite(id) || id < 1) return null
-  const hit = pool.find((s) => s.id === id)
-  if (hit) {
-    return stores.find((s) => s.id === hit.id) ?? { id: hit.id, name: hit.name, city: hit.city, peak: [] as string[] }
-  }
-  return stores.find((s) => s.id === id) ?? null
+  return null
 }
 
 function normalizeStoreName(raw: string) {
@@ -105,16 +92,13 @@ function pickUniqueStoreByName(want: string, pool: StoreCodeSample[]): StoreCode
   return null
 }
 
-/** Match store by code (ST-…) or by store name (case-insensitive / truncated). */
+/** Match store by business code or by store name (case-insensitive / truncated). */
 export function resolveStoreByCodeOrName(codeOrName: string, extras?: StoreCodeSample[]) {
   const raw = codeOrName.trim()
   if (!raw) return null
 
-  // Only try code path when it looks like ST-… / numeric id
-  if (/^ST-?\d+$/i.test(raw) || /^\d+$/.test(raw)) {
-    const byCode = resolveStoreByCode(raw, extras)
-    if (byCode) return byCode
-  }
+  const byCode = resolveStoreByCode(raw, extras)
+  if (byCode) return byCode
 
   const pool: StoreCodeSample[] =
     extras && extras.length
@@ -263,9 +247,9 @@ export async function downloadBulkShiftTemplate(opts?: {
   const ba2 = opts?.baSamples?.[2]?.code || opts?.baSamples?.[0]?.code || 'BA-003'
 
   const sampleRows = [
-    [ba0, s0 ? storeCodeForId(s0.id, s0.code) : 'ST-001', '10:00 AM', '6:00 PM', month],
-    [ba1, s1 ? storeCodeForId(s1.id, s1.code) : 'ST-002', '9:00 AM', '5:00 PM', month],
-    [ba2, s2 ? storeCodeForId(s2.id, s2.code) : 'ST-003', '12:00 PM', '8:00 PM', month],
+    [ba0, s0 ? storeCodeForId(s0.id, s0.code) : '33991', '10:00 AM', '6:00 PM', month],
+    [ba1, s1 ? storeCodeForId(s1.id, s1.code) : 'DTR000297', '9:00 AM', '5:00 PM', month],
+    [ba2, s2 ? storeCodeForId(s2.id, s2.code) : '90168', '12:00 PM', '8:00 PM', month],
   ]
 
   const sheet = XLSX.utils.aoa_to_sheet([COLUMNS.map((c) => c.header), ...sampleRows])
@@ -281,7 +265,7 @@ export async function downloadBulkShiftTemplate(opts?: {
     [],
     [`1. Edit the "${SHEET}" sheet — sample rows use ${month}.`],
     ['2. BA Code or Name — BA-001 style code OR ambassador name (must match Ambassadors).'],
-    ['3. Store Code or Name — ST-… code OR store name (must match Stores).'],
+    ['3. Store Code or Name — business store code (e.g. 33991, DTR000297) OR store name.'],
     ['4. Start Time / End Time — 12-hour Karachi time, e.g. 10:00 AM and 6:00 PM.'],
     ['5. Month — YYYY-MM (e.g. 2026-09). Each row creates one assignment for the whole month.'],
     ['6. Save, then upload via Create shifts → Bulk (Excel).'],
@@ -445,7 +429,7 @@ export function expandBulkShiftRow(input: BulkShiftRow, extras?: StoreCodeSample
   if (!store) {
     return {
       slots: [] as const,
-      error: `Unknown store "${input.storeCode}" — use a store code (ST-…) or exact store name from Stores.` as string,
+      error: `Unknown store "${input.storeCode}" — use a store code or exact store name from Stores.` as string,
     }
   }
 

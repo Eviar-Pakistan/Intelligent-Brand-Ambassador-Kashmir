@@ -6,7 +6,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
 
-from .codes import normalize_code, save_with_code
+from .codes import normalize_code, normalize_store_code, save_with_code, uniquify_store_code
 
 
 class Store(models.Model):
@@ -22,11 +22,11 @@ class Store(models.Model):
         INACTIVE = 'INACTIVE', 'Inactive'
 
     code = models.CharField(
-        max_length=16,
+        max_length=32,
         unique=True,
-        blank=True,
+        blank=False,
         db_index=True,
-        help_text='Business id e.g. ST-001 (auto-assigned on create).',
+        help_text='Business store code (required). Duplicates get -1, -2, …',
     )
     name = models.CharField(max_length=200)
     city = models.CharField(max_length=100)
@@ -69,11 +69,10 @@ class Store(models.Model):
         return f'{label} {self.name} ({self.city})'
 
     def ensure_code(self) -> None:
-        if self.code:
-            self.code = normalize_code(self.code, 'ST') or self.code
+        raw = normalize_store_code(self.code)
+        if not raw:
             return
-        # Allocated inside save_with_code for concurrency safety.
-        return
+        self.code = uniquify_store_code(Store, raw, exclude_pk=self.pk)
 
     @property
     def shopper_url(self) -> str:
@@ -115,36 +114,39 @@ class Store(models.Model):
         return True
 
     def save(self, *args, **kwargs):
+        from django.core.exceptions import ValidationError
+
         creating = self.pk is None
+        raw = normalize_store_code(self.code)
+        if not raw:
+            raise ValidationError({'code': 'Store code is required.'})
+        self.code = uniquify_store_code(Store, raw, exclude_pk=self.pk)
+
         self.ensure_qr_slug()
         # Only auto-fill coordinates when the user did not provide them.
         if self.latitude is None or self.longitude is None:
             self.ensure_coordinates(force=True)
 
-        def _persist():
-            super(Store, self).save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
-            update_fields: list[str] = []
-            if creating and self.qr_slug.startswith('stmp-'):
-                token = secrets.token_urlsafe(8).replace('_', '').replace('-', '').lower()[:12]
-                self.qr_slug = f's{self.pk}-{token}'
-                self.generate_qr_image(force=True)
-                update_fields.extend(['qr_slug', 'qr_image'])
+        update_fields: list[str] = []
+        if creating and self.qr_slug.startswith('stmp-'):
+            token = secrets.token_urlsafe(8).replace('_', '').replace('-', '').lower()[:12]
+            self.qr_slug = f's{self.pk}-{token}'
+            self.generate_qr_image(force=True)
+            update_fields.extend(['qr_slug', 'qr_image'])
 
-            # If coords were still empty before pk existed, fill once (never overwrite manual values).
-            if self.latitude is None or self.longitude is None:
-                self.ensure_coordinates(force=True)
-                update_fields.extend(['latitude', 'longitude'])
+        if self.latitude is None or self.longitude is None:
+            self.ensure_coordinates(force=True)
+            update_fields.extend(['latitude', 'longitude'])
 
-            if not self.qr_image and 'qr_image' not in update_fields:
-                self.generate_qr_image(force=True)
-                update_fields.append('qr_image')
+        if not self.qr_image and 'qr_image' not in update_fields:
+            self.generate_qr_image(force=True)
+            update_fields.append('qr_image')
 
-            if update_fields:
-                update_fields.append('updated_at')
-                super(Store, self).save(update_fields=list(dict.fromkeys(update_fields)))
-
-        save_with_code(self, 'ST', _persist)
+        if update_fields:
+            update_fields.append('updated_at')
+            super().save(update_fields=list(dict.fromkeys(update_fields)))
 
 
 class StoreReward(models.Model):

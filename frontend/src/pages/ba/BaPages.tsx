@@ -18,10 +18,20 @@ import { formatDate, formatTime, formatCoord, useBaShift } from '../../context/B
 import { useTrainingContent } from '../../context/TrainingContentContext'
 import { downloadBaReportTemplate, parseBaReportFile, saveBaReport } from '../../lib/baReport'
 import { Modal } from '../../components/ui'
-import { useBaSession, isBaCertified, syncAssessmentResultToApi, updateBaAccount } from '../../lib/baAccounts'
+import {
+  useBaSession,
+  isBaCertified,
+  syncAnswerToApi,
+  syncAssessmentResultToApi,
+  updateBaAccount,
+  type BaAccount,
+} from '../../lib/baAccounts'
+import type { AnswerMetrics, AssessmentResult } from '../../lib/baAssessment'
 import { formatMonthLabel, fetchBaOwnTargets, monthInputValue, sumBaTargetsForMonth } from '../../lib/baTargets'
 import { submitBaDailyReportApi } from '../../lib/earlyCheckoutApi'
+import { AssessmentReport } from './AssessmentReport'
 import { BaOnboarding } from './BaOnboarding'
+import { LockedTrainingVideo, VerbalAssessmentCapture, primaryButton } from './verbalTrainingParts'
 
 function greetingFor(hour: number) {
   if (hour < 12) return 'Good Morning'
@@ -700,15 +710,19 @@ export function BaTrainingPage() {
   if (!isBaCertified(account.status) || reportPending) {
     return <BaOnboarding account={account} />
   }
-  return <BaTrainingLibrary />
+  return <BaTrainingLibrary account={account} />
 }
 
-function BaTrainingLibrary() {
+function BaTrainingLibrary({ account }: { account: BaAccount }) {
   const { modules } = useTrainingContent()
   const [mode, setMode] = useState<'video' | 'scenarios'>('video')
   const [moduleIndex, setModuleIndex] = useState(0)
-  const [qIndex, setQIndex] = useState(0)
-  const [videoAnswer, setVideoAnswer] = useState('')
+  const [videoFinished, setVideoFinished] = useState(false)
+  const [phase, setPhase] = useState<'watch' | 'assess' | 'report'>('watch')
+  const [sessionAnswers, setSessionAnswers] = useState<AnswerMetrics[]>([])
+  const [sessionResult, setSessionResult] = useState<AssessmentResult | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const [scenarioIndex, setScenarioIndex] = useState(1)
   const [answer, setAnswer] = useState('')
@@ -716,7 +730,14 @@ function BaTrainingLibrary() {
 
   const scenario = trainingScenarios[scenarioIndex]
   const module = modules[moduleIndex]
-  const question = module?.questions[qIndex]
+
+  useEffect(() => {
+    setVideoFinished(false)
+    setPhase('watch')
+    setSessionAnswers([])
+    setSessionResult(null)
+    setSaveError(null)
+  }, [moduleIndex])
 
   function submitAnswer() {
     if (answer.trim().length < 8) return
@@ -730,18 +751,46 @@ function BaTrainingLibrary() {
     setSubmitted(false)
   }
 
-  function nextQuestion() {
-    if (!module || videoAnswer.trim().length < 4) return
-    if (qIndex >= module.questions.length - 1) {
-      if (moduleIndex < modules.length - 1) {
-        setModuleIndex((i) => i + 1)
-        setQIndex(0)
-        setVideoAnswer('')
-      }
+  async function persistAndFinish(answers: AnswerMetrics[], result: AssessmentResult) {
+    setSaving(true)
+    setSaveError(null)
+    // Already-certified BAs stay certified on refresher runs (avoid demoting on a practice fail).
+    const keepCertified = isBaCertified(account.status) || result.certified
+    const syncedResult: AssessmentResult = { ...result, certified: keepCertified }
+    const next = {
+      answers,
+      result: syncedResult,
+      videoWatched: true,
+      status: (keepCertified ? 'Certified' : 'Training') as BaAccount['status'],
+    }
+    updateBaAccount(account.id, next)
+    try {
+      await syncAssessmentResultToApi({ ...account, ...next }, syncedResult)
+    } catch (err) {
+      setSaving(false)
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : 'Could not save your report to the server. Check your connection and try again.',
+      )
       return
     }
-    setQIndex((i) => i + 1)
-    setVideoAnswer('')
+    setSaving(false)
+  }
+
+  function onAssessmentComplete(answers: AnswerMetrics[], result: AssessmentResult) {
+    setSessionAnswers(answers)
+    setSessionResult(result)
+    setPhase('report')
+    void persistAndFinish(answers, result)
+  }
+
+  function resetModuleSession() {
+    setVideoFinished(false)
+    setPhase('watch')
+    setSessionAnswers([])
+    setSessionResult(null)
+    setSaveError(null)
   }
 
   return (
@@ -774,6 +823,23 @@ function BaTrainingLibrary() {
           </div>
         ) : (
           <div className="mx-auto w-full max-w-md flex-1 space-y-4">
+            {modules.length > 1 && phase === 'watch' && (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {modules.map((m, i) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setModuleIndex(i)}
+                    className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                      i === moduleIndex ? 'bg-navy-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200'
+                    }`}
+                  >
+                    {m.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div>
               <h1 className="text-center text-sm font-bold text-slate-800">{module.title}</h1>
               {module.description && (
@@ -781,42 +847,70 @@ function BaTrainingLibrary() {
               )}
             </div>
 
-            {module.videoUrl ? (
-              <video
-                src={module.videoUrl}
-                controls
-                className="w-full rounded-2xl bg-black shadow-sm"
-              />
-            ) : (
-              <div className="rounded-2xl bg-slate-200/80 px-4 py-10 text-center text-sm text-slate-600">
-                Video: {module.videoName}
-              </div>
-            )}
-
-            {question && (
-              <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <div className="text-xs font-semibold text-slate-500 uppercase">
-                  Question {qIndex + 1}/{module.questions.length}
-                </div>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{question.prompt}</p>
-                <textarea
-                  value={videoAnswer}
-                  onChange={(e) => setVideoAnswer(e.target.value)}
-                  rows={3}
-                  className="mt-3 w-full resize-none rounded-xl border border-slate-200 bg-[#faf6ee] px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:bg-white"
-                  placeholder="Type your response..."
-                />
+            {phase === 'report' && sessionResult ? (
+              <div className="space-y-4">
+                <AssessmentReport name={account.name} result={sessionResult} answers={sessionAnswers} />
+                {saveError && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {saveError}
+                  </div>
+                )}
+                {saving && <p className="text-center text-sm text-slate-500">Saving report to your BA file…</p>}
                 <button
                   type="button"
-                  disabled={videoAnswer.trim().length < 4}
-                  onClick={nextQuestion}
-                  className="mt-4 w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={saving}
+                  onClick={resetModuleSession}
+                  className={`w-full ${primaryButton}`}
                 >
-                  {qIndex >= module.questions.length - 1 && moduleIndex >= modules.length - 1
-                    ? 'Complete'
-                    : 'Next question'}
+                  {moduleIndex < modules.length - 1 ? 'Train another video' : 'Train again'}
                 </button>
-              </section>
+                {moduleIndex < modules.length - 1 && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setModuleIndex((i) => i + 1)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-base font-semibold text-slate-700 shadow-sm"
+                  >
+                    Next training video
+                  </button>
+                )}
+              </div>
+            ) : phase === 'assess' ? (
+              <VerbalAssessmentCapture
+                key={`${module.id}-assess`}
+                module={module}
+                onProgress={(answers) => {
+                  const latest = answers[answers.length - 1]
+                  if (latest) {
+                    void syncAnswerToApi(account, latest).catch((err) => {
+                      console.error('[ba] answer store to API failed', err)
+                    })
+                  }
+                }}
+                onComplete={onAssessmentComplete}
+              />
+            ) : (
+              <>
+                {module.videoUrl ? (
+                  <LockedTrainingVideo
+                    videoKey={module.id}
+                    videoUrl={module.videoUrl}
+                    onFinishedChange={(done) => setVideoFinished(done)}
+                  />
+                ) : (
+                  <div className="rounded-2xl bg-slate-200/80 px-4 py-10 text-center text-sm text-slate-600">
+                    Video: {module.videoName}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  disabled={!videoFinished && !!module.videoUrl}
+                  onClick={() => setPhase('assess')}
+                  className={`w-full ${primaryButton}`}
+                >
+                  Start assessment
+                </button>
+              </>
             )}
           </div>
         )

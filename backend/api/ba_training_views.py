@@ -391,6 +391,18 @@ def ba_complete_assessment(request):
     if isinstance(report, dict):
         ambassador.report_json = report
 
+    # Enforce server threshold — do not trust client `certified` alone.
+    from .assessment import certification_threshold
+
+    threshold = certification_threshold()
+    if overall_score is not None:
+        certified = overall_score >= threshold
+    elif isinstance(report, dict):
+        try:
+            certified = float(report.get('quality') or 0) >= threshold
+        except (TypeError, ValueError):
+            pass
+
     if certified:
         ambassador.status = Ambassador.Status.CERTIFIED
         ambassador.certified_at = timezone.now()

@@ -75,7 +75,7 @@ function hhmmFromParts(hour: string, minute: string, ampm: string) {
 }
 
 function storeCodeLabel(id: number, code?: string) {
-  return code || `ST-${String(id).padStart(3, '0')}`
+  return (code || '').trim() || String(id)
 }
 
 export function StoresPage() {
@@ -124,7 +124,7 @@ export function StoresPage() {
           </thead>
           <tbody>
             {stores.map((s) => {
-              const code = s.code || findCreatedStore(s.id)?.code || `ST-${String(s.id).padStart(3, '0')}`
+              const code = s.code || findCreatedStore(s.id)?.code || String(s.id)
               return (
               <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                 <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700">{code}</td>

@@ -73,7 +73,6 @@ class StoreSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             'id',
-            'code',
             'qr_slug',
             'shopper_url',
             'qr_image_url',
@@ -88,6 +87,18 @@ class StoreSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         )
+
+    def validate_code(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Store code is required.')
+        if len(value) > 32:
+            raise serializers.ValidationError('Store code must be at most 32 characters.')
+        return value
+
+    def create(self, validated_data):
+        # Model.save uniquifies duplicates as code-1, code-2, …
+        return super().create(validated_data)
 
     def get_shopper_url(self, obj):
         return obj.shopper_url

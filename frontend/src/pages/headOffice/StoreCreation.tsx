@@ -35,6 +35,7 @@ function Field({ label, children, className }: { label: string; children: React.
 }
 
 const emptyForm = {
+  code: '',
   name: '',
   city: CITIES[0],
   footfall: 'Medium' as Footfall,
@@ -58,7 +59,9 @@ export function CreateStorePage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault()
+    const code = form.code.trim()
     const name = form.name.trim()
+    if (!code) return setError('Store code is required.')
     if (!name) return setError('Store name is required.')
     if (storeExists(name, form.city)) return setError(`A store named "${name}" already exists in ${form.city}.`)
 
@@ -81,6 +84,7 @@ export function CreateStorePage() {
     try {
       const [store] = await createStoresAsync([
         {
+          code,
           name,
           city: form.city,
           footfall: form.footfall,
@@ -111,13 +115,26 @@ export function CreateStorePage() {
       />
       <Card>
         <form onSubmit={submit} className="space-y-4">
+          <Field label="Store code">
+            <input
+              className={fieldClass}
+              value={form.code}
+              onChange={set('code')}
+              placeholder="e.g. 33991 or DTR000297"
+              autoFocus
+              required
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Required. If this code already exists, it is saved as code-1, code-2, …
+            </p>
+          </Field>
+
           <Field label="Store name">
             <input
               className={fieldClass}
               value={form.name}
               onChange={set('name')}
               placeholder="e.g. Carrefour Johar Town"
-              autoFocus
               required
             />
           </Field>
@@ -254,7 +271,7 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
               {created.map((s) => (
                 <li key={s.id}>
                   <Link to={`${base}/stores/${s.id}`} onClick={close} className="font-medium hover:text-brand-600">
-                    #{s.id} {s.name}
+                    {s.code} · {s.name}
                   </Link>{' '}
                   <span className="text-xs text-slate-400">{s.city}</span>
                 </li>
@@ -274,8 +291,8 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
             <div className="space-y-2">
               <div className="font-semibold text-slate-900">1. Download the template</div>
               <p className="text-xs text-slate-500">
-                Columns: Store name *, City *, Footfall (optional), Latitude, Longitude. Address is ignored.
-                Peak hours are set randomly. Blank or "-" lat/lng still creates the store (without map pin).
+                Columns: Store Code *, Store name *, City *, Footfall (optional), Latitude, Longitude.
+                Duplicate codes are saved as code-1, code-2, …. Blank or "-" lat/lng still creates the store.
               </p>
               <Button variant="secondary" disabled={creating} onClick={() => void downloadStoreTemplate()}>
                 <Download size={14} /> Download store template

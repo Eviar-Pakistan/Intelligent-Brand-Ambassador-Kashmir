@@ -9,6 +9,8 @@ import { stores, type Store } from '../data/mock'
 export type Footfall = Store['footfall']
 
 export type StoreInput = {
+  /** Required business store code (e.g. 33991, DTR000297). Duplicates become code-1. */
+  code: string
   name: string
   city: string
   footfall: Footfall
@@ -20,7 +22,7 @@ export type StoreInput = {
   contactPhone?: string
 }
 
-export type CreatedStore = StoreInput & { id: number; slug: string; createdAt: string; code?: string }
+export type CreatedStore = StoreInput & { id: number; slug: string; createdAt: string }
 
 export const CITIES = [
   'Lahore',
@@ -45,7 +47,7 @@ function toStore(c: CreatedStore): Store {
     id: c.id,
     name: c.name,
     city: c.city,
-    code: c.code || `ST-${String(c.id).padStart(3, '0')}`,
+    code: c.code || '',
     footfall: c.footfall,
     bas: 0,
     coverage: 0,
@@ -108,10 +110,23 @@ function randomSuffix() {
 /** Adds the stores to the app. Returns them with their new ids and shopper slugs. */
 export function createStores(inputs: StoreInput[]): CreatedStore[] {
   const added: CreatedStore[] = []
+  const usedCodes = new Set(
+    stores.map((s) => (s.code || '').trim().toUpperCase()).filter(Boolean),
+  )
   for (const input of inputs) {
     const id = Math.max(99, ...stores.map((s) => s.id)) + 1
+    let code = (input.code || '').trim()
+    if (!code) throw new Error('Store code is required.')
+    const base = code
+    let n = 1
+    while (usedCodes.has(code.toUpperCase())) {
+      code = `${base}-${n}`
+      n += 1
+    }
+    usedCodes.add(code.toUpperCase())
     const record: CreatedStore = {
       ...input,
+      code,
       name: input.name.trim(),
       city: input.city.trim(),
       contactPerson: input.contactPerson?.trim() || '',
@@ -194,7 +209,7 @@ function apiStoreToCreated(s: ApiStore): CreatedStore {
     contactPhone: '',
     slug: s.qr_slug || `s${s.id}-demo`,
     createdAt: s.created_at || new Date().toISOString(),
-    code: s.code || `ST-${String(s.id).padStart(3, '0')}`,
+    code: s.code || '',
   }
 }
 
@@ -273,6 +288,7 @@ export async function createStoresAsync(
     const s = await apiRequest<ApiStore>('/api/stores/', {
       method: 'POST',
       body: {
+        code: input.code.trim(),
         name: input.name.trim(),
         city: input.city.trim(),
         address: input.address.trim() || `${input.city.trim()}`,
@@ -376,6 +392,7 @@ export async function qrDataUrl(text: string, width = 320) {
 
 const SHEET = 'Stores'
 const COLUMNS = [
+  { key: 'code', header: 'Store Code *', width: 16 },
   { key: 'name', header: 'Store name *', width: 30 },
   { key: 'city', header: 'City *', width: 16 },
   { key: 'footfall', header: 'Footfall', width: 12 },
@@ -408,15 +425,17 @@ export async function downloadStoreTemplate() {
     ['How to fill the store template'],
     [],
     [`1. Add one store per row on the "${SHEET}" sheet, starting on row 2. Do not change the header row.`],
-    ['2. Required columns: Store name, City, Latitude, Longitude.'],
-    ['3. Footfall is optional (High / Medium / Low). Blank = Medium. Address and Peak hours are ignored if present.'],
-    ['4. Address defaults to the city. Peak hours are assigned randomly.'],
-    ['5. Latitude and Longitude are optional. Blank or "-" creates the store without map coordinates.'],
-    ['6. A store that already exists (same name and city) is skipped.'],
-    ['7. Save the file, then upload it on the Stores page. Each store gets its own shopper QR code.'],
+    ['2. Required columns: Store Code, Store name, City.'],
+    ['3. Store Code — your business code (e.g. 33991, DTR000297). If a code already exists, the app saves it as code-1, code-2, …'],
+    ['4. Footfall is optional (High / Medium / Low). Blank = Medium.'],
+    ['5. Address defaults to the city. Peak hours are assigned randomly.'],
+    ['6. Latitude and Longitude are optional. Blank or "-" creates the store without map coordinates.'],
+    ['7. A store that already exists (same name and city) is skipped.'],
+    ['8. Save the file, then upload it on the Stores page. Each store gets its own shopper QR code.'],
     [],
     COLUMNS.map((c) => c.header),
-    ['Carrefour Johar Town', 'Lahore', 'High', 31.4697, 74.2728],
+    ['33991', 'Carrefour Johar Town', 'Lahore', 'High', 31.4697, 74.2728],
+    ['DTR000297', 'Al-Fatah Blue Area', 'Islamabad', 'Medium', 33.7294, 73.0931],
   ])
   help['!cols'] = COLUMNS.map((c) => ({ wch: c.width }))
 
@@ -484,14 +503,17 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
   const rows: ParsedStoreRow[] = []
   const errors: string[] = []
   const seen = new Set<string>()
+  const seenCodes = new Set<string>()
 
   table.slice(headerAt + 1).forEach((r, i) => {
     const rowNo = headerAt + i + 2
     if (r.every((c) => String(c ?? '').trim() === '')) return
 
+    const code = cellByHeaders(r, col, ['store code', 'code', 'storecode', 'outlet code'])
     const name = cellByHeaders(r, col, ['store name', 'name', 'store'])
     const city = cellByHeaders(r, col, ['city', 'town'])
     const problems: string[] = []
+    if (!code) problems.push('Store Code is required')
     if (!name) problems.push('Store name is required')
     if (!city) problems.push('City is required')
 
@@ -521,15 +543,25 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
         }
         return n
       }
-      // Only parse when at least one side has a value; if one is missing, leave both null
       if (!isMissingCoord(latRaw) && !isMissingCoord(lngRaw)) {
         latitude = parseCoord(latRaw, 90, 'Latitude')
         longitude = parseCoord(lngRaw, 180, 'Longitude')
       } else if (!isMissingCoord(latRaw) || !isMissingCoord(lngRaw)) {
-        // Partial coords — still create store, but don't save incomplete pair
         latitude = null
         longitude = null
       }
+    }
+
+    // Deduplicate codes within the file → code-1, code-2 (same rule as the API)
+    let finalCode = code
+    if (code) {
+      const base = code
+      let n = 1
+      while (seenCodes.has(finalCode.toUpperCase())) {
+        finalCode = `${base}-${n}`
+        n += 1
+      }
+      seenCodes.add(finalCode.toUpperCase())
     }
 
     if (name && city) {
@@ -546,10 +578,11 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
     rows.push({
       row: rowNo,
       input: {
+        code: finalCode,
         name,
         city,
         footfall,
-        address: city, // address ignored from Excel
+        address: city,
         latitude,
         longitude,
         peakHours: randomPeakHours(),

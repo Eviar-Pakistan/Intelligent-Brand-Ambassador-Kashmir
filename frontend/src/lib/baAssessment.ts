@@ -41,8 +41,8 @@ export type AssessmentResult = {
   completedAt: string
 }
 
-/** Quality % needed to be certified. */
-export const PASS_MARK = 40
+/** Quality % needed to be certified (matches backend BA_CERTIFICATION_THRESHOLD). */
+export const PASS_MARK = 75
 /** An answer must be at least this long to be submitted. */
 export const MIN_ANSWER_SECONDS = 5
 

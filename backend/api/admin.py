@@ -37,7 +37,7 @@ class StoreAdmin(admin.ModelAdmin):
     )
     list_filter = ('city', 'footfall', 'status')
     search_fields = ('code', 'name', 'city', 'address', 'contact_name', 'contact_phone', 'qr_slug')
-    readonly_fields = ('code', 'qr_slug', 'qr_image', 'created_at', 'updated_at')
+    readonly_fields = ('qr_slug', 'qr_image', 'created_at', 'updated_at')
 
 
 @admin.register(StoreReward)
