@@ -246,14 +246,14 @@ export async function setLogin(supervisorId: string, email: string, password: st
 
 /** Excel of supervisors with email + last HO-saved password (empty if never saved for viewing). */
 export async function downloadSupervisorLogins(
-  list: { name: string; email: string; password: string; city?: string }[],
+  list: { name: string; email: string; password: string }[],
 ) {
   const XLSX = await import('xlsx')
   const sheet = XLSX.utils.aoa_to_sheet([
-    ['Name', 'Email', 'Password', 'City'],
-    ...list.map((s) => [s.name, s.email, s.password || '', s.city || '']),
+    ['Name', 'Email', 'Password'],
+    ...list.map((s) => [s.name, s.email, s.password || '']),
   ])
-  sheet['!cols'] = [{ wch: 24 }, { wch: 32 }, { wch: 18 }, { wch: 14 }]
+  sheet['!cols'] = [{ wch: 24 }, { wch: 32 }, { wch: 18 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, sheet, 'Supervisor logins')
   XLSX.writeFile(wb, 'Kashmir_Supervisor_Logins.xlsx')

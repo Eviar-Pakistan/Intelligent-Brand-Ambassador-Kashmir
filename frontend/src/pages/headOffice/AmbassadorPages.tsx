@@ -58,7 +58,7 @@ import { getSkusForCategory } from '../../data/baPerformance'
 
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
-/** Set target & sales for one BA at a time. */
+/** Set monthly target for one BA at a time. */
 function SetTargetSalesModal({
   open,
   onClose,
@@ -81,7 +81,6 @@ function SetTargetSalesModal({
   const [month, setMonth] = useState(() => monthInputValue())
   const [sku, setSku] = useState('')
   const [targetKg, setTargetKg] = useState('120')
-  const [salesKg, setSalesKg] = useState('96')
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -98,7 +97,6 @@ function SetTargetSalesModal({
   async function save() {
     const ba = baOptions.find((b) => b.id === baId)
     const target = Number(targetKg)
-    const sales = Number(salesKg)
     if (!ba) {
       setSaveError('Select an ambassador.')
       return
@@ -115,10 +113,6 @@ function SetTargetSalesModal({
       setSaveError('Enter a valid target (0 or more).')
       return
     }
-    if (!Number.isFinite(sales) || sales < 0) {
-      setSaveError('Enter a valid sales amount (0 or more).')
-      return
-    }
     setSaving(true)
     setSaveError(null)
     try {
@@ -129,7 +123,7 @@ function SetTargetSalesModal({
         month,
         sku: sku.trim(),
         targetKg: target,
-        salesKg: sales,
+        salesKg: null,
       })
       onSaved(ba.name)
       onClose()
@@ -141,7 +135,7 @@ function SetTargetSalesModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Set target and sales">
+    <Modal open={open} onClose={onClose} title="Set target">
       <div className="space-y-3 text-sm">
         {!baOptions.length ? (
           <p className="rounded-xl bg-amber-50 px-3 py-2 text-amber-800">
@@ -196,18 +190,6 @@ function SetTargetSalesModal({
             required
             value={targetKg}
             onChange={(e) => setTargetKg(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block font-medium text-slate-700">Sales (Kg)</span>
-          <input
-            type="number"
-            min={0}
-            step={0.1}
-            required
-            value={salesKg}
-            onChange={(e) => setSalesKg(e.target.value)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
           />
         </label>
@@ -581,7 +563,7 @@ function BulkAmbassadorModal({
   )
 }
 
-/** Upload BA targets & sales from Excel (BA Code, BA Name, Month, SKU, Target, Sales Kg). */
+/** Upload BA targets from Excel (BA Name, Month, SKU, Target). */
 function UploadTargetsModal({
   open,
   onClose,
@@ -652,7 +634,7 @@ function UploadTargetsModal({
           return monthInputValue()
         })(),
         targetKg: r.input.target,
-        salesKg: r.input.sales,
+        salesKg: null,
         sku: r.input.sku,
       })
     }
@@ -688,8 +670,8 @@ function UploadTargetsModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: BA Code (or BA Name), BA Name, Month, SKU, Target, Sales (Kg).
-            Blank BA Code is filled from BA Name. Leave Sales blank if not filled (not 0). Blank Month = current month.
+            Columns: BA Name, Month, SKU, Target. Names must match Ambassadors. Blank Month = current month.
+            The downloaded file is headers only — no sample rows.
           </p>
           <Button
             variant="secondary"
@@ -842,7 +824,7 @@ export function AmbassadorsPage() {
               <UserPlus size={15} /> Add ambassador
             </Button>
             <Button variant="secondary" onClick={() => setTargetOpen(true)}>
-              <Target size={15} /> Set target & sales
+              <Target size={15} /> Set target
             </Button>
             <Button variant="secondary" onClick={() => setBulkOpen(true)}>
               <FileSpreadsheet size={15} /> Bulk upload (Excel)
@@ -979,7 +961,7 @@ export function AmbassadorsPage() {
         open={targetOpen}
         onClose={() => setTargetOpen(false)}
         onSaved={(name) => {
-          setBulkToast(`Saved target & sales for ${name}.`)
+          setBulkToast(`Saved target for ${name}.`)
           setTimeout(() => setBulkToast(null), 3200)
         }}
       />

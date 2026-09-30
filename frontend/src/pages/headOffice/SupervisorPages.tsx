@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Eye, KeyRound, Pencil, Plus, Trash2, Download } from 'lucide-react'
 import { Avatar, Button, Card, Modal, PageHeader, PasswordField, TableScroll } from '../../components/ui'
 import { stores } from '../../data/mock'
-import { CITIES, useCreatedStores } from '../../lib/storeRegistry'
+import { useCreatedStores } from '../../lib/storeRegistry'
 import {
   assignStores,
   createSupervisor,
@@ -91,7 +91,7 @@ function AddSupervisorModal({
     name: '',
     phone: '',
     email: '',
-    city: CITIES[0],
+    city: '',
     password: generatePassword(),
   })
   const [form, setForm] = useState(fresh)
@@ -115,7 +115,7 @@ function AddSupervisorModal({
     if (emailInUse(email)) return setError('Another supervisor already uses this email.')
     if (form.password.length < 6) return setError('Password must be at least 6 characters.')
     setError(null)
-    void createSupervisor({ ...form, email }, storeIds)
+    void createSupervisor({ ...form, email, city: '' }, storeIds)
       .then(() => {
         onCreated({ name: form.name.trim(), email, password: form.password, updated: false })
         close()
@@ -135,11 +135,6 @@ function AddSupervisorModal({
     setError(null)
   }
 
-  const set = (key: 'phone' | 'city') => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setForm({ ...form, [key]: e.target.value })
-    setError(null)
-  }
-
   return (
     <Modal open={open} onClose={close} title="Add Supervisor">
       <form onSubmit={submit} className="space-y-4 text-sm">
@@ -147,20 +142,19 @@ function AddSupervisorModal({
           <span className="mb-1 block font-medium text-slate-700">Name *</span>
           <input className={fieldClass} value={form.name} onChange={onNameChange} autoFocus required />
         </label>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1 block font-medium text-slate-700">Phone</span>
-            <input className={fieldClass} value={form.phone} onChange={set('phone')} placeholder="03XX-XXXXXXX" inputMode="tel" />
-          </label>
-          <label className="block">
-            <span className="mb-1 block font-medium text-slate-700">City</span>
-            <select className={fieldClass} value={form.city} onChange={set('city')}>
-              {CITIES.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">Phone</span>
+          <input
+            className={fieldClass}
+            value={form.phone}
+            onChange={(e) => {
+              setForm({ ...form, phone: e.target.value })
+              setError(null)
+            }}
+            placeholder="03XX-XXXXXXX"
+            inputMode="tel"
+          />
+        </label>
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">Email * (sign-in — auto from name)</span>
           <input
@@ -439,7 +433,6 @@ export function SupervisorsPage() {
                     name: s.name,
                     email: s.email,
                     password: s.loginPassword,
-                    city: s.city,
                   })),
                 )
               }
@@ -458,7 +451,6 @@ export function SupervisorsPage() {
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
                 <th className="px-4 py-3">Supervisor</th>
-                <th className="px-4 py-3">City</th>
                 <th className="px-4 py-3">Stores</th>
                 <th className="px-4 py-3">BAs</th>
                 <th className="px-4 py-3">Team conversion</th>
@@ -480,7 +472,6 @@ export function SupervisorsPage() {
                         </span>
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{s.city || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="font-semibold">{o.stores.length}</div>
                       <div className="max-w-56 truncate text-xs text-slate-400">
@@ -505,7 +496,7 @@ export function SupervisorsPage() {
               })}
               {supervisors.length === 0 && (
                 <tr className="border-t border-slate-100">
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
                     No supervisors yet. Use “Add supervisor” to create one.
                   </td>
                 </tr>
@@ -554,7 +545,7 @@ export function SupervisorDetailPage() {
       </Link>
       <PageHeader
         title={supervisor.name}
-        description={[supervisor.city, supervisor.phone, supervisor.email].filter(Boolean).join(' · ') || 'Supervisor'}
+        description={[supervisor.phone, supervisor.email].filter(Boolean).join(' · ') || 'Supervisor'}
         actions={
           <>
             <Button variant="secondary" onClick={() => setEditing(true)}>
