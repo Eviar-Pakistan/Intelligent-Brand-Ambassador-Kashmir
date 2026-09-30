@@ -804,6 +804,16 @@ export function AmbassadorsPage() {
 
   useEffect(() => {
     void syncAmbassadorsFromApi().catch(() => {})
+    const refresh = () => {
+      void syncAmbassadorsFromApi().catch(() => {})
+    }
+    const onFocus = () => refresh()
+    window.addEventListener('focus', onFocus)
+    const timer = window.setInterval(refresh, 20_000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.clearInterval(timer)
+    }
   }, [])
 
   const filteredAccounts = accounts.filter((a) => {

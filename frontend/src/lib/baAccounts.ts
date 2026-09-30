@@ -366,6 +366,19 @@ function formatClock(iso: string | null | undefined): string | null {
   return d.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
+/** Local calendar YYYY-MM-DD for an ISO timestamp (for "today's" attendance). */
+function localYmdFromIso(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function todayYmdLocal() {
+  const today = new Date()
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+}
+
 function apiAmbassadorToAccount(a: ApiAmbassador, existing?: BaAccount | null): BaAccount {
   const result = resultFromApi(a, existing)
   const status = mergeBaStatus(mapApiBaStatus(a.status), existing, result)
@@ -422,8 +435,10 @@ export async function syncAmbassadorsFromApi() {
 async function enrichAttendanceFromShifts() {
   const { apiRequest, isApiAuthenticated } = await import('./api')
   if (!isApiAuthenticated()) return
-  const today = new Date()
-  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const ymd = todayYmdLocal()
+  const month = ymd.slice(0, 7)
+  // Bulk deployment stores one month-level row (usually the 1st). Week queries miss those
+  // after day 1 — load the whole month, then treat clocks by today's check-in date.
   const data = await apiRequest<{
     results: {
       baId: string | null
@@ -433,40 +448,52 @@ async function enrichAttendanceFromShifts() {
       checkedInAt?: string | null
       checkedOutAt?: string | null
     }[]
-  }>(`/api/shifts/?week_start=${encodeURIComponent(ymd)}`)
-  // Prefer today's shift per BA; fall back to any scheduled shift in the returned week.
+  }>(`/api/shifts/?month=${encodeURIComponent(month)}`)
   const byBa = new Map<
     string,
-    { storeId: number; storeName: string; checkIn: string | null; checkOut: string | null; today: boolean }
+    {
+      storeId: number
+      storeName: string
+      checkIn: string | null
+      checkOut: string | null
+      score: number
+    }
   >()
   for (const s of data.results || []) {
     if (!s.baId) continue
-    const isToday = s.dateIso === ymd
-    const prev = byBa.get(s.baId)
-    if (prev?.today && !isToday) continue
-    byBa.set(s.baId, {
+    const baKey = String(s.baId)
+    const checkInDay = localYmdFromIso(s.checkedInAt)
+    const checkOutDay = localYmdFromIso(s.checkedOutAt)
+    // Live today: check-in (or checkout) happened on today's calendar date.
+    const clocksToday = checkInDay === ymd || checkOutDay === ymd
+    const dateIsToday = s.dateIso === ymd
+    // Score: prefer rows with today's attendance clocks, then exact today-dated shifts.
+    const score = clocksToday ? 2 : dateIsToday ? 1 : 0
+    const prev = byBa.get(baKey)
+    if (prev && prev.score >= score) continue
+    byBa.set(baKey, {
       storeId: s.storeId,
       storeName: s.storeName,
-      checkIn: formatClock(s.checkedInAt),
-      checkOut: formatClock(s.checkedOutAt),
-      today: isToday,
+      checkIn: clocksToday || dateIsToday ? formatClock(s.checkedInAt) : null,
+      checkOut:
+        checkOutDay === ymd || (dateIsToday && s.checkedOutAt)
+          ? formatClock(s.checkedOutAt)
+          : null,
+      score,
     })
   }
-  if (!byBa.size) return
   commit(
     accounts.map((a) => {
-      const hit = byBa.get(a.id)
-      if (!hit) {
-        // No shift this week — clear clocks; keep store only if API already set Deployed.
+      const hit = byBa.get(String(a.id))
+      if (!hit || hit.score === 0) {
         return { ...a, checkIn: null, checkOut: null }
       }
       return {
         ...a,
-        // Prefer ambassador home store from API; fall back to shift store for display.
         storeId: a.storeId ?? hit.storeId,
         storeName: a.storeName || hit.storeName,
-        checkIn: hit.today ? hit.checkIn : null,
-        checkOut: hit.today ? hit.checkOut : null,
+        checkIn: hit.checkIn,
+        checkOut: hit.checkOut,
       }
     }),
   )
