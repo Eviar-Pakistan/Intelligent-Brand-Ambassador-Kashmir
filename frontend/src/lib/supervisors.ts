@@ -244,6 +244,21 @@ export async function setLogin(supervisorId: string, email: string, password: st
   )
 }
 
+/** Excel of supervisors with email + last HO-saved password (empty if never saved for viewing). */
+export async function downloadSupervisorLogins(
+  list: { name: string; email: string; password: string; city?: string }[],
+) {
+  const XLSX = await import('xlsx')
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Name', 'Email', 'Password', 'City'],
+    ...list.map((s) => [s.name, s.email, s.password || '', s.city || '']),
+  ])
+  sheet['!cols'] = [{ wch: 24 }, { wch: 32 }, { wch: 18 }, { wch: 14 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, sheet, 'Supervisor logins')
+  XLSX.writeFile(wb, 'Kashmir_Supervisor_Logins.xlsx')
+}
+
 export async function assignStores(supervisorId: string, storeIds: number[]) {
   if (isApiAuthenticated()) {
     const saved = await apiRequest<Record<string, unknown>>(`/api/supervisors/${supervisorId}/assign-stores/`, {

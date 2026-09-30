@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Eye, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Eye, KeyRound, Pencil, Plus, Trash2, Download } from 'lucide-react'
 import { Avatar, Button, Card, Modal, PageHeader, PasswordField, TableScroll } from '../../components/ui'
 import { stores } from '../../data/mock'
 import { CITIES, useCreatedStores } from '../../lib/storeRegistry'
@@ -8,6 +8,7 @@ import {
   assignStores,
   createSupervisor,
   deleteSupervisor,
+  downloadSupervisorLogins,
   emailInUse,
   fetchSupervisorOverview,
   generatePassword,
@@ -428,9 +429,27 @@ export function SupervisorsPage() {
         title="Supervisors"
         description="Create supervisors, give them a login and assign the stores they oversee"
         actions={
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus size={15} /> Add supervisor
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              disabled={supervisors.length === 0}
+              onClick={() =>
+                void downloadSupervisorLogins(
+                  supervisors.map((s) => ({
+                    name: s.name,
+                    email: s.email,
+                    password: s.loginPassword,
+                    city: s.city,
+                  })),
+                )
+              }
+            >
+              <Download size={15} /> Download logins
+            </Button>
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus size={15} /> Add supervisor
+            </Button>
+          </>
         }
       />
       <Card padding={false}>
