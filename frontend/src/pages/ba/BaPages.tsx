@@ -1,22 +1,18 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
   CloudSun,
-  Download,
-  FileSpreadsheet,
   MapPin,
   Trophy,
-  Upload,
 } from 'lucide-react'
 import { fetchBaOwnIncentive, formatPkr, type IncentiveBreakdown } from '../../lib/incentives'
 import { useBrand } from '../../context/BrandContext'
 import { formatDate, formatTime, formatCoord, useBaShift } from '../../context/BaShiftContext'
 import { useTrainingContent } from '../../context/TrainingContentContext'
-import { downloadBaReportTemplate, parseBaReportFile, saveBaReport } from '../../lib/baReport'
 import { Modal } from '../../components/ui'
 import {
   useBaSession,
@@ -28,7 +24,6 @@ import {
 } from '../../lib/baAccounts'
 import type { AnswerMetrics, AssessmentResult } from '../../lib/baAssessment'
 import { formatMonthLabel, fetchBaOwnTargets, monthInputValue, sumBaTargetsForMonth } from '../../lib/baTargets'
-import { submitBaDailyReportApi } from '../../lib/earlyCheckoutApi'
 import { AssessmentReport } from './AssessmentReport'
 import { BaOnboarding } from './BaOnboarding'
 import { LockedTrainingVideo, VerbalAssessmentCapture, primaryButton } from './verbalTrainingParts'
@@ -86,7 +81,6 @@ export function BaHomePage() {
     isEarlyCheckout,
     checkIn,
     checkOut,
-    markReportSubmitted,
     refresh: refreshShift,
   } = useBaShift()
 
@@ -96,10 +90,6 @@ export function BaHomePage() {
   const [checkoutWarningOpen, setCheckoutWarningOpen] = useState(false)
   const [earlyReasonOpen, setEarlyReasonOpen] = useState(false)
   const [earlyReason, setEarlyReason] = useState('')
-  const [excelFileName, setExcelFileName] = useState<string | null>(null)
-  const [excelErrors, setExcelErrors] = useState<string[]>([])
-  const [excelBusy, setExcelBusy] = useState(false)
-  const excelInputRef = useRef<HTMLInputElement>(null)
 
   // Reload today's shift whenever Home opens (any BA status).
   useEffect(() => {
@@ -128,48 +118,6 @@ export function BaHomePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account?.id, account?.accessToken])
-
-  async function saveExcelUpload(file: File | undefined) {
-    if (!file) return
-    setExcelBusy(true)
-    const result = await parseBaReportFile(file)
-    if ('errors' in result) {
-      setExcelBusy(false)
-      setExcelErrors(result.errors)
-      return
-    }
-    setExcelErrors([])
-    setExcelFileName(file.name)
-    saveBaReport(result.data, file.name)
-
-    const token =
-      account?.accessToken && !account.accessToken.startsWith('demo-')
-        ? account.accessToken
-        : undefined
-    if (token) {
-      try {
-        await submitBaDailyReportApi({
-          token,
-          stock: result.data.stock,
-          sales: result.data.sales,
-          otherBrands: result.data.otherBrands,
-          source: 'excel',
-          fileName: file.name,
-          storeId: account?.storeId ?? undefined,
-        })
-      } catch (err) {
-        setExcelBusy(false)
-        setExcelErrors([err instanceof Error ? err.message : 'Could not save report to server.'])
-        return
-      }
-    }
-
-    setExcelBusy(false)
-    if (!reportSubmitted) {
-      checkOut(earlyReason.trim() || undefined)
-      markReportSubmitted()
-    }
-  }
 
   function handleCheckOutClick() {
     if (isEarlyCheckout) {
@@ -415,81 +363,6 @@ export function BaHomePage() {
           </>
         )}
       </div>
-
-      {checkedIn && !checkedOut && (
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet size={18} className="text-brand-600" />
-            <h3 className="text-sm font-bold text-slate-900">Upload Excel report</h3>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">
-            One file for Stock Report, Daily Sales, and Other Brands (.xlsx / .xls / .csv)
-          </p>
-          <button
-            type="button"
-            onClick={() => void downloadBaReportTemplate()}
-            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-100"
-          >
-            <Download size={14} />
-            Download Excel template
-          </button>
-          <p className="mt-1.5 text-center text-[11px] text-slate-400">
-            Fill in the template, then upload it below
-          </p>
-          <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-100 bg-[#faf6ee] px-3 py-2.5">
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-slate-900">Daily report file</div>
-              <div className="truncate text-xs text-slate-500">
-                {excelFileName ? `Uploaded: ${excelFileName}` : 'No file selected'}
-              </div>
-            </div>
-            <input
-              ref={excelInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-              className="hidden"
-              onChange={(e) => {
-                saveExcelUpload(e.target.files?.[0])
-                e.target.value = ''
-              }}
-            />
-            <button
-              type="button"
-              disabled={excelBusy}
-              onClick={() => excelInputRef.current?.click()}
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-45"
-            >
-              <Upload size={12} />
-              {excelBusy ? 'Checking…' : excelFileName ? 'Replace' : 'Upload'}
-            </button>
-          </div>
-          {excelErrors.length > 0 && (
-            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800">
-              <div className="font-semibold">
-                Report not submitted — please fix {excelErrors.length}{' '}
-                {excelErrors.length === 1 ? 'issue' : 'issues'} and upload again:
-              </div>
-              <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-                {excelErrors.slice(0, 8).map((err) => (
-                  <li key={err}>{err}</li>
-                ))}
-              </ul>
-              {excelErrors.length > 8 && (
-                <div className="mt-1 font-medium">…and {excelErrors.length - 8} more</div>
-              )}
-            </div>
-          )}
-          {excelFileName ? (
-            <p className="mt-3 text-center text-xs font-semibold text-brand-700">
-              Report file uploaded
-            </p>
-          ) : (
-            <p className="mt-3 text-center text-xs text-slate-500">
-              Or check out and fill reports manually
-            </p>
-          )}
-        </div>
-      )}
 
       <Modal
         open={earlyReasonOpen}
