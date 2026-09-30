@@ -729,10 +729,10 @@ function UploadTargetsModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: BA Code, BA Name, Month, Category, SKU, Target. BA Code is required and uniquely
-            identifies each ambassador (use this when names are shared). Same BA Code can have many
-            rows (e.g. all three categories). SKU must match the category — see sheet
-            &quot;Categories &amp; SKUs&quot; in the file.
+            Columns: BA Code, Month, Category, SKU, Target. BA Code is required — the ambassador name
+            is taken from Ambassadors automatically. Same BA Code can have many rows (e.g. all three
+            categories). SKU must match the category — see sheet &quot;Categories &amp; SKUs&quot; in
+            the file.
           </p>
           <Button
             variant="secondary"
