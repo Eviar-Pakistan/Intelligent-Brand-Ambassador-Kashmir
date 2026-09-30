@@ -25,6 +25,7 @@ import {
   downloadBaLinks,
   getBaAccounts,
   isDemoBa,
+  isPlaceholderBaName,
   parseAmbassadorFile,
   syncAmbassadorsFromApi,
   useBaAccounts,
@@ -601,7 +602,13 @@ function UploadTargetsModal({
     setBusy(true)
     await syncAmbassadorsFromApi().catch(() => {})
     const liveAccounts = getBaAccounts().filter((a) => !isDemoBa(a.id))
-    const extras = liveAccounts.map((a) => ({ id: a.id, name: a.name, code: a.code }))
+    const extras = liveAccounts.map((a) => ({
+      id: a.id,
+      name: a.name,
+      code: a.code,
+      storeId: a.storeId,
+      status: a.status,
+    }))
     const valid: Parameters<typeof upsertBaTargets>[0] = []
     const unknown: string[] = []
 
@@ -801,6 +808,7 @@ export function AmbassadorsPage() {
 
   const filteredAccounts = accounts.filter((a) => {
     if (isDemoBa(a.id)) return false
+    if (isPlaceholderBaName(a.name)) return false
     const matchTab =
       tab === 'All' ||
       (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)

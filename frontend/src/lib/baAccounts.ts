@@ -40,6 +40,16 @@ export function isBaCertified(status: BaStatus) {
   return status === 'Certified' || status === 'Deployed'
 }
 
+/** Placeholder / closed roster names that should not appear in exports or the HO list. */
+export function isPlaceholderBaName(name: string) {
+  const n = name.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!n) return true
+  if (n === 'closed' || n === 'store closed' || n === 'hiring pending') return true
+  if (n.includes('hiring pending')) return true
+  if (n === 'storeclosed' || n.replace(/\s/g, '') === 'storeclosed') return true
+  return false
+}
+
 function newAccessToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
 }
@@ -503,11 +513,15 @@ export async function createBaAccountsAsync(fields: BaAccountFields[]): Promise<
   if (!isApiAuthenticated()) {
     return { created: createBaAccounts(fields), errors: [] }
   }
+  await syncAmbassadorsFromApi().catch(() => {})
   const created: BaAccount[] = []
   const errors: string[] = []
+
+  // Same display name is allowed — BAs are distinct by id/code (different stores).
   for (const f of fields) {
     try {
-      created.push(await createBaAccountAsync(f))
+      const account = await createBaAccountAsync(f)
+      created.push(account)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'create failed'
       errors.push(`${f.name} (${f.email}): ${msg}`)
@@ -813,10 +827,11 @@ export async function parseAmbassadorFile(file: File): Promise<AmbassadorParseRe
 export async function downloadBaLinks(
   list: { name: string; url: string; storeName?: string; city?: string }[],
 ) {
+  const rows = list.filter((a) => !isPlaceholderBaName(a.name))
   const XLSX = await import('xlsx')
   const sheet = XLSX.utils.aoa_to_sheet([
     ['Name', 'Store', 'City', 'Profile Link'],
-    ...list.map((a) => [a.name, a.storeName || '', a.city || '', a.url]),
+    ...rows.map((a) => [a.name, a.storeName || '', a.city || '', a.url]),
   ])
   sheet['!cols'] = [{ wch: 28 }, { wch: 28 }, { wch: 16 }, { wch: 72 }]
   const wb = XLSX.utils.book_new()

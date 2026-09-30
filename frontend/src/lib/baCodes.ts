@@ -15,7 +15,13 @@ const FIXED_CODES: Record<string, string> = {
 
 const CODE_RE = /^BA-(\d+)$/i
 
-export type BaCodeRef = { id: string; name: string; code?: string }
+export type BaCodeRef = {
+  id: string
+  name: string
+  code?: string
+  storeId?: number | null
+  status?: string
+}
 
 export function normalizeBaCode(raw: string) {
   const t = raw.trim().toUpperCase()
@@ -92,47 +98,66 @@ function normalizeBaName(raw: string) {
   return raw.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-function pickUniqueByName<T extends { name: string; id: string }>(
+function rankBaDuplicate<T extends { id: string; storeId?: number | null; status?: string }>(a: T, b: T) {
+  // Same name can be multiple BAs (different ids/stores). Prefer one with no store yet
+  // so each deployment Excel row can fill a different BA.
+  const aOpen = a.storeId == null || a.storeId === 0 ? 0 : 1
+  const bOpen = b.storeId == null || b.storeId === 0 ? 0 : 1
+  if (aOpen !== bOpen) return aOpen - bOpen
+  const undeployed = (s?: string) => (s === 'Deployed' ? 1 : 0)
+  const ad = undeployed(a.status)
+  const bd = undeployed(b.status)
+  if (ad !== bd) return ad - bd
+  return String(b.id).localeCompare(String(a.id), undefined, { numeric: true })
+}
+
+function pickUniqueByName<T extends { name: string; id: string; storeId?: number | null; status?: string }>(
   want: string,
   pool: T[],
+  excludeIds?: Set<string>,
 ): T | null {
   if (!want) return null
-  const exact = pool.filter((a) => normalizeBaName(a.name) === want)
+  const available = excludeIds?.size
+    ? pool.filter((a) => !excludeIds.has(a.id))
+    : pool
+  const exact = available.filter((a) => normalizeBaName(a.name) === want)
   if (exact.length >= 1) {
-    // Duplicates: prefer lowest numeric id / stable sort
-    return [...exact].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))[0]
+    return [...exact].sort(rankBaDuplicate)[0]
   }
 
   // Prefix match for truncated Excel cells (e.g. "Askari College Ro")
   if (want.length >= 4) {
-    const prefix = pool.filter((a) => normalizeBaName(a.name).startsWith(want))
+    const prefix = available.filter((a) => normalizeBaName(a.name).startsWith(want))
     if (prefix.length === 1) return prefix[0]
     if (prefix.length > 1) {
       return [...prefix].sort(
         (a, b) =>
-          normalizeBaName(a.name).length - normalizeBaName(b.name).length ||
-          String(a.id).localeCompare(String(b.id), undefined, { numeric: true }),
+          normalizeBaName(a.name).length - normalizeBaName(b.name).length || rankBaDuplicate(a, b),
       )[0]
     }
-    const contains = pool.filter((a) => normalizeBaName(a.name).includes(want))
+    const contains = available.filter((a) => normalizeBaName(a.name).includes(want))
     if (contains.length === 1) return contains[0]
-    const reverse = pool.filter((a) => want.startsWith(normalizeBaName(a.name)) && normalizeBaName(a.name).length >= 4)
+    const reverse = available.filter(
+      (a) => want.startsWith(normalizeBaName(a.name)) && normalizeBaName(a.name).length >= 4,
+    )
     if (reverse.length >= 1) {
-      return [...reverse].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))[0]
+      return [...reverse].sort(rankBaDuplicate)[0]
     }
   }
   return null
 }
 
-/** Match ambassador by display name (case-insensitive). Prefers live accounts. */
+/** Match ambassador by display name (case-insensitive). Prefers live accounts.
+ *  Pass excludeIds so each same-name Excel row can bind to a different BA id. */
 export function resolveBaByName(
   name: string,
   extras: BaCodeRef[] = [],
+  excludeIds?: Set<string>,
 ): BaDirectoryEntry | null {
   const want = normalizeBaName(name)
   if (!want) return null
 
-  const fromExtras = pickUniqueByName(want, extras)
+  const fromExtras = pickUniqueByName(want, extras, excludeIds)
   if (fromExtras) {
     return {
       id: fromExtras.id,
@@ -141,6 +166,6 @@ export function resolveBaByName(
     }
   }
 
-  const fromDir = pickUniqueByName(want, buildBaDirectory(extras))
+  const fromDir = pickUniqueByName(want, buildBaDirectory(extras), excludeIds)
   return fromDir ? { id: fromDir.id, name: fromDir.name, code: fromDir.code } : null
 }

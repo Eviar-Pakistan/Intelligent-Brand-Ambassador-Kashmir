@@ -60,34 +60,78 @@ export function resolveStoreByCode(code: string, extras?: StoreCodeSample[]) {
 }
 
 function normalizeStoreName(raw: string) {
-  return raw.trim().toLowerCase().replace(/\s+/g, ' ')
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function storeNameTokens(raw: string) {
+  return normalizeStoreName(raw)
+    .split(' ')
+    .filter((t) => t.length >= 2)
 }
 
 function pickUniqueStoreByName(want: string, pool: StoreCodeSample[]): StoreCodeSample | null {
   if (!want) return null
+  const wantNorm = normalizeStoreName(want)
   const exact = pool
-    .filter((s) => normalizeStoreName(s.name) === want)
+    .filter((s) => normalizeStoreName(s.name) === wantNorm)
     .sort((a, b) => a.id - b.id)
   if (exact.length >= 1) return exact[0] // duplicates: use earliest store
 
-  if (want.length >= 4) {
+  if (wantNorm.length >= 3) {
     const prefix = pool
-      .filter((s) => normalizeStoreName(s.name).startsWith(want))
+      .filter((s) => normalizeStoreName(s.name).startsWith(wantNorm))
       .sort((a, b) => a.id - b.id)
     if (prefix.length === 1) return prefix[0]
     if (prefix.length > 1) {
-      // Prefer shortest name among prefix matches (closest truncation)
-      prefix.sort((a, b) => normalizeStoreName(a.name).length - normalizeStoreName(b.name).length || a.id - b.id)
+      prefix.sort(
+        (a, b) =>
+          normalizeStoreName(a.name).length - normalizeStoreName(b.name).length || a.id - b.id,
+      )
       return prefix[0]
     }
+
     const contains = pool
-      .filter((s) => normalizeStoreName(s.name).includes(want))
+      .filter((s) => normalizeStoreName(s.name).includes(wantNorm))
       .sort((a, b) => a.id - b.id)
     if (contains.length === 1) return contains[0]
+    if (contains.length > 1) {
+      contains.sort(
+        (a, b) =>
+          normalizeStoreName(a.name).length - normalizeStoreName(b.name).length || a.id - b.id,
+      )
+      return contains[0]
+    }
+
     const reverse = pool
-      .filter((s) => want.startsWith(normalizeStoreName(s.name)) && normalizeStoreName(s.name).length >= 4)
+      .filter(
+        (s) =>
+          wantNorm.startsWith(normalizeStoreName(s.name)) &&
+          normalizeStoreName(s.name).length >= 4,
+      )
       .sort((a, b) => a.id - b.id)
     if (reverse.length >= 1) return reverse[0]
+
+    // Truncated Excel labels: require all meaningful tokens to appear in the store name
+    const tokens = storeNameTokens(wantNorm)
+    if (tokens.length >= 2) {
+      const tokenHits = pool.filter((s) => {
+        const n = normalizeStoreName(s.name)
+        return tokens.every((t) => n.includes(t))
+      })
+      if (tokenHits.length === 1) return tokenHits[0]
+      if (tokenHits.length > 1) {
+        tokenHits.sort(
+          (a, b) =>
+            normalizeStoreName(a.name).length - normalizeStoreName(b.name).length || a.id - b.id,
+        )
+        return tokenHits[0]
+      }
+    }
   }
   return null
 }
@@ -126,7 +170,8 @@ export function resolveStoreByCodeOrName(codeOrName: string, extras?: StoreCodeS
   }
 
   if (!hit) return null
-  return stores.find((s) => s.id === hit!.id) ?? { id: hit.id, name: hit.name, city: hit.city, peak: [] as string[] }
+  // Prefer the live store list (extras) over mock catalog ids.
+  return { id: hit.id, name: hit.name, city: hit.city, peak: [] as string[] }
 }
 
 const headerKey = (h: unknown) =>
@@ -265,7 +310,7 @@ export async function downloadBulkShiftTemplate(opts?: {
     [],
     [`1. Edit the "${SHEET}" sheet — sample rows use ${month}.`],
     ['2. BA Code or Name — BA-001 style code OR ambassador name (must match Ambassadors).'],
-    ['3. Store Code or Name — business store code (e.g. 33991, DTR000297) OR store name.'],
+    ['3. Store Code or Name — prefer full store name or business code (e.g. 33991). Short / cut-off names often fail to match.'],
     ['4. Start Time / End Time — 12-hour Karachi time, e.g. 10:00 AM and 6:00 PM.'],
     ['5. Month — YYYY-MM (e.g. 2026-09). Each row creates one assignment for the whole month.'],
     ['6. Save, then upload via Create shifts → Bulk (Excel).'],
@@ -429,7 +474,7 @@ export function expandBulkShiftRow(input: BulkShiftRow, extras?: StoreCodeSample
   if (!store) {
     return {
       slots: [] as const,
-      error: `Unknown store "${input.storeCode}" — use a store code or exact store name from Stores.` as string,
+      error: `Unknown store "${input.storeCode}" — use the full store name or store code from Stores (abbreviated names often fail).` as string,
     }
   }
 

@@ -459,7 +459,13 @@ function SchedulerPanel() {
     const liveAccounts = getBaAccounts()
     const extras = liveAccounts
       .filter((a) => !isDemoBa(a.id))
-      .map((a) => ({ id: a.id, name: a.name, code: a.code }))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        code: a.code,
+        storeId: a.storeId,
+        status: a.status,
+      }))
     const storeExtras = storeOptions.map((s) => ({
       id: s.id,
       name: s.name,
@@ -471,11 +477,15 @@ function SchedulerPanel() {
     let saved = 0
     const errors: string[] = [...bulkResult.errors]
     let firstMonth = monthYm
+    // Same display name can be multiple BAs — once a name-match claims an id, next row gets another.
+    const claimedByName = new Set<string>()
 
     for (const r of bulkResult.rows) {
+      let matchedByName = false
       let ba = resolveBaByCode(r.input.baCode, extras)
       if (!ba || isDemoBa(ba.id)) {
-        ba = resolveBaByName(r.input.baCode, extras)
+        ba = resolveBaByName(r.input.baCode, extras, claimedByName)
+        matchedByName = !!ba && !isDemoBa(ba.id)
       }
       if (!ba || isDemoBa(ba.id)) {
         errors.push(
@@ -492,6 +502,12 @@ function SchedulerPanel() {
       firstMonth = r.input.month
       try {
         await deployAmbassador(ba.id, expanded.slots[0].storeId)
+        const ex = extras.find((e) => e.id === ba.id)
+        if (ex) {
+          ex.storeId = expanded.slots[0].storeId
+          ex.status = 'Deployed'
+        }
+        if (matchedByName) claimedByName.add(ba.id)
       } catch (err) {
         errors.push(
           `Row ${r.row}: deploy failed — ${err instanceof Error ? err.message : 'error'}`,
