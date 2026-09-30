@@ -733,9 +733,12 @@ function UploadTargetsModal({
       onImported(saved)
     } catch (err) {
       setBusy(false)
+      const msg = err instanceof Error ? err.message : 'Upload failed'
       setResult({
         rows: result.rows,
-        errors: [err instanceof Error ? err.message : 'Upload failed'],
+        errors: [
+          `Import failed: ${msg}. On the server run: python3 manage.py migrate && restart the API.`,
+        ],
       })
     }
   }
