@@ -1106,14 +1106,10 @@ export function BaPerformancePage() {
           <div className="text-sm font-bold text-slate-900">Target vs achievement</div>
           <div className="shrink-0 text-xs text-slate-400">{monthLabel}</div>
         </div>
-        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div>
             <div className="text-xl font-bold text-slate-900">{targetKg}</div>
             <div className="mt-0.5 text-[10px] font-medium text-slate-500">Target Kg</div>
-          </div>
-          <div>
-            <div className="text-xl font-bold text-slate-900">{salesKg}</div>
-            <div className="mt-0.5 text-[10px] font-medium text-slate-500">Sales Kg</div>
           </div>
           <div>
             <div
