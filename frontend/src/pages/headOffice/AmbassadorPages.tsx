@@ -847,6 +847,17 @@ export function AmbassadorsPage() {
             <Button variant="secondary" onClick={() => setBulkOpen(true)}>
               <FileSpreadsheet size={15} /> Bulk upload (Excel)
             </Button>
+            <Button
+              variant="secondary"
+              disabled={filteredAccounts.length === 0}
+              onClick={() =>
+                void downloadBaLinks(
+                  filteredAccounts.map((a) => ({ name: a.name, url: baAccessUrl(a) })),
+                )
+              }
+            >
+              <Download size={15} /> Download BA links
+            </Button>
             <Button variant="secondary" onClick={() => setUploadTargetsOpen(true)}>
               <FileSpreadsheet size={15} /> Upload targets
             </Button>
@@ -1010,11 +1021,11 @@ export function AmbassadorsPage() {
               <Button
                 onClick={() =>
                   void downloadBaLinks(
-                    bulkCreated.map((a) => ({ name: a.name, email: a.email, url: baAccessUrl(a) })),
+                    bulkCreated.map((a) => ({ name: a.name, url: baAccessUrl(a) })),
                   )
                 }
               >
-                <Download size={14} /> Download account links
+                <Download size={14} /> Download BA links
               </Button>
               <Button variant="secondary" onClick={() => setBulkCreated(null)}>
                 Done
