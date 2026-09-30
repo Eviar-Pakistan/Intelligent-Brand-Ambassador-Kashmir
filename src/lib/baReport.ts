@@ -30,54 +30,52 @@ export const whyNotFields: FieldDef[] = [
 ]
 
 export const oilSalesFields: FieldDef[] = [
-  { key: 'oilPouch1kgEco', label: 'Pouch 1Kg Eco' },
-  { key: 'oilPouch1Ltr', label: 'Pouch 1 LTR' },
-  { key: 'oilSup1Eco', label: 'SUP 1Kg/LTR Eco' },
-  { key: 'oilSup1Ltr', label: 'SUP 1 LTR' },
-  { key: 'oilBtl3', label: 'BTL 3 LTR' },
-  { key: 'oilBtl45', label: 'BTL 4.5 LTR' },
-  { key: 'oilCan10', label: 'CAN 10 LTR' },
-  { key: 'oilTin5', label: 'TIN 5 LTR' },
+  { key: 'kpgoCan10', label: 'KPGO 10 LTR CAN Cons. RED' },
+  { key: 'kpgoBtl3', label: 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED' },
+  { key: 'kpgoBtl45', label: 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED' },
+  { key: 'kpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
+  { key: 'kpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
+  { key: 'kpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
   { key: 'salesOil', label: 'Sales-Oil (LTR)' },
 ]
 
 export const gheeSalesFields: FieldDef[] = [
-  { key: 'gheePouch125', label: 'Pouch 1.25 KG Eco' },
-  { key: 'gheePouch1', label: 'Pouch 1 KG' },
-  { key: 'gheeBkt25', label: 'BKT 2.5 KG' },
-  { key: 'gheeBkt5', label: 'BKT 5 KG' },
-  { key: 'gheeBkt10', label: 'BKT 10 KG' },
-  { key: 'gheeBkt16', label: 'BKT 16 KG' },
-  { key: 'gheeTin5', label: 'TIN 5 KG' },
+  { key: 'kbpBkt10', label: 'KBP GOLD 10 KG BKT' },
+  { key: 'kbpBkt25', label: 'KBP GOLD 2.5 KG BKT' },
+  { key: 'kbpBkt5', label: 'KBP GOLD 5 KG BKT' },
+  { key: 'kbpTin5', label: 'KBP GOLD 5 KG TIN' },
+  { key: 'kbpPouch1x5', label: 'KBP GOLD POUCH (1KG X 5)' },
   { key: 'salesGhee', label: 'Sales-Ghee (KG)' },
 ]
 
 export const waadiSalesFields: FieldDef[] = [
-  { key: 'waadiPouch1', label: 'Pouch 1 KG' },
-  { key: 'waadiBucket5', label: 'Bucket 5 KG' },
-  { key: 'waadiBox5', label: 'Box 5 KG' },
+  { key: 'wbpBkt5', label: 'WBP 5 KG BKT' },
+  { key: 'wbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
+  { key: 'wbpBkt25', label: 'WBP 2.5 KG BKT' },
   { key: 'salesWaadi', label: 'Sales-Waadi (KG)' },
 ]
 
 export const stockOilFields: FieldDef[] = [
-  { key: 'stockOilPouch1x5', label: 'Pouch 1x5 LTR' },
-  { key: 'stockOilPouch1', label: 'Pouch 1 LTR' },
-  { key: 'stockOilSup1x5', label: 'Stand Up Pouch 1x5 LTR' },
-  { key: 'stockOilSup1', label: 'Stand Up Pouch 1 LTR' },
-  { key: 'stockOilBtl3', label: 'Bottle 3 LTR' },
-  { key: 'stockOilBtl45', label: 'Bottle 4.5 LTR' },
-  { key: 'stockOilCan10', label: 'Can 10 LTR' },
-  { key: 'stockOilTin5', label: 'Tin 5 LTR' },
+  { key: 'stockKpgoCan10', label: 'KPGO 10 LTR CAN Cons. RED' },
+  { key: 'stockKpgoBtl3', label: 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED' },
+  { key: 'stockKpgoBtl45', label: 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED' },
+  { key: 'stockKpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
+  { key: 'stockKpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
+  { key: 'stockKpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
 ]
 
 export const stockGheeFields: FieldDef[] = [
-  { key: 'stockGheeBox1x5', label: 'Box 1x5 KG' },
-  { key: 'stockGheePouch1', label: 'Pouch 1 KG' },
-  { key: 'stockGheeBkt25', label: 'Bucket 2.5 KG' },
-  { key: 'stockGheeBkt5', label: 'Bucket 5 KG' },
-  { key: 'stockGheeBkt10', label: 'Bucket 10 KG' },
-  { key: 'stockGheeBkt16', label: 'Bucket 16 KG' },
-  { key: 'stockGheeTin5', label: 'Tin 5 KG' },
+  { key: 'stockKbpBkt10', label: 'KBP GOLD 10 KG BKT' },
+  { key: 'stockKbpBkt25', label: 'KBP GOLD 2.5 KG BKT' },
+  { key: 'stockKbpBkt5', label: 'KBP GOLD 5 KG BKT' },
+  { key: 'stockKbpTin5', label: 'KBP GOLD 5 KG TIN' },
+  { key: 'stockKbpPouch1x5', label: 'KBP GOLD POUCH (1KG X 5)' },
+]
+
+export const stockWaadiFields: FieldDef[] = [
+  { key: 'stockWbpBkt5', label: 'WBP 5 KG BKT' },
+  { key: 'stockWbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
+  { key: 'stockWbpBkt25', label: 'WBP 2.5 KG BKT' },
 ]
 
 export const STOCK_OPTIONS = ['In Stock', 'Out of Stock', 'Near Out of Stock'] as const
@@ -93,17 +91,18 @@ export const DEFAULT_OTHER_BRANDS: OtherBrandRow[] = [
 
 /** Sections in the same order as the checkout flow: Stock → Daily Sales → Other Brands. */
 const stockSections: ReportSection[] = [
-  { title: 'Kashmir Premium Oil', fields: stockOilFields },
+  { title: 'Kashmir Cooking Oil', fields: stockOilFields },
   { title: 'Kashmir Banaspati', fields: stockGheeFields },
+  { title: 'Waadi Banaspati', fields: stockWaadiFields },
 ]
 
 const salesSections: ReportSection[] = [
   { title: 'Interceptions', fields: interceptionFields },
   { title: 'Competitive User', fields: competitiveFields },
   { title: 'Why Not Kashmir', fields: whyNotFields },
-  { title: 'Kashmir Premium Oil', fields: oilSalesFields },
-  { title: 'Kashmir Banaspati Ghee', fields: gheeSalesFields },
-  { title: 'Waadi', fields: waadiSalesFields },
+  { title: 'Kashmir Cooking Oil', fields: oilSalesFields },
+  { title: 'Kashmir Banaspati', fields: gheeSalesFields },
+  { title: 'Waadi Banaspati', fields: waadiSalesFields },
 ]
 
 export const SESSION_KEYS = {

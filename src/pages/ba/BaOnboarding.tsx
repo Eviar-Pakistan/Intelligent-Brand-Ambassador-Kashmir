@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTrainingContent, type TrainingModule } from '../../context/TrainingContentContext'
 import { MIN_ANSWER_SECONDS, analyzeAnswer, summarizeAssessment } from '../../lib/baAssessment'
-import { updateBaAccount, type BaAccount } from '../../lib/baAccounts'
+import { updateBaAccount, syncAnswerToApi, syncAssessmentResultToApi, isBaCertified, type BaAccount } from '../../lib/baAccounts'
 import { AssessmentReport } from './AssessmentReport'
 
 const primaryButton =
@@ -22,8 +22,31 @@ function StepCard({ step, title, children }: { step: string; title: string; chil
 
 /** A newly created BA: watch the training video, answer the verbal assessment, get the report. */
 export function BaOnboarding({ account }: { account: BaAccount }) {
-  const { modules } = useTrainingContent()
-  const module = modules.find((m) => m.videoUrl) ?? modules[0]
+  const { activeModule } = useTrainingContent()
+  const module = activeModule
+
+  // One-time heal for stuck localStorage (Training + videoWatched, never assessed).
+  useEffect(() => {
+    const key = `ba-heal-video-${account.id}`
+    try {
+      if (sessionStorage.getItem(key)) return
+      if (
+        !account.result &&
+        !isBaCertified(account.status) &&
+        account.videoWatched &&
+        account.answers.length === 0
+      ) {
+        sessionStorage.setItem(key, '1')
+        updateBaAccount(account.id, { videoWatched: false })
+      }
+    } catch {
+      if (!account.result && account.videoWatched && account.answers.length === 0) {
+        updateBaAccount(account.id, { videoWatched: false })
+      }
+    }
+    // intentionally only on mount / account id change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account.id])
 
   if (account.result) return <ResultStep account={account} />
   if (!account.videoWatched) return <VideoStep account={account} module={module} />
@@ -145,6 +168,7 @@ function AssessmentStep({ account, module }: { account: BaAccount; module: Train
   const [phase, setPhase] = useState<Phase>('idle')
   const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
   const capture = useRef<Capture>({
@@ -299,25 +323,66 @@ function AssessmentStep({ account, module }: { account: BaAccount; module: Train
 
   function submit() {
     const c = capture.current
-    if (!module || !question || c.durationSec < MIN_ANSWER_SECONDS) return
-    const metrics = analyzeAnswer({
-      questionId: question.id,
-      prompt: question.prompt,
-      reference: `${module.title} ${module.description} ${questions.map((q) => q.prompt).join(' ')}`,
-      durationSec: c.durationSec,
-      speechSec: c.speechSec,
-      transcript: c.transcript,
-    })
-    const answers = [...account.answers, metrics]
-    if (answers.length >= questions.length) {
-      const result = summarizeAssessment(answers)
-      updateBaAccount(account.id, { answers, result, status: result.certified ? 'Certified' : 'Training' })
-    } else {
-      updateBaAccount(account.id, { answers })
-    }
-    setPlaybackUrl(null)
-    setElapsed(0)
-    setPhase('idle')
+    if (!module || !question || c.durationSec < MIN_ANSWER_SECONDS || submitting) return
+    setSubmitting(true)
+    setError(null)
+
+    // Let the loading UI paint before scoring (can feel like a freeze on last question).
+    window.setTimeout(() => {
+      try {
+        const metrics = analyzeAnswer({
+          questionId: question.id,
+          prompt: question.prompt,
+          reference: `${module.title} ${module.description} ${questions.map((q) => q.prompt).join(' ')}`,
+          durationSec: c.durationSec,
+          speechSec: c.speechSec,
+          transcript: c.transcript,
+        })
+        const answers = [...account.answers, metrics]
+        void syncAnswerToApi(account, metrics).catch((err) => {
+          console.error('[ba] answer store to API failed', err)
+        })
+        if (answers.length >= questions.length) {
+          const result = summarizeAssessment(answers)
+          const next = {
+            answers,
+            result,
+            status: (result.certified ? 'Certified' : 'Training') as BaAccount['status'],
+          }
+          updateBaAccount(account.id, next)
+          void syncAssessmentResultToApi({ ...account, ...next }, result)
+            .then((data) => {
+              if (data && result.certified) {
+                updateBaAccount(account.id, { status: 'Certified' })
+              }
+            })
+            .catch((err) => {
+              console.error('[ba] assessment sync to API failed', err)
+            })
+        } else {
+          updateBaAccount(account.id, { answers })
+          setPlaybackUrl(null)
+          setElapsed(0)
+          setPhase('idle')
+          setSubmitting(false)
+        }
+      } catch {
+        setError('Could not score this answer. Please try again.')
+        setSubmitting(false)
+      }
+    }, 50)
+  }
+
+  if (submitting) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 py-10 text-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+        <div>
+          <p className="text-base font-semibold text-slate-900">Scoring your answer…</p>
+          <p className="mt-1 text-sm text-slate-500">Please wait while we prepare your assessment report.</p>
+        </div>
+      </div>
+    )
   }
 
   if (!module || questions.length === 0 || !question) {
@@ -384,11 +449,11 @@ function AssessmentStep({ account, module }: { account: BaAccount; module: Train
         )}
         <button
           type="button"
-          disabled={phase !== 'recorded' || !longEnough}
+          disabled={phase !== 'recorded' || !longEnough || submitting}
           onClick={submit}
           className={primaryButton}
         >
-          {lastQuestion ? 'Submit & finish' : 'Submit & next question'}
+          {submitting ? 'Scoring…' : lastQuestion ? 'Submit & finish' : 'Submit & next question'}
         </button>
       </div>
 
@@ -413,14 +478,48 @@ function AssessmentStep({ account, module }: { account: BaAccount; module: Train
 
 function ResultStep({ account }: { account: BaAccount }) {
   const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
   if (!account.result) return null
+
+  async function goHome() {
+    setBusy(true)
+    setSyncError(null)
+    try {
+      sessionStorage.setItem(`ba-report-dismissed-${account.id}`, '1')
+    } catch {
+      // ignore
+    }
+    // Persist Certified to Django before Home loads today-shift (Check In requires it).
+    if (account.result?.certified) {
+      try {
+        await syncAssessmentResultToApi(account, account.result)
+        updateBaAccount(account.id, { status: 'Certified' })
+      } catch (err) {
+        setBusy(false)
+        setSyncError(
+          err instanceof Error
+            ? err.message
+            : 'Could not save certification to the server. Check your connection and try again.',
+        )
+        return
+      }
+    }
+    setBusy(false)
+    navigate('/ba/home')
+  }
 
   return (
     <div className="space-y-4 py-4">
       <AssessmentReport name={account.name} result={account.result} answers={account.answers} />
+      {syncError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {syncError}
+        </div>
+      )}
       {account.result.certified ? (
-        <button type="button" onClick={() => navigate('/ba/home')} className={`w-full ${primaryButton}`}>
-          Go to Home
+        <button type="button" disabled={busy} onClick={() => void goHome()} className={`w-full ${primaryButton}`}>
+          {busy ? 'Saving certification…' : 'Go to Home'}
         </button>
       ) : (
         <button

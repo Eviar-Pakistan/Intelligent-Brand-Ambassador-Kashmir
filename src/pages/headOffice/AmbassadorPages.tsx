@@ -1,6 +1,6 @@
-import { Link, useParams } from 'react-router-dom'
-import { useMemo, useRef, useState } from 'react'
-import { ambassadors, baShiftHistory, scheduleDays, stores, type LifecycleStage } from '../../data/mock'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { stores, type LifecycleStage } from '../../data/mock'
 import {
   Avatar,
   Button,
@@ -19,26 +19,42 @@ import { Check, Copy, Download, ExternalLink, FileSpreadsheet, Target, Upload, U
 import {
   baAccessUrl,
   baEmailInUse,
-  createBaAccount,
-  createBaAccounts,
+  createBaAccountAsync,
+  createBaAccountsAsync,
   downloadAmbassadorTemplate,
   downloadBaLinks,
+  getBaAccounts,
   isDemoBa,
   parseAmbassadorFile,
+  syncAmbassadorsFromApi,
   useBaAccounts,
   type AmbassadorParseResult,
   type BaAccount,
+  type BaStatus,
 } from '../../lib/baAccounts'
 import { AssessmentReport } from '../ba/AssessmentReport'
-import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
-import { shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
-import { monthInputValue, upsertBaTarget, upsertBaTargets } from '../../lib/baTargets'
-import { baCodeForId, resolveBaByCode } from '../../lib/baCodes'
+import { fetchIncentivesOverview, formatPkr, type IncentiveBreakdown } from '../../lib/incentives'
+import { shiftLabelFromTimes } from '../../context/ScheduleContext'
+import {
+  createShift as createShiftApi,
+  deployAmbassador,
+  fetchAmbassadorShifts,
+  type ApiShift,
+} from '../../lib/deploymentApi'
+import { syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
+import { isApiAuthenticated } from '../../lib/api'
+import {
+  monthInputValue,
+  upsertBaTarget,
+  upsertBaTargets,
+} from '../../lib/baTargets'
+import { baCodeForId, resolveBaByCode, resolveBaByName } from '../../lib/baCodes'
 import {
   downloadSalesBulkTemplate,
   parseSalesBulkFile,
   type SalesParseResult,
 } from '../../lib/salesBulkUpload'
+import { getSkusForCategory } from '../../data/baPerformance'
 
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
@@ -52,45 +68,101 @@ function SetTargetSalesModal({
   onClose: () => void
   onSaved: (name: string) => void
 }) {
+  const accounts = useBaAccounts()
   const baOptions = useMemo(
     () =>
-      [...ambassadors]
-        .map((a) => ({ id: a.id, name: a.name, code: baCodeForId(a.id) }))
+      accounts
+        .filter((a) => !isDemoBa(a.id))
+        .map((a) => ({ id: a.id, name: a.name, code: a.code || baCodeForId(a.id) }))
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [],
+    [accounts],
   )
-  const [baId, setBaId] = useState(baOptions[0]?.id ?? '')
+  const [baId, setBaId] = useState('')
   const [month, setMonth] = useState(() => monthInputValue())
+  const [sku, setSku] = useState('')
   const [targetKg, setTargetKg] = useState('120')
   const [salesKg, setSalesKg] = useState('96')
 
-  function save() {
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const skuOptions = useMemo(() => getSkusForCategory(null), [])
+
+  useEffect(() => {
+    if (!open) return
+    setBaId((prev) => (prev && baOptions.some((b) => b.id === prev) ? prev : baOptions[0]?.id ?? ''))
+    setSku((prev) => (prev && skuOptions.includes(prev) ? prev : skuOptions[0] ?? ''))
+    setSaveError(null)
+  }, [open, baOptions, skuOptions])
+
+  async function save() {
     const ba = baOptions.find((b) => b.id === baId)
     const target = Number(targetKg)
     const sales = Number(salesKg)
-    if (!ba || !month || !Number.isFinite(target) || target < 0 || !Number.isFinite(sales) || sales < 0) {
+    if (!ba) {
+      setSaveError('Select an ambassador.')
       return
     }
-    upsertBaTarget({
-      baId: ba.id,
-      baName: ba.name,
-      month,
-      targetKg: target,
-      salesKg: sales,
-    })
-    onSaved(ba.name)
-    onClose()
+    if (!month) {
+      setSaveError('Month is required.')
+      return
+    }
+    if (!sku.trim()) {
+      setSaveError('SKU is required.')
+      return
+    }
+    if (!Number.isFinite(target) || target < 0) {
+      setSaveError('Enter a valid target (0 or more).')
+      return
+    }
+    if (!Number.isFinite(sales) || sales < 0) {
+      setSaveError('Enter a valid sales amount (0 or more).')
+      return
+    }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await upsertBaTarget({
+        baId: ba.id,
+        baName: ba.name,
+        baCode: ba.code,
+        month,
+        sku: sku.trim(),
+        targetKg: target,
+        salesKg: sales,
+      })
+      onSaved(ba.name)
+      onClose()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save target')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Modal open={open} onClose={onClose} title="Set target and sales">
       <div className="space-y-3 text-sm">
+        {!baOptions.length ? (
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-amber-800">
+            No ambassadors yet. Create one first (Add ambassador or Bulk upload).
+          </p>
+        ) : null}
+        {saveError && (
+          <p className="rounded-xl bg-rose-50 px-3 py-2 text-rose-800">{saveError}</p>
+        )}
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">Ambassador</span>
-          <Select className="w-full" value={baId} onChange={(e) => setBaId(e.target.value)}>
+          <Select
+            className="w-full"
+            value={baId}
+            onChange={(e) => setBaId(e.target.value)}
+            disabled={!baOptions.length}
+          >
             {baOptions.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.code} — {b.name}
+                {b.code ? `${b.code} — ` : ''}
+                {b.name}
               </option>
             ))}
           </Select>
@@ -99,10 +171,21 @@ function SetTargetSalesModal({
           <span className="mb-1 block font-medium text-slate-700">Month</span>
           <input
             type="month"
+            required
             value={month}
             onChange={(e) => setMonth(e.target.value)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
           />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-slate-700">SKU</span>
+          <Select className="w-full" value={sku} onChange={(e) => setSku(e.target.value)} required>
+            {skuOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
         </label>
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">Target (Kg)</span>
@@ -110,6 +193,7 @@ function SetTargetSalesModal({
             type="number"
             min={0}
             step={0.1}
+            required
             value={targetKg}
             onChange={(e) => setTargetKg(e.target.value)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
@@ -121,6 +205,7 @@ function SetTargetSalesModal({
             type="number"
             min={0}
             step={0.1}
+            required
             value={salesKg}
             onChange={(e) => setSalesKg(e.target.value)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
@@ -130,7 +215,9 @@ function SetTargetSalesModal({
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={() => void save()} disabled={!baOptions.length || !sku || saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
         </div>
       </div>
     </Modal>
@@ -143,8 +230,78 @@ const allLifecycle: LifecycleStage[] = [
   'Certified',
   'Trained',
   'Deployed',
-  'Live'
+  'Live',
 ]
+
+function certificationGrade(score: number | null | undefined): string {
+  if (score == null || Number.isNaN(score)) return '—'
+  if (score >= 90) return 'A+'
+  if (score >= 80) return 'A'
+  if (score >= 70) return 'B+'
+  if (score >= 60) return 'B'
+  return 'C'
+}
+
+function lifecycleFromStatus(status: BaStatus): LifecycleStage[] {
+  if (status === 'Deployed') return [...allLifecycle]
+  if (status === 'Certified') return ['Recruited', 'AI Screened', 'Certified', 'Trained']
+  if (status === 'Training') return ['Recruited', 'AI Screened', 'Trained']
+  return ['Recruited']
+}
+
+function scoresFromAccount(account: BaAccount) {
+  const r = account.result
+  if (!r) {
+    return { product: 0, communication: 0, selling: 0, objection: 0, interaction: 0, readiness: 0 }
+  }
+  return {
+    product: Math.round(Number(r.relevance) || 0),
+    communication: Math.round(Number(r.communication) || 0),
+    selling: Math.round(Number(r.quality) || 0),
+    objection: Math.round(Number(r.alignment) || 0),
+    interaction: Math.round(Math.max(0, Math.min(100, 100 - Number(r.nervousness || 0)))),
+    readiness: Math.round(Number(r.quality) || 0),
+  }
+}
+
+function formatShiftClock(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
+function todayIsoLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function historyStatusForShift(s: ApiShift): 'Completed' | 'Missed' | 'Cancelled' | 'Scheduled' {
+  const today = todayIsoLocal()
+  if (s.checkedOut || s.checkedOutAt) return 'Completed'
+  if (s.dateIso && s.dateIso < today && !(s.checkedIn || s.checkedInAt)) return 'Missed'
+  if (s.status === 'Open') return 'Cancelled'
+  if (s.dateIso && s.dateIso < today) return 'Completed'
+  return 'Scheduled'
+}
+
+function dayOptionsFromToday(count = 14) {
+  const out: { key: string; label: string; date: string; iso: string }[] = []
+  const start = new Date()
+  start.setHours(12, 0, 0, 0)
+  for (let i = 0; i < count; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    out.push({
+      key: iso,
+      label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      iso,
+    })
+  }
+  return out
+}
 
 const timeFieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500'
@@ -222,21 +379,32 @@ function CreateAmbassadorModal({
   const fresh = () => ({ name: '', city: '', email: '', phone: '' })
   const [form, setForm] = useState(fresh)
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   function close() {
+    if (busy) return
     setForm(fresh())
     setError(null)
     onClose()
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return setError('Name is required.')
     if (!validEmail(form.email)) return setError('Enter a valid email.')
     if (baEmailInUse(form.email)) return setError('Another ambassador already uses this email.')
-    const account = createBaAccount(form)
-    onCreated(account)
-    close()
+    setBusy(true)
+    setError(null)
+    try {
+      const account = await createBaAccountAsync(form)
+      onCreated(account)
+      setForm(fresh())
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create ambassador.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const set = (key: 'name' | 'city' | 'email' | 'phone') => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,7 +417,7 @@ function CreateAmbassadorModal({
       <form onSubmit={submit} className="space-y-4">
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">Name *</span>
-          <input value={form.name} onChange={set('name')} className={modalFieldClass} autoFocus />
+          <input value={form.name} onChange={set('name')} className={modalFieldClass} autoFocus required />
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">City</span>
@@ -257,7 +425,7 @@ function CreateAmbassadorModal({
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">Email *</span>
-          <input type="email" value={form.email} onChange={set('email')} className={modalFieldClass} />
+          <input type="email" value={form.email} onChange={set('email')} className={modalFieldClass} required />
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">Phone</span>
@@ -270,8 +438,10 @@ function CreateAmbassadorModal({
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
         )}
         <div className="flex flex-col gap-2 pt-1 sm:flex-row-reverse">
-          <Button type="submit">Create ambassador</Button>
-          <Button type="button" variant="secondary" onClick={close}>
+          <Button type="submit" disabled={busy}>
+            {busy ? 'Creating…' : 'Create ambassador'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={close} disabled={busy}>
             Cancel
           </Button>
         </div>
@@ -315,7 +485,8 @@ function BulkAmbassadorModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: Name *, City, Email *, Phone. Name and Email are required.
+            Columns: Name *, City, Phone. Email is ignored — each BA gets an auto email
+            (name@kashmir.pk). Every named row is created.
           </p>
           <Button variant="secondary" onClick={() => void downloadAmbassadorTemplate()}>
             <Download size={14} /> Download ambassador template
@@ -346,7 +517,8 @@ function BulkAmbassadorModal({
           <div className="space-y-3 border-t border-slate-100 pt-4">
             {result.rows.length > 0 && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
-                {result.rows.length} {result.rows.length === 1 ? 'ambassador is' : 'ambassadors are'} ready to create.
+                {result.rows.length} {result.rows.length === 1 ? 'ambassador is' : 'ambassadors are'} ready to
+                create.
               </div>
             )}
             {result.errors.length > 0 && (
@@ -367,13 +539,39 @@ function BulkAmbassadorModal({
             {result.rows.length > 0 && (
               <Button
                 className="w-full"
-                onClick={() => {
-                  const created = createBaAccounts(result.rows.map((r) => r.input))
-                  close()
-                  onCreated(created)
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  try {
+                    const { created, errors } = await createBaAccountsAsync(
+                      result.rows.map((r) => r.input),
+                    )
+                    await syncAmbassadorsFromApi().catch(() => {})
+                    if (!created.length) {
+                      setResult({
+                        rows: result.rows,
+                        errors: errors.length ? errors : ['Nothing could be created.'],
+                      })
+                      return
+                    }
+                    close()
+                    onCreated(created)
+                    if (errors.length) {
+                      console.warn('[bulk-ba] partial create', errors)
+                    }
+                  } catch (err) {
+                    setResult({
+                      rows: result.rows,
+                      errors: [err instanceof Error ? err.message : 'Could not create ambassadors.'],
+                    })
+                  } finally {
+                    setBusy(false)
+                  }
                 }}
               >
-                Create {result.rows.length} {result.rows.length === 1 ? 'ambassador' : 'ambassadors'}
+                {busy
+                  ? 'Creating…'
+                  : `Create ${result.rows.length} ${result.rows.length === 1 ? 'ambassador' : 'ambassadors'}`}
               </Button>
             )}
           </div>
@@ -383,7 +581,7 @@ function BulkAmbassadorModal({
   )
 }
 
-/** Upload BA targets & sales from Excel (BA Code, Month, SKU, Target, Sales Kg). */
+/** Upload BA targets & sales from Excel (BA Code, BA Name, Month, SKU, Target, Sales Kg). */
 function UploadTargetsModal({
   open,
   onClose,
@@ -399,6 +597,8 @@ function UploadTargetsModal({
   const [fileName, setFileName] = useState('')
   const [result, setResult] = useState<SalesParseResult | null>(null)
 
+  const liveBas = accounts.filter((a) => !isDemoBa(a.id) && a.code)
+
   function close() {
     setResult(null)
     setFileName('')
@@ -409,8 +609,77 @@ function UploadTargetsModal({
     if (!file) return
     setBusy(true)
     setFileName(file.name)
+    await syncAmbassadorsFromApi().catch(() => {})
     setResult(await parseSalesBulkFile(file))
     setBusy(false)
+  }
+
+  async function importRows() {
+    if (!result?.rows.length) return
+    setBusy(true)
+    await syncAmbassadorsFromApi().catch(() => {})
+    const liveAccounts = getBaAccounts().filter((a) => !isDemoBa(a.id))
+    const extras = liveAccounts.map((a) => ({ id: a.id, name: a.name, code: a.code }))
+    const valid: Parameters<typeof upsertBaTargets>[0] = []
+    const unknown: string[] = []
+
+    for (const r of result.rows) {
+      let ba = r.input.code ? resolveBaByCode(r.input.code, extras) : null
+      if ((!ba || isDemoBa(ba.id)) && r.input.baName) {
+        ba = resolveBaByName(r.input.baName, extras)
+      }
+      if (!ba || isDemoBa(ba.id)) {
+        const hint = r.input.code
+          ? `BA Code "${r.input.code}"`
+          : `BA Name "${r.input.baName}"`
+        unknown.push(
+          `Row ${r.row}: unknown ${hint} — use a name/code from Ambassadors.`,
+        )
+        continue
+      }
+      if (!ba.code) {
+        ba = { ...ba, code: baCodeForId(ba.id, extras) || ba.code }
+      }
+      valid.push({
+        baId: ba.id,
+        baName: ba.name,
+        baCode: ba.code,
+        month: (() => {
+          const m = r.input.month.trim()
+          if (/^\d{4}-\d{2}$/.test(m)) return m
+          const d = new Date(`${m} 1, ${new Date().getFullYear()}`)
+          if (!Number.isNaN(d.getTime())) return monthInputValue(d)
+          return monthInputValue()
+        })(),
+        targetKg: r.input.target,
+        salesKg: r.input.sales,
+        sku: r.input.sku,
+      })
+    }
+
+    if (!valid.length) {
+      setBusy(false)
+      setResult({ rows: result.rows, errors: unknown.length ? unknown : ['Nothing could be imported.'] })
+      return
+    }
+
+    try {
+      const { saved, errors } = await upsertBaTargets(valid)
+      const allErrors = [...unknown, ...errors]
+      setBusy(false)
+      if (!saved) {
+        setResult({ rows: result.rows, errors: allErrors.length ? allErrors : ['Nothing could be imported.'] })
+        return
+      }
+      close()
+      onImported(saved)
+    } catch (err) {
+      setBusy(false)
+      setResult({
+        rows: result.rows,
+        errors: [err instanceof Error ? err.message : 'Upload failed'],
+      })
+    }
   }
 
   return (
@@ -419,9 +688,17 @@ function UploadTargetsModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: BA Code, Month, SKU, Target, Sales (Kg). Use codes like BA-001 (Ayesha Khan).
+            Columns: BA Code (or BA Name), BA Name, Month, SKU, Target, Sales (Kg).
+            Blank BA Code is filled from BA Name. Leave Sales blank if not filled (not 0). Blank Month = current month.
           </p>
-          <Button variant="secondary" onClick={() => void downloadSalesBulkTemplate()}>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              void downloadSalesBulkTemplate({
+                baSamples: liveBas.slice(0, 8).map((a) => ({ code: a.code, name: a.name })),
+              })
+            }
+          >
             <Download size={14} /> Download targets template
           </Button>
         </div>
@@ -440,7 +717,7 @@ function UploadTargetsModal({
           />
           <div className="flex items-center gap-3">
             <Button variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
-              <Upload size={14} /> {busy ? 'Checking…' : result ? 'Choose another file' : 'Upload Excel file'}
+              <Upload size={14} /> {busy ? 'Working…' : result ? 'Choose another file' : 'Upload Excel file'}
             </Button>
             {fileName && <span className="truncate text-xs text-slate-500">{fileName}</span>}
           </div>
@@ -465,50 +742,16 @@ function UploadTargetsModal({
                     <li key={err}>{err}</li>
                   ))}
                 </ul>
-                {result.errors.length > 8 && <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>}
+                {result.errors.length > 8 && (
+                  <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>
+                )}
               </div>
             )}
             {result.rows.length > 0 && (
-              <Button
-                className="w-full"
-                onClick={() => {
-                  const extras = accounts.map((a) => ({ id: a.id, name: a.name, code: a.code }))
-                  const valid: Parameters<typeof upsertBaTargets>[0] = []
-                  const unknown: string[] = []
-
-                  for (const r of result.rows) {
-                    const ba = resolveBaByCode(r.input.code, extras)
-                    if (!ba) {
-                      unknown.push(`Row ${r.row}: unknown BA Code "${r.input.code}"`)
-                      continue
-                    }
-                    valid.push({
-                      baId: ba.id,
-                      baName: ba.name,
-                      month: (() => {
-                        const m = r.input.month.trim()
-                        if (/^\d{4}-\d{2}$/.test(m)) return m
-                        const d = new Date(`${m} 1`)
-                        if (!Number.isNaN(d.getTime())) return monthInputValue(d)
-                        return monthInputValue()
-                      })(),
-                      targetKg: r.input.target,
-                      salesKg: r.input.sales,
-                      sku: r.input.sku,
-                    })
-                  }
-
-                  if (unknown.length && valid.length === 0) {
-                    setResult({ rows: [], errors: unknown })
-                    return
-                  }
-
-                  upsertBaTargets(valid)
-                  close()
-                  onImported(valid.length)
-                }}
-              >
-                Import {result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'}
+              <Button className="w-full" disabled={busy} onClick={() => void importRows()}>
+                {busy
+                  ? 'Importing…'
+                  : `Import ${result.rows.length} ${result.rows.length === 1 ? 'row' : 'rows'}`}
               </Button>
             )}
           </div>
@@ -560,6 +803,7 @@ export function AmbassadorsPage() {
   const [tab, setTab] = useState('All')
   const [q, setQ] = useState('')
   const accounts = useBaAccounts()
+
   const [createOpen, setCreateOpen] = useState(false)
   const [linkPrompt, setLinkPrompt] = useState<{ account: BaAccount; title: string } | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -569,15 +813,22 @@ export function AmbassadorsPage() {
   const [bulkToast, setBulkToast] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
 
-  const filtered = ambassadors.filter((a) => {
-    const matchTab = tab === 'All' || a.status === tab
-    const matchQ = a.name.toLowerCase().includes(q.toLowerCase())
-    return matchTab && matchQ
-  })
+  useEffect(() => {
+    void syncAmbassadorsFromApi().catch(() => {})
+  }, [])
+
   const filteredAccounts = accounts.filter((a) => {
     if (isDemoBa(a.id)) return false
-    const matchTab = tab === 'All' || (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
-    return matchTab && a.name.toLowerCase().includes(q.toLowerCase())
+    const matchTab =
+      tab === 'All' ||
+      (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
+    const qLower = q.toLowerCase()
+    const matchQ =
+      !qLower ||
+      a.name.toLowerCase().includes(qLower) ||
+      (a.code || '').toLowerCase().includes(qLower) ||
+      (a.email || '').toLowerCase().includes(qLower)
+    return matchTab && matchQ
   })
 
   return (
@@ -610,11 +861,12 @@ export function AmbassadorsPage() {
         <Tabs tabs={['All', 'Certified', 'Training', 'Deployed', 'Pending']} value={tab} onChange={setTab} />
       </div>
       <Card padding={false}>
-        <TableScroll>
+        <TableScroll minWidth={980}>
           <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
             <tr>
-              <th className="px-4 py-3">BA</th>
+              <th className="px-4 py-3">BA code</th>
+              <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Score</th>
               <th className="px-4 py-3">Status</th>
@@ -626,24 +878,44 @@ export function AmbassadorsPage() {
             </tr>
           </thead>
           <tbody>
-            {filteredAccounts.map((a) => (
+            {filteredAccounts.length === 0 && (
+              <tr>
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500">
+                  No ambassadors match this filter.
+                </td>
+              </tr>
+            )}
+            {filteredAccounts.map((a) => {
+              return (
               <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50/70">
+                <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700">
+                  {a.code || '—'}
+                </td>
                 <td className="px-4 py-3">
-                  <button type="button" onClick={() => setDetailId(a.id)} className="flex items-center gap-3 text-left">
+                  <Link
+                    to={`/ho/ambassadors/${a.id}`}
+                    className="flex items-center gap-3 text-left"
+                  >
                     <Avatar name={a.name} />
                     <span className="font-medium text-slate-900 hover:text-brand-600">{a.name}</span>
-                  </button>
+                  </Link>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{a.city || '—'}</td>
                 <td className="px-4 py-3 font-semibold">{a.result ? `${a.result.quality}%` : '—'}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={a.status} />
                 </td>
-                <td className="px-4 py-3 text-slate-600">—</td>
-                <td className="px-4 py-3 tabular-nums text-slate-700">—</td>
-                <td className="px-4 py-3 tabular-nums text-slate-700">—</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {a.storeName
+                    ? a.storeId
+                      ? `Store #${a.storeId} — ${a.storeName}`
+                      : a.storeName
+                    : '—'}
+                </td>
+                <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkIn || '—'}</td>
+                <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkOut || '—'}</td>
                 <td className="px-4 py-3">
-                  <StatusBadge status="Pending" />
+                  <StatusBadge status={a.checkOut ? 'Submitted' : a.checkIn ? 'Incomplete' : 'Pending'} />
                 </td>
                 <td className="px-4 py-3">
                   <Button
@@ -655,41 +927,8 @@ export function AmbassadorsPage() {
                   </Button>
                 </td>
               </tr>
-            ))}
-            {filtered.map((a) => (
-              <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50/70">
-                <td className="px-4 py-3">
-                  <Link to={`/ho/ambassadors/${a.id}`} className="flex items-center gap-3">
-                    <Avatar name={a.name} />
-                    <span className="font-medium text-slate-900 hover:text-brand-600">{a.name}</span>
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-slate-600">{a.city}</td>
-                <td className="px-4 py-3 font-semibold">{a.score}%</td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={a.status} />
-                </td>
-                <td className="px-4 py-3 text-slate-600">{a.store}</td>
-                <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkIn}</td>
-                <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkOut}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={a.dataFilled} />
-                </td>
-                <td className="px-4 py-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      const account = accounts.find((acc) => acc.id === a.id)
-                      if (!account) return
-                      setLinkPrompt({ account, title: `${a.name} · account link` })
-                    }}
-                  >
-                    <ExternalLink size={13} /> Open link
-                  </Button>
-                </td>
-              </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
         </TableScroll>
@@ -801,57 +1040,159 @@ export function AmbassadorsPage() {
 
 export function AmbassadorProfilePage() {
   const { id } = useParams()
-  const ba = ambassadors.find((a) => a.id === id) ?? ambassadors[0]
-  const { schedule, addShift } = useSchedule()
+  const navigate = useNavigate()
+  const accounts = useBaAccounts()
+  useCreatedStores()
+  const account = useMemo(
+    () => accounts.find((a) => a.id === id) ?? accounts.find((a) => !isDemoBa(a.id)) ?? null,
+    [accounts, id],
+  )
+
   const [shiftOpen, setShiftOpen] = useState(false)
   const [shiftTab, setShiftTab] = useState('Current shifts')
   const [toast, setToast] = useState<string | null>(null)
+  const [incentive, setIncentive] = useState<IncentiveBreakdown | null>(null)
+  const [apiShifts, setApiShifts] = useState<ApiShift[]>([])
+  const [loadingShifts, setLoadingShifts] = useState(false)
+  const [savingShift, setSavingShift] = useState(false)
+  const dayOptions = useMemo(() => dayOptionsFromToday(21), [])
   const [form, setForm] = useState({
-    day: scheduleDays[0].key,
+    dayIso: dayOptions[0]?.iso || todayIsoLocal(),
     start: '10:00',
     end: '14:00',
-    storeId: String(stores[0].id),
+    storeId: '',
   })
-  const incentive = buildIncentiveRoster().find((r) => r.baId === ba.id)
 
-  const currentShifts = useMemo(() => {
-    const dayOrder = scheduleDays.map((d) => d.key)
-    return schedule
-      .filter((s) => s.baId === ba.id)
-      .slice()
-      .sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day))
-  }, [schedule, ba.id])
+  useEffect(() => {
+    void Promise.all([syncAmbassadorsFromApi(), syncStoresFromApi()]).catch(() => {})
+  }, [])
 
+  useEffect(() => {
+    if (!account?.id || isDemoBa(account.id)) {
+      setIncentive(null)
+      return
+    }
+    let cancelled = false
+    void fetchIncentivesOverview()
+      .then((ov) => {
+        if (cancelled) return
+        const row = ov?.results.find((r) => String(r.baId) === String(account.id)) ?? null
+        setIncentive(row)
+      })
+      .catch(() => {
+        if (!cancelled) setIncentive(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account?.id])
+
+  useEffect(() => {
+    if (!account?.id || isDemoBa(account.id) || !isApiAuthenticated()) {
+      setApiShifts([])
+      return
+    }
+    let cancelled = false
+    setLoadingShifts(true)
+    void fetchAmbassadorShifts(account.id)
+      .then((list) => {
+        if (!cancelled) setApiShifts(list)
+      })
+      .catch(() => {
+        if (!cancelled) setApiShifts([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingShifts(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account?.id])
+
+  useEffect(() => {
+    if (stores[0] && !form.storeId) {
+      setForm((f) => ({ ...f, storeId: String(stores[0].id) }))
+    }
+  }, [form.storeId, stores.length])
+
+  const scores = account ? scoresFromAccount(account) : null
+  const lifecycle = account ? lifecycleFromStatus(account.status) : []
+  const storeLabel = account?.storeName
+    ? account.storeId
+      ? `Store #${account.storeId} — ${account.storeName}`
+      : account.storeName
+    : 'No store assigned'
+
+  const today = todayIsoLocal()
+  const currentShifts = useMemo(
+    () =>
+      apiShifts
+        .filter((s) => s.dateIso && s.dateIso >= today)
+        .slice()
+        .sort((a, b) => String(a.dateIso).localeCompare(String(b.dateIso))),
+    [apiShifts, today],
+  )
   const historyShifts = useMemo(
-    () => baShiftHistory.filter((s) => s.baId === ba.id),
-    [ba.id],
+    () =>
+      apiShifts
+        .filter((s) => s.dateIso && s.dateIso < today)
+        .slice()
+        .sort((a, b) => String(b.dateIso).localeCompare(String(a.dateIso))),
+    [apiShifts, today],
   )
 
-  function createShift() {
+  async function saveShift() {
+    if (!account || isDemoBa(account.id)) return
     if (form.start >= form.end) {
       setToast('End time must be after start time')
       setTimeout(() => setToast(null), 3000)
       return
     }
     const store = stores.find((s) => String(s.id) === form.storeId)
-    const dayInfo = scheduleDays.find((d) => d.key === form.day)
-    if (!store || !dayInfo) return
+    const dayInfo = dayOptions.find((d) => d.iso === form.dayIso)
+    if (!store || !dayInfo) {
+      setToast('Pick a store and day')
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+    if (!isApiAuthenticated()) {
+      setToast('Sign in to Head Office to save shifts')
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+    setSavingShift(true)
+    try {
+      await deployAmbassador(account.id, store.id)
+      await createShiftApi({
+        storeId: store.id,
+        ambassadorId: account.id,
+        dateIso: dayInfo.iso,
+        shift: shiftLabelFromTimes(form.start, form.end),
+        peakRecommended: false,
+      })
+      const list = await fetchAmbassadorShifts(account.id)
+      setApiShifts(list)
+      setShiftOpen(false)
+      setToast(`Shift created for ${account.name} · ${store.name}`)
+      setTimeout(() => setToast(null), 3000)
+      void syncAmbassadorsFromApi().catch(() => {})
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not create shift')
+      setTimeout(() => setToast(null), 4000)
+    } finally {
+      setSavingShift(false)
+    }
+  }
 
-    addShift({
-      day: form.day,
-      date: dayInfo.date,
-      storeId: store.id,
-      storeName: store.name,
-      city: store.city,
-      shift: shiftLabelFromTimes(form.start, form.end),
-      peakRecommended: false,
-      baId: ba.id,
-      baName: ba.name,
-      status: 'Scheduled',
-    })
-    setShiftOpen(false)
-    setToast(`Shift created for ${ba.name} · ${store.name}`)
-    setTimeout(() => setToast(null), 3000)
+  if (!account) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 py-16 text-center">
+        <p className="text-slate-600">Ambassador not found.</p>
+        <Button variant="secondary" onClick={() => navigate('/ho/ambassadors')}>
+          ← Back to Ambassadors
+        </Button>
+      </div>
+    )
   }
 
   return (
@@ -860,7 +1201,7 @@ export function AmbassadorProfilePage() {
         <Link to="/ho/ambassadors" className="text-sm text-slate-500 hover:text-brand-600">
           ← Ambassadors
         </Link>
-        <Button size="sm" onClick={() => setShiftOpen(true)}>
+        <Button size="sm" onClick={() => setShiftOpen(true)} disabled={isDemoBa(account.id)}>
           Create shift
         </Button>
       </div>
@@ -872,35 +1213,42 @@ export function AmbassadorProfilePage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-        {/* Profile + readiness + scores */}
         <Card className="h-fit lg:sticky lg:top-4">
           <div className="flex flex-col items-center text-center">
-            <Avatar name={ba.name} size="lg" />
-            <h2 className="mt-3 text-lg font-bold text-slate-900">{ba.name}</h2>
+            <Avatar name={account.name} size="lg" />
+            <h2 className="mt-3 text-lg font-bold text-slate-900">{account.name}</h2>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
               <span className="rounded-lg bg-brand-50 px-2.5 py-1 text-sm font-bold text-brand-700">
-                {ba.certification}
+                {certificationGrade(account.result?.quality)}
               </span>
-              <StatusBadge status={ba.status} />
+              <StatusBadge status={account.status} />
             </div>
-            <p className="mt-2 text-xs text-slate-500">{ba.city}</p>
-            <p className="mt-0.5 text-sm text-slate-600">{ba.store}</p>
+            {account.code && (
+              <p className="mt-2 font-mono text-xs font-semibold text-slate-500">{account.code}</p>
+            )}
+            <p className="mt-2 text-xs text-slate-500">{account.city || '—'}</p>
+            <p className="mt-0.5 text-sm text-slate-600">{storeLabel}</p>
 
             <div className="mt-5">
-              <ProgressRing value={ba.readiness} size={120} stroke={9} label="Readiness" />
+              <ProgressRing value={scores?.readiness ?? 0} size={120} stroke={9} label="Readiness" />
             </div>
           </div>
 
           <div className="mt-5 border-t border-slate-100 pt-4">
             <ScoreBars
               rows={[
-                { label: 'Product Knowledge', value: ba.scores.product },
-                { label: 'Communication', value: ba.scores.communication },
-                { label: 'Selling Confidence', value: ba.scores.selling },
-                { label: 'Objection Handling', value: ba.scores.objection },
-                { label: 'Customer Interaction', value: ba.scores.interaction },
+                { label: 'Product Knowledge', value: scores?.product ?? 0 },
+                { label: 'Communication', value: scores?.communication ?? 0 },
+                { label: 'Selling Confidence', value: scores?.selling ?? 0 },
+                { label: 'Objection Handling', value: scores?.objection ?? 0 },
+                { label: 'Customer Interaction', value: scores?.interaction ?? 0 },
               ]}
             />
+            {!account.result && (
+              <p className="mt-3 text-center text-xs text-slate-400">
+                Scores appear after the BA completes assessment.
+              </p>
+            )}
           </div>
 
           <div className="mt-4">
@@ -912,10 +1260,12 @@ export function AmbassadorProfilePage() {
           </div>
         </Card>
 
-        {/* Main content */}
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <MiniStat label="Conv. rate" value={`${ba.today.rate}%`} />
+            <MiniStat
+              label="Conv. rate"
+              value={incentive ? `${Math.round(incentive.conversion)}%` : '—'}
+            />
             <MiniStat
               label="Incentive"
               value={incentive ? formatPkr(incentive.totalPkr) : '—'}
@@ -928,8 +1278,8 @@ export function AmbassadorProfilePage() {
             </div>
             <ol className="mt-2 flex gap-1 overflow-x-auto pb-1">
               {allLifecycle.map((stage, i) => {
-                const done = ba.lifecycle.includes(stage)
-                const current = ba.lifecycle[ba.lifecycle.length - 1] === stage
+                const done = lifecycle.includes(stage)
+                const current = lifecycle[lifecycle.length - 1] === stage
                 return (
                   <li
                     key={stage}
@@ -963,16 +1313,18 @@ export function AmbassadorProfilePage() {
                 onChange={setShiftTab}
               />
               <span className="text-xs text-slate-400">
-                {shiftTab === 'Current shifts'
-                  ? `${currentShifts.length} this week`
-                  : `${historyShifts.length} past`}
+                {loadingShifts
+                  ? 'Loading…'
+                  : shiftTab === 'Current shifts'
+                    ? `${currentShifts.length} upcoming`
+                    : `${historyShifts.length} past`}
               </span>
             </div>
 
             {shiftTab === 'Current shifts' ? (
               currentShifts.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center">
-                  <p className="text-sm text-slate-500">No shifts this week</p>
+                  <p className="text-sm text-slate-500">No upcoming shifts</p>
                   <Button size="sm" className="mt-3" onClick={() => setShiftOpen(true)}>
                     Create shift
                   </Button>
@@ -994,7 +1346,7 @@ export function AmbassadorProfilePage() {
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-slate-800">{s.shift}</span>
-                        <StatusBadge status="Scheduled" />
+                        <StatusBadge status={s.status === 'Conflict' ? 'Conflict' : 'Scheduled'} />
                       </div>
                     </div>
                   ))}
@@ -1015,27 +1367,30 @@ export function AmbassadorProfilePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {historyShifts.map((s) => (
-                      <tr key={s.id} className="border-t border-slate-100">
-                        <td className="py-2.5 pr-3">
-                          <div className="font-medium">{s.day}</div>
-                          <div className="text-xs text-slate-400">{s.date}</div>
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <div className="max-w-[140px] truncate">
-                            #{s.storeId} {s.storeName}
-                          </div>
-                          <div className="text-xs text-slate-400">{s.city}</div>
-                        </td>
-                        <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{s.shift}</td>
-                        <td className="py-2.5 pr-3 tabular-nums text-slate-600 whitespace-nowrap">
-                          {s.checkIn} → {s.checkOut}
-                        </td>
-                        <td className="py-2.5">
-                          <StatusBadge status={s.status} />
-                        </td>
-                      </tr>
-                    ))}
+                    {historyShifts.map((s) => {
+                      const st = historyStatusForShift(s)
+                      return (
+                        <tr key={s.id} className="border-t border-slate-100">
+                          <td className="py-2.5 pr-3">
+                            <div className="font-medium">{s.day}</div>
+                            <div className="text-xs text-slate-400">{s.date}</div>
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <div className="max-w-[140px] truncate">
+                              #{s.storeId} {s.storeName}
+                            </div>
+                            <div className="text-xs text-slate-400">{s.city}</div>
+                          </td>
+                          <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{s.shift}</td>
+                          <td className="py-2.5 pr-3 tabular-nums text-slate-600 whitespace-nowrap">
+                            {formatShiftClock(s.checkedInAt)} → {formatShiftClock(s.checkedOutAt)}
+                          </td>
+                          <td className="py-2.5">
+                            <StatusBadge status={st} />
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </TableScroll>
@@ -1059,17 +1414,17 @@ export function AmbassadorProfilePage() {
         </div>
       </div>
 
-      <Modal open={shiftOpen} onClose={() => setShiftOpen(false)} title={`Create shift · ${ba.name}`}>
+      <Modal open={shiftOpen} onClose={() => setShiftOpen(false)} title={`Create shift · ${account.name}`}>
         <div className="space-y-3">
           <label className="block text-sm">
             <span className="mb-1 block font-medium text-slate-700">Day</span>
             <Select
               className="w-full"
-              value={form.day}
-              onChange={(e) => setForm((f) => ({ ...f, day: e.target.value }))}
+              value={form.dayIso}
+              onChange={(e) => setForm((f) => ({ ...f, dayIso: e.target.value }))}
             >
-              {scheduleDays.map((d) => (
-                <option key={d.key} value={d.key}>
+              {dayOptions.map((d) => (
+                <option key={d.iso} value={d.iso}>
                   {d.label} · {d.date}
                 </option>
               ))}
@@ -1113,7 +1468,9 @@ export function AmbassadorProfilePage() {
             <Button variant="secondary" onClick={() => setShiftOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={createShift}>Save shift</Button>
+            <Button onClick={() => void saveShift()} disabled={savingShift || !stores.length}>
+              {savingShift ? 'Saving…' : 'Save shift'}
+            </Button>
           </div>
         </div>
       </Modal>

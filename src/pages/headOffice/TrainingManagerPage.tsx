@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Plus, Trash2, Upload, Video } from 'lucide-react'
 import { Button, Card, PageHeader, StatusBadge } from '../../components/ui'
 import { DEFAULT_MODULE_ID, useTrainingContent } from '../../context/TrainingContentContext'
+import { isApiAuthenticated } from '../../lib/api'
 
 const fieldClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500'
@@ -14,40 +15,48 @@ function formatUploadedAt(iso: string) {
 }
 
 export function TrainingManagerPage() {
-  const { modules, addModule, removeModule } = useTrainingContent()
+  const { modules, uploadModule, removeModule, loading, refreshFromApi } = useTrainingContent()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [questions, setQuestions] = useState([''])
   const [toast, setToast] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const canSave = useMemo(() => {
-    if (!title.trim() || !videoFile) return false
+    if (!title.trim() || !videoFile || busy) return false
     return questions.every((q) => q.trim().length > 0)
-  }, [title, videoFile, questions])
+  }, [title, videoFile, questions, busy])
 
-  function handleSave() {
+  async function handleSave() {
     if (!canSave || !videoFile) return
-    const videoUrl = URL.createObjectURL(videoFile)
-    addModule(
-      {
+    setBusy(true)
+    setError(null)
+    try {
+      const { warning } = await uploadModule({
         title: title.trim(),
         description: description.trim(),
-        videoName: videoFile.name,
-        videoUrl,
-        questions: questions.map((prompt, i) => ({
-          id: `q-${Date.now()}-${i}`,
-          prompt: prompt.trim(),
-        })),
-      },
-      videoFile,
-    )
-    setTitle('')
-    setDescription('')
-    setVideoFile(null)
-    setQuestions([''])
-    setToast('Training video and questions saved')
-    setTimeout(() => setToast(null), 3000)
+        videoFile,
+        questions: questions.map((q) => q.trim()),
+      })
+      setTitle('')
+      setDescription('')
+      setVideoFile(null)
+      setQuestions([''])
+      setToast(
+        warning
+          ? `Saved to backend. Note: ${warning}`
+          : isApiAuthenticated()
+            ? 'Training video and questions saved to backend'
+            : 'Training video and questions saved locally',
+      )
+      setTimeout(() => setToast(null), 5000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save training module.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -56,6 +65,11 @@ export function TrainingManagerPage() {
         <Link to="/ho/ambassadors" className="text-sm text-slate-500 hover:text-brand-600">
           ← Ambassadors
         </Link>
+        {isApiAuthenticated() && (
+          <Button size="sm" variant="secondary" disabled={loading} onClick={() => void refreshFromApi()}>
+            {loading ? 'Refreshing…' : 'Refresh from server'}
+          </Button>
+        )}
       </div>
 
       <PageHeader
@@ -68,9 +82,17 @@ export function TrainingManagerPage() {
           {toast}
         </div>
       )}
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
+      )}
 
       <Card>
         <h3 className="font-semibold text-slate-900">Upload training video</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          {isApiAuthenticated()
+            ? 'Uploads to the Django backend. The latest upload becomes the active BA training video.'
+            : 'Not signed in via API — saves in this browser only.'}
+        </p>
         <div className="mt-4 space-y-3">
           <label className="block text-sm">
             <span className="mb-1 block font-medium text-slate-700">Title</span>
@@ -158,8 +180,8 @@ export function TrainingManagerPage() {
         </div>
 
         <div className="mt-5 flex justify-end">
-          <Button disabled={!canSave} onClick={handleSave}>
-            Save training module
+          <Button disabled={!canSave} onClick={() => void handleSave()}>
+            {busy ? 'Saving…' : 'Save training module'}
           </Button>
         </div>
       </Card>
@@ -188,6 +210,11 @@ export function TrainingManagerPage() {
                         Default
                       </span>
                     )}
+                    {m.id.startsWith('api-') && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                        Backend
+                      </span>
+                    )}
                   </div>
                   {m.description && (
                     <p className="mt-1 text-sm text-slate-500">{m.description}</p>
@@ -212,7 +239,13 @@ export function TrainingManagerPage() {
                   )}
                 </div>
                 {m.id !== DEFAULT_MODULE_ID && (
-                  <Button size="sm" variant="ghost" onClick={() => removeModule(m.id)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      void removeModule(m.id)
+                    }}
+                  >
                     <Trash2 size={14} /> Remove
                   </Button>
                 )}

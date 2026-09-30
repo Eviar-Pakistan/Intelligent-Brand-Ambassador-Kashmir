@@ -28,7 +28,9 @@ export const chartGrid = '#f1f5f9'
 export const chartGreen = '#0b7a3e'
 export const chartGreenLight = '#7ec99a'
 export const chartGold = '#d4a017'
-export const categoryColors = ['#7ec99a', '#0b7a3e', '#d4a017']
+export const chartBarCoral = '#7ec99a'
+/** Kashmir Cooking Oil · Kashmir Banaspati · Waadi Banaspati */
+export const categoryColors = ['#0b7a3e', '#7ec99a', '#a8d5b5', '#5a9e6f']
 
 export const defaultChartOptions = {
   responsive: true,

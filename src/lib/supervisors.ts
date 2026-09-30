@@ -1,15 +1,13 @@
-import { useSyncExternalStore } from 'react'
-import { ambassadors, baRanking, stores, type Store } from '../data/mock'
-import { sha256Hex } from './sha256'
-
 /**
- * Supervisors oversee a set of stores. Head Office creates them (with a login) and assigns
- * stores; a supervisor signs in and sees the BAs and characteristics of those stores only.
- *
- * There is no backend, so supervisors and their sign-in live in this browser. Passwords are
- * salted and hashed rather than stored as text, but this is demo-grade access control: anyone
- * with access to the browser can read or change the data. Real sign-in needs a server.
+ * Supervisors oversee assigned stores (+ BAs in those stores).
+ * When HO is authenticated, CRUD + overview hit Django; login uses JWT (user_type=5).
  */
+
+import { useEffect, useSyncExternalStore } from 'react'
+import { ambassadors, baRanking, stores, type Store } from '../data/mock'
+import { apiRequest, isApiAuthenticated } from './api'
+import { loginWithEmail, logoutApi, type AuthUser } from './auth'
+import { sha256Hex } from './sha256'
 
 export type Supervisor = {
   id: string
@@ -21,7 +19,7 @@ export type Supervisor = {
   storeIds: number[]
   createdAt: string
   passwordSalt: string
-  /** sha256(`${salt}:${password}`); empty when no password has been set yet */
+  /** non-empty when a password is set (API users always "set") */
   passwordHash: string
 }
 
@@ -29,32 +27,10 @@ const STORAGE_KEY = 'supervisors-v2'
 const LEGACY_KEY = 'supervisors-v1'
 const SESSION_KEY = 'supervisor-session'
 
+/** Kept for offline seed password hashing demos */
 export const hashPassword = (salt: string, password: string) => sha256Hex(`${salt}:${password}`)
 
-const seed: Supervisor[] = [
-  {
-    id: 'sup-imran',
-    name: 'Imran Sheikh',
-    phone: '0300-5551201',
-    email: 'imran.sheikh@example.com',
-    city: 'Lahore',
-    storeIds: [12, 4],
-    createdAt: new Date().toISOString(),
-    passwordSalt: 'demo',
-    passwordHash: 'f356d35c8674d585ecea9033ee333fa506742b0a9be832cf749f308eaa45b720', // Imran@123
-  },
-  {
-    id: 'sup-nadia',
-    name: 'Nadia Hussain',
-    phone: '0321-5551202',
-    email: 'nadia.hussain@example.com',
-    city: 'Karachi',
-    storeIds: [7, 19],
-    createdAt: new Date().toISOString(),
-    passwordSalt: 'demo',
-    passwordHash: 'a2edd105d785b2846faa86190432da9e2320e7cb06e1ab86a0514e8d73996f12', // Nadia@123
-  },
-]
+const seed: Supervisor[] = []
 
 function read(key: string): Partial<Supervisor>[] | null {
   try {
@@ -66,8 +42,21 @@ function read(key: string): Partial<Supervisor>[] | null {
   }
 }
 
-function load(): Supervisor[] {
-  // supervisors made before sign-in existed carry over, without a password until Head Office sets one
+function mapApi(row: Record<string, unknown>): Supervisor {
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? ''),
+    phone: String(row.phone ?? ''),
+    email: String(row.email ?? ''),
+    city: String(row.city ?? ''),
+    storeIds: Array.isArray(row.storeIds) ? row.storeIds.map((x) => Number(x)) : [],
+    createdAt: String(row.createdAt ?? new Date().toISOString()),
+    passwordSalt: '',
+    passwordHash: (row.passwordHash || row.hasPassword) ? 'set' : '',
+  }
+}
+
+function loadLocal(): Supervisor[] {
   const stored = read(STORAGE_KEY) ?? read(LEGACY_KEY)
   if (!stored) return seed
   return stored.map((s) => ({
@@ -83,15 +72,17 @@ function load(): Supervisor[] {
   }))
 }
 
-let supervisors = load()
+let supervisors = loadLocal()
 const listeners = new Set<() => void>()
 
-function commit(next: Supervisor[]) {
+function commit(next: Supervisor[], persistLocal = true) {
   supervisors = next
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(supervisors))
-  } catch {
-    // keep in memory for this session
+  if (persistLocal) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(supervisors))
+    } catch {
+      // keep in memory
+    }
   }
   listeners.forEach((l) => l())
 }
@@ -111,64 +102,166 @@ export function getSupervisors() {
   return supervisors
 }
 
-/** A store belongs to one supervisor, so assigning it here takes it from anyone else. */
-function withStoresAssigned(list: Supervisor[], supervisorId: string, storeIds: number[]) {
-  return list.map((s) =>
-    s.id === supervisorId
-      ? { ...s, storeIds }
-      : { ...s, storeIds: s.storeIds.filter((id) => !storeIds.includes(id)) },
-  )
+export async function syncSupervisorsFromApi(): Promise<Supervisor[]> {
+  if (!isApiAuthenticated()) return supervisors
+  try {
+    const data = await apiRequest<{ results: Record<string, unknown>[] }>('/api/supervisors/')
+    const rows = (data.results ?? []).map(mapApi)
+    commit(rows)
+    return rows
+  } catch {
+    return supervisors
+  }
+}
+
+/** Refresh list when HO supervisors pages mount. */
+export function useSupervisorsSync() {
+  const list = useSupervisors()
+  useEffect(() => {
+    void syncSupervisorsFromApi()
+  }, [])
+  return list
 }
 
 const normEmail = (email: string) => email.trim().toLowerCase()
 
-/** True when another supervisor already signs in with this email. */
+export const SUPERVISOR_EMAIL_DOMAIN = 'kashmir.pk'
+
+/** Turn "Ali Raza" into local-part "ali.raza". */
+export function slugFromName(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+  return slug || 'supervisor'
+}
+
+/** Unique sign-in email from name (checks in-memory supervisor list). */
+export function generateSupervisorEmail(name: string, exceptId?: string) {
+  const base = slugFromName(name)
+  let candidate = `${base}@${SUPERVISOR_EMAIL_DOMAIN}`
+  let n = 2
+  while (emailInUse(candidate, exceptId)) {
+    candidate = `${base}${n}@${SUPERVISOR_EMAIL_DOMAIN}`
+    n += 1
+  }
+  return candidate
+}
+
 export function emailInUse(email: string, exceptId?: string) {
   const e = normEmail(email)
   return supervisors.some((s) => s.id !== exceptId && normEmail(s.email) === e)
 }
 
-function newCredentials(password: string) {
-  const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')
-  return { passwordSalt: salt, passwordHash: hashPassword(salt, password) }
+export type SupervisorLoginOption = { email: string; name: string }
+
+/** Public directory for the login dropdown (no auth). */
+export async function fetchSupervisorLoginOptions(): Promise<SupervisorLoginOption[]> {
+  try {
+    const data = await apiRequest<{ results: SupervisorLoginOption[] }>('/api/supervisor-logins/', { auth: false })
+    return (data.results ?? []).map((r) => ({
+      email: String(r.email ?? '').trim().toLowerCase(),
+      name: String(r.name ?? '').trim() || String(r.email ?? ''),
+    }))
+  } catch {
+    // Offline fallback: local supervisors already in memory
+    return supervisors
+      .filter((s) => s.email)
+      .map((s) => ({ email: normEmail(s.email), name: s.name }))
+  }
 }
 
-/** A readable password: no look-alike characters (0/O, 1/l/I). */
 export function generatePassword(length = 10) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
   return Array.from(crypto.getRandomValues(new Uint8Array(length)), (b) => chars[b % chars.length]).join('')
 }
 
-export function createSupervisor(
+export async function createSupervisor(
   fields: { name: string; phone: string; email: string; city: string; password: string },
   storeIds: number[],
-): Supervisor {
+): Promise<Supervisor> {
+  if (isApiAuthenticated()) {
+    const created = await apiRequest<Record<string, unknown>>('/api/supervisors/', {
+      method: 'POST',
+      body: {
+        name: fields.name.trim(),
+        phone: fields.phone.trim(),
+        email: fields.email.trim(),
+        city: fields.city.trim(),
+        password: fields.password,
+        storeIds,
+      },
+    })
+    const mapped = mapApi(created)
+    commit([mapped, ...supervisors.filter((s) => s.id !== mapped.id)])
+    return mapped
+  }
+
+  // Offline fallback (local only)
   const supervisor: Supervisor = {
     id: `sup-${Date.now().toString(36)}`,
     name: fields.name.trim(),
     phone: fields.phone.trim(),
     email: fields.email.trim(),
     city: fields.city.trim(),
-    storeIds: [],
+    storeIds,
     createdAt: new Date().toISOString(),
-    ...newCredentials(fields.password),
+    passwordSalt: 'local',
+    passwordHash: hashPassword('local', fields.password),
   }
-  commit(withStoresAssigned([supervisor, ...supervisors], supervisor.id, storeIds))
-  return { ...supervisor, storeIds }
+  commit([supervisor, ...supervisors.filter((s) => s.id !== supervisor.id)])
+  return supervisor
 }
 
-/** Sets (or resets) the email and password a supervisor signs in with. */
-export function setLogin(supervisorId: string, email: string, password: string) {
+export async function setLogin(supervisorId: string, email: string, password: string) {
+  if (isApiAuthenticated()) {
+    const saved = await apiRequest<Record<string, unknown>>(`/api/supervisors/${supervisorId}/set-login/`, {
+      method: 'POST',
+      body: { email, password },
+    })
+    const mapped = mapApi(saved)
+    commit(supervisors.map((s) => (s.id === supervisorId ? mapped : s)))
+    return
+  }
   commit(
-    supervisors.map((s) => (s.id === supervisorId ? { ...s, email: email.trim(), ...newCredentials(password) } : s)),
+    supervisors.map((s) =>
+      s.id === supervisorId
+        ? { ...s, email: email.trim(), passwordSalt: 'local', passwordHash: hashPassword('local', password) }
+        : s,
+    ),
   )
 }
 
-export function assignStores(supervisorId: string, storeIds: number[]) {
-  commit(withStoresAssigned(supervisors, supervisorId, storeIds))
+export async function assignStores(supervisorId: string, storeIds: number[]) {
+  if (isApiAuthenticated()) {
+    const saved = await apiRequest<Record<string, unknown>>(`/api/supervisors/${supervisorId}/assign-stores/`, {
+      method: 'POST',
+      body: { storeIds },
+    })
+    const mapped = mapApi(saved)
+    // exclusivity is enforced on server; refresh list lightly
+    commit(
+      supervisors.map((s) => {
+        if (s.id === supervisorId) return mapped
+        return { ...s, storeIds: s.storeIds.filter((id) => !storeIds.includes(id)) }
+      }),
+    )
+    return
+  }
+  commit(
+    supervisors.map((s) =>
+      s.id === supervisorId
+        ? { ...s, storeIds }
+        : { ...s, storeIds: s.storeIds.filter((id) => !storeIds.includes(id)) },
+    ),
+  )
 }
 
-export function deleteSupervisor(supervisorId: string) {
+export async function deleteSupervisor(supervisorId: string) {
+  if (isApiAuthenticated()) {
+    await apiRequest(`/api/supervisors/${supervisorId}/`, { method: 'DELETE' })
+  }
   commit(supervisors.filter((s) => s.id !== supervisorId))
   if (readSession()?.id === supervisorId) signOut()
 }
@@ -179,14 +272,6 @@ export function supervisorOfStore(storeId: number) {
 
 // ─── Signing in ──────────────────────────────────────────────────────────────
 
-/** The supervisor these credentials belong to, or null. */
-export function authenticate(email: string, password: string): Supervisor | null {
-  const found = supervisors.find((s) => normEmail(s.email) === normEmail(email))
-  if (!found || !found.passwordHash) return null
-  return hashPassword(found.passwordSalt, password) === found.passwordHash ? found : null
-}
-
-/** `preview` = Head Office looking at the portal as this supervisor, without their password. */
 export type SupervisorSession = { id: string; preview: boolean }
 
 const sessionListeners = new Set<() => void>()
@@ -229,7 +314,43 @@ export function signOut() {
   sessionListeners.forEach((l) => l())
 }
 
-/** Who is signed in to the supervisor portal (null when nobody is, or the account was deleted). */
+/** JWT login for supervisor accounts (user_type = 5). */
+export async function loginSupervisorWithApi(email: string, password: string): Promise<Supervisor | null> {
+  const { user } = await loginWithEmail(email, password)
+  if (user.user_type !== 5) {
+    logoutApi()
+    return null
+  }
+  const profile = await apiRequest<Record<string, unknown>>('/api/supervisor/me/')
+  const mapped = mapApi(profile)
+  commit([mapped, ...supervisors.filter((s) => s.id !== mapped.id)])
+  signIn(mapped.id, false)
+  return mapped
+}
+
+/** Load profile for current JWT if supervisor. */
+export async function hydrateSupervisorFromToken(user?: AuthUser | null): Promise<Supervisor | null> {
+  if (!isApiAuthenticated()) return null
+  try {
+    const me = user ?? (await apiRequest<AuthUser>('/auth/users/me/'))
+    if (me.user_type !== 5) return null
+    const profile = await apiRequest<Record<string, unknown>>('/api/supervisor/me/')
+    const mapped = mapApi(profile)
+    commit([mapped, ...supervisors.filter((s) => s.id !== mapped.id)])
+    signIn(mapped.id, false)
+    return mapped
+  } catch {
+    return null
+  }
+}
+
+/** Legacy local authenticate (offline seed only). */
+export function authenticate(email: string, password: string): Supervisor | null {
+  const found = supervisors.find((s) => normEmail(s.email) === normEmail(email))
+  if (!found || !found.passwordHash || !found.passwordSalt) return null
+  return hashPassword(found.passwordSalt, password) === found.passwordHash ? found : null
+}
+
 export function useSupervisorSession() {
   const list = useSupervisors()
   const raw = useSyncExternalStore(
@@ -253,7 +374,7 @@ export function useSupervisorSession() {
   return { supervisor, preview: !!session?.preview }
 }
 
-// ─── What a supervisor sees ──────────────────────────────────────────────────
+// ─── Overview ────────────────────────────────────────────────────────────────
 
 export type SupervisorBa = {
   id: string
@@ -270,16 +391,14 @@ export type SupervisorBa = {
 export type SupervisorOverview = {
   stores: Store[]
   bas: SupervisorBa[]
-  /** Average conversion of the BAs in these stores, % */
   teamConversion: number
-  /** Average coverage of these stores, % */
   coverage: number
   todayFootfall: number
 }
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0)
 
-/** The stores assigned to a supervisor, the BAs working in them, and their headline numbers. */
+/** Local/mock fallback overview. */
 export function supervisorOverview(supervisor: Supervisor): SupervisorOverview {
   const mine = stores.filter((s) => supervisor.storeIds.includes(s.id))
 
@@ -309,4 +428,63 @@ export function supervisorOverview(supervisor: Supervisor): SupervisorOverview {
     coverage: Math.round(mean(mine.map((s) => s.coverage)) * 10) / 10,
     todayFootfall: mine.reduce((s, x) => s + x.todayFootfall, 0),
   }
+}
+
+function mapOverview(data: Record<string, unknown>): SupervisorOverview {
+  const storesRaw = Array.isArray(data.stores) ? data.stores : []
+  const basRaw = Array.isArray(data.bas) ? data.bas : []
+  const mappedStores: Store[] = storesRaw.map((s) => {
+    const row = s as Record<string, unknown>
+    return {
+      id: Number(row.id),
+      name: String(row.name ?? ''),
+      city: String(row.city ?? ''),
+      footfall: (row.footfall as Store['footfall']) || 'Medium',
+      bas: Number(row.bas ?? 0),
+      coverage: Number(row.coverage ?? 0),
+      status: (row.status as Store['status']) || 'PARTIAL',
+      todayFootfall: Number(row.todayFootfall ?? 0),
+      engagement: Number(row.engagement ?? 0),
+      conversion: Number(row.conversion ?? 0),
+      peak: Array.isArray(row.peak) ? (row.peak as string[]) : [],
+      assigned: Array.isArray(row.assigned)
+        ? (row.assigned as { id: string; name: string; state: 'Active' | 'Break' | 'Offline' }[])
+        : [],
+      qrCode: String(row.qrCode ?? ''),
+    }
+  })
+  const bas: SupervisorBa[] = basRaw.map((b) => {
+    const row = b as Record<string, unknown>
+    const state = String(row.state ?? 'Offline')
+    return {
+      id: String(row.id ?? ''),
+      name: String(row.name ?? ''),
+      storeId: Number(row.storeId ?? 0),
+      store: String(row.store ?? ''),
+      state: state === 'Active' || state === 'Break' ? state : 'Offline',
+      conversion: Number(row.conversion ?? 0),
+      points: Number(row.points ?? 0),
+      sessions: Number(row.sessions ?? 0),
+      score: Number(row.score ?? 0),
+    }
+  })
+  return {
+    stores: mappedStores,
+    bas,
+    teamConversion: Number(data.teamConversion ?? 0),
+    coverage: Number(data.coverage ?? 0),
+    todayFootfall: Number(data.todayFootfall ?? 0),
+  }
+}
+
+export async function fetchSupervisorOverview(supervisorId: string): Promise<SupervisorOverview | null> {
+  if (!isApiAuthenticated()) return null
+  const data = await apiRequest<Record<string, unknown>>(`/api/supervisors/${supervisorId}/overview/`)
+  return mapOverview(data)
+}
+
+export async function fetchMySupervisorOverview(): Promise<SupervisorOverview | null> {
+  if (!isApiAuthenticated()) return null
+  const data = await apiRequest<Record<string, unknown>>('/api/supervisor/me/overview/')
+  return mapOverview(data)
 }

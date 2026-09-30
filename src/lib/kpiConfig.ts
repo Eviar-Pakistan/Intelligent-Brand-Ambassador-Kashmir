@@ -1,70 +1,89 @@
-import { useSyncExternalStore } from 'react'
-
 /**
- * Incentive KPI settings. Head Office sets these in the "Set KPIs" dialog; every incentive
- * figure in the app is calculated from them automatically.
- *
- * Each KPI is set as "when the BA reaches <target>, pay Rs <amount>", and pays in proportion:
- * half the target pays half the amount, double the target pays double.
+ * Incentive KPI settings — BA + Supervisor monthly packages.
+ * Backed by GET/PATCH /api/incentive-kpi/ when HO is authenticated; localStorage is a cache.
  */
 
+import { useEffect, useSyncExternalStore } from 'react'
+import { apiRequest, isApiAuthenticated } from './api'
+
 export type KpiConfig = {
-  /** Flat Rs. for the scheduled week */
-  basePay: number
-  /** Conversion rate (%) that earns `conversionAmount` — e.g. 100 */
-  conversionTarget: number
-  /** Rs. paid when conversion reaches `conversionTarget` */
-  conversionAmount: number
-  /** Sessions (shopper interactions) that earn `sessionAmount` */
-  sessionTarget: number
-  /** Rs. paid when sessions reach `sessionTarget` */
-  sessionAmount: number
-  /** Supervisor flat pay for the scheduled week */
-  supBasePay: number
-  /** Average conversion (%) of the BAs in a supervisor's stores that earns `supConversionAmount` */
-  supConversionTarget: number
-  supConversionAmount: number
-  /** Average coverage (%) of a supervisor's stores that earns `supCoverageAmount` */
-  supCoverageTarget: number
-  supCoverageAmount: number
+  /** BA monthly salary (PKR) */
+  baSalary: number
+  baDiscipline: number
+  baTravelPerDay: number
+  baTravelCap: number
+  baGrooming: number
+  baMobile: number
+  /** Target Ach slabs */
+  baTargetSlab90: number
+  baTargetSlab100: number
+  baTargetSlab110: number
+  /** Min check-in days this month to earn full discipline */
+  baDisciplineMinDays: number
+  /** Supervisor monthly package */
+  supSalary: number
+  supFuelDa: number
+  supDiscipline: number
+  supMobile: number
 }
 
 export const DEFAULT_KPI_CONFIG: KpiConfig = {
-  basePay: 1_000,
-  conversionTarget: 100,
-  conversionAmount: 500,
-  sessionTarget: 50,
-  sessionAmount: 500,
-  supBasePay: 2_000,
-  supConversionTarget: 100,
-  supConversionAmount: 1_000,
-  supCoverageTarget: 100,
-  supCoverageAmount: 1_000,
+  baSalary: 42_000,
+  baDiscipline: 1_500,
+  baTravelPerDay: 300,
+  baTravelCap: 7_800,
+  baGrooming: 2_000,
+  baMobile: 1_000,
+  baTargetSlab90: 2_400,
+  baTargetSlab100: 3_000,
+  baTargetSlab110: 3_600,
+  baDisciplineMinDays: 20,
+  supSalary: 50_000,
+  supFuelDa: 30_000,
+  supDiscipline: 20_000,
+  supMobile: 1_000,
 }
 
-const STORAGE_KEY = 'ba-kpi-config-v4'
+const STORAGE_KEY = 'ba-kpi-config-v5-packages'
 
 const amount = (v: unknown, fallback: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback
-const positive = (v: unknown, fallback: number) =>
-  typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback
 
 /** Coerces any stored/edited value into a valid config. */
 export function normalizeKpiConfig(raw: unknown): KpiConfig {
   const c = (raw && typeof raw === 'object' ? raw : {}) as Partial<KpiConfig>
   const d = DEFAULT_KPI_CONFIG
   return {
-    basePay: amount(c.basePay, d.basePay),
-    conversionTarget: positive(c.conversionTarget, d.conversionTarget),
-    conversionAmount: amount(c.conversionAmount, d.conversionAmount),
-    sessionTarget: positive(c.sessionTarget, d.sessionTarget),
-    sessionAmount: amount(c.sessionAmount, d.sessionAmount),
-    supBasePay: amount(c.supBasePay, d.supBasePay),
-    supConversionTarget: positive(c.supConversionTarget, d.supConversionTarget),
-    supConversionAmount: amount(c.supConversionAmount, d.supConversionAmount),
-    supCoverageTarget: positive(c.supCoverageTarget, d.supCoverageTarget),
-    supCoverageAmount: amount(c.supCoverageAmount, d.supCoverageAmount),
+    baSalary: amount(c.baSalary, d.baSalary),
+    baDiscipline: amount(c.baDiscipline, d.baDiscipline),
+    baTravelPerDay: amount(c.baTravelPerDay, d.baTravelPerDay),
+    baTravelCap: amount(c.baTravelCap, d.baTravelCap),
+    baGrooming: amount(c.baGrooming, d.baGrooming),
+    baMobile: amount(c.baMobile, d.baMobile),
+    baTargetSlab90: amount(c.baTargetSlab90, d.baTargetSlab90),
+    baTargetSlab100: amount(c.baTargetSlab100, d.baTargetSlab100),
+    baTargetSlab110: amount(c.baTargetSlab110, d.baTargetSlab110),
+    baDisciplineMinDays: amount(c.baDisciplineMinDays, d.baDisciplineMinDays),
+    supSalary: amount(c.supSalary, d.supSalary),
+    supFuelDa: amount(c.supFuelDa, d.supFuelDa),
+    supDiscipline: amount(c.supDiscipline, d.supDiscipline),
+    supMobile: amount(c.supMobile, d.supMobile),
   }
+}
+
+export function baPackageTotalAt100(config: KpiConfig = DEFAULT_KPI_CONFIG) {
+  return (
+    config.baSalary +
+    config.baTargetSlab100 +
+    config.baDiscipline +
+    config.baTravelCap +
+    config.baGrooming +
+    config.baMobile
+  )
+}
+
+export function supPackageTotal(config: KpiConfig = DEFAULT_KPI_CONFIG) {
+  return config.supSalary + config.supFuelDa + config.supDiscipline + config.supMobile
 }
 
 function load(): KpiConfig {
@@ -80,18 +99,55 @@ function load(): KpiConfig {
 let current = load()
 const listeners = new Set<() => void>()
 
+function notify() {
+  listeners.forEach((l) => l())
+}
+
 export function getKpiConfig() {
   return current
 }
 
-export function setKpiConfig(next: KpiConfig) {
+function commitLocal(next: KpiConfig) {
   current = normalizeKpiConfig(next)
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(current))
   } catch {
-    // keep the in-memory value for this session
+    // keep in-memory
   }
-  listeners.forEach((l) => l())
+  notify()
+}
+
+/** Apply config locally (cache). Prefer setKpiConfigAsync when online. */
+export function setKpiConfig(next: KpiConfig) {
+  commitLocal(next)
+}
+
+export async function refreshKpiConfigFromApi(): Promise<KpiConfig> {
+  if (!isApiAuthenticated()) return current
+  try {
+    const data = await apiRequest<Partial<KpiConfig>>('/api/incentive-kpi/')
+    const next = normalizeKpiConfig(data)
+    commitLocal(next)
+    return next
+  } catch {
+    return current
+  }
+}
+
+/** Persist to Django when HO is logged in. */
+export async function setKpiConfigAsync(next: KpiConfig): Promise<KpiConfig> {
+  const normalized = normalizeKpiConfig(next)
+  if (!isApiAuthenticated()) {
+    commitLocal(normalized)
+    return normalized
+  }
+  const saved = await apiRequest<Partial<KpiConfig>>('/api/incentive-kpi/', {
+    method: 'PATCH',
+    body: normalized,
+  })
+  const merged = normalizeKpiConfig(saved)
+  commitLocal(merged)
+  return merged
 }
 
 function subscribe(listener: () => void) {
@@ -103,4 +159,13 @@ function subscribe(listener: () => void) {
 
 export function useKpiConfig() {
   return useSyncExternalStore(subscribe, getKpiConfig)
+}
+
+/** Load KPI settings from API once on HO incentive screens. */
+export function useKpiConfigSync() {
+  const config = useKpiConfig()
+  useEffect(() => {
+    void refreshKpiConfigFromApi()
+  }, [])
+  return config
 }

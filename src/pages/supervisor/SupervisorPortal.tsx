@@ -39,17 +39,20 @@ export function usePortal(title: string, description: string) {
     </>
   )
 
-  return { supervisor, header }
+  /** HO preview uses HO JWT + supervisor id; real supervisor uses /me/overview/ */
+  const overviewMode: 'ho' | 'me' = preview ? 'ho' : 'me'
+
+  return { supervisor, header, preview, overviewMode }
 }
 
 export function SupervisorHomePage() {
-  const { supervisor, header } = usePortal('Supervisor Overview', 'your stores at a glance')
+  const { supervisor, header, overviewMode } = usePortal('Supervisor Overview', 'your stores at a glance')
   return (
     <div className="space-y-5">
       {header}
       {supervisor && (
         <>
-          <SupervisorSummary supervisor={supervisor} />
+          <SupervisorSummary supervisor={supervisor} mode={overviewMode} />
           <SupervisorIncentiveCard supervisor={supervisor} />
         </>
       )}
@@ -58,12 +61,15 @@ export function SupervisorHomePage() {
 }
 
 export function SupervisorStoresPage() {
-  const { supervisor, header } = usePortal('Store Characteristics', 'coverage, footfall and peak hours')
+  const { supervisor, header, overviewMode } = usePortal(
+    'Store Characteristics',
+    'coverage, footfall and peak hours',
+  )
   return (
     <div className="space-y-5">
       {header}
       {supervisor ? (
-        <SupervisorStoreCards supervisor={supervisor} />
+        <SupervisorStoreCards supervisor={supervisor} mode={overviewMode} />
       ) : (
         <Card>
           <p className="text-sm text-slate-500">Sign in to see your stores.</p>
@@ -74,11 +80,11 @@ export function SupervisorStoresPage() {
 }
 
 export function SupervisorBasPage() {
-  const { supervisor, header } = usePortal('BA Performance', 'ambassadors in your stores')
+  const { supervisor, header, overviewMode } = usePortal('BA Performance', 'ambassadors in your stores')
   return (
     <div className="space-y-5">
       {header}
-      {supervisor && <SupervisorBaTable supervisor={supervisor} />}
+      {supervisor ? <SupervisorBaTable supervisor={supervisor} mode={overviewMode} /> : null}
     </div>
   )
 }

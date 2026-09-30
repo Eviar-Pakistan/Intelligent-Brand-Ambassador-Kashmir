@@ -80,5 +80,67 @@ export function resolveBaByCode(
 ): BaDirectoryEntry | null {
   const want = normalizeBaCode(code)
   if (!want) return null
-  return buildBaDirectory(extras).find((b) => b.code === want) ?? null
+  // Prefer live/HO accounts over seed demos when codes overlap.
+  const fromExtras = extras.find((a) => a.code && normalizeBaCode(a.code) === want)
+  if (fromExtras) {
+    return { id: fromExtras.id, name: fromExtras.name, code: want }
+  }
+  return buildBaDirectory([]).find((b) => b.code === want) ?? null
+}
+
+function normalizeBaName(raw: string) {
+  return raw.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function pickUniqueByName<T extends { name: string; id: string }>(
+  want: string,
+  pool: T[],
+): T | null {
+  if (!want) return null
+  const exact = pool.filter((a) => normalizeBaName(a.name) === want)
+  if (exact.length >= 1) {
+    // Duplicates: prefer lowest numeric id / stable sort
+    return [...exact].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))[0]
+  }
+
+  // Prefix match for truncated Excel cells (e.g. "Askari College Ro")
+  if (want.length >= 4) {
+    const prefix = pool.filter((a) => normalizeBaName(a.name).startsWith(want))
+    if (prefix.length === 1) return prefix[0]
+    if (prefix.length > 1) {
+      return [...prefix].sort(
+        (a, b) =>
+          normalizeBaName(a.name).length - normalizeBaName(b.name).length ||
+          String(a.id).localeCompare(String(b.id), undefined, { numeric: true }),
+      )[0]
+    }
+    const contains = pool.filter((a) => normalizeBaName(a.name).includes(want))
+    if (contains.length === 1) return contains[0]
+    const reverse = pool.filter((a) => want.startsWith(normalizeBaName(a.name)) && normalizeBaName(a.name).length >= 4)
+    if (reverse.length >= 1) {
+      return [...reverse].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))[0]
+    }
+  }
+  return null
+}
+
+/** Match ambassador by display name (case-insensitive). Prefers live accounts. */
+export function resolveBaByName(
+  name: string,
+  extras: BaCodeRef[] = [],
+): BaDirectoryEntry | null {
+  const want = normalizeBaName(name)
+  if (!want) return null
+
+  const fromExtras = pickUniqueByName(want, extras)
+  if (fromExtras) {
+    return {
+      id: fromExtras.id,
+      name: fromExtras.name,
+      code: fromExtras.code ? normalizeBaCode(fromExtras.code) : baCodeForId(fromExtras.id, extras),
+    }
+  }
+
+  const fromDir = pickUniqueByName(want, buildBaDirectory(extras))
+  return fromDir ? { id: fromDir.id, name: fromDir.name, code: fromDir.code } : null
 }

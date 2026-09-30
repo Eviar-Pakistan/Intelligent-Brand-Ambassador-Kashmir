@@ -29,12 +29,13 @@ const KIND_TABS: { id: KindFilter; match: ComplaintKind | null }[] = [
 ]
 
 export function ComplaintsPage() {
-  const { complaints, updateComplaintStatus } = useComplaints()
+  const { complaints, loading, refreshComplaints, updateComplaintStatus } = useComplaints()
   const [kindTab, setKindTab] = useState<KindFilter>('All')
   const [statusTab, setStatusTab] = useState('All')
   const [selected, setSelected] = useState<Complaint | null>(null)
   const [note, setNote] = useState('')
   const [toast, setToast] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const filtered = useMemo(() => {
     const kindMatch = KIND_TABS.find((t) => t.id === kindTab)?.match
@@ -62,12 +63,20 @@ export function ComplaintsPage() {
     setNote(c.hoNote ?? '')
   }
 
-  function setStatus(status: ComplaintStatus) {
-    if (!selected) return
-    updateComplaintStatus(selected.id, status, note.trim() || undefined)
-    setToast(`Complaint ${selected.id} marked ${status}`)
-    setSelected(null)
-    setTimeout(() => setToast(null), 2800)
+  async function setStatus(status: ComplaintStatus) {
+    if (!selected || saving) return
+    setSaving(true)
+    try {
+      await updateComplaintStatus(selected.id, status, note.trim() || undefined)
+      setToast(`${selected.id} marked ${status}`)
+      setSelected(null)
+      setTimeout(() => setToast(null), 2800)
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not update status')
+      setTimeout(() => setToast(null), 3200)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const showCustomerCols = kindTab === 'Customer Complaint'
@@ -79,7 +88,16 @@ export function ComplaintsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Insights / Complaint Center"
-        description="Review customer product complaints, BA store complaints, and field insights"
+        description={
+          loading
+            ? 'Loading reports…'
+            : 'Review customer product complaints, BA store complaints, and field insights'
+        }
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => void refreshComplaints()}>
+            Refresh
+          </Button>
+        }
       />
 
       {toast && (
@@ -439,13 +457,17 @@ export function ComplaintsPage() {
             </label>
 
             <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-              <Button variant="secondary" onClick={() => setStatus('In Review')}>
+              <Button
+                variant="secondary"
+                disabled={saving}
+                onClick={() => void setStatus('In Review')}
+              >
                 Mark In Review
               </Button>
-              <Button variant="success" onClick={() => setStatus('Resolved')}>
+              <Button variant="success" disabled={saving} onClick={() => void setStatus('Resolved')}>
                 Resolve
               </Button>
-              <Button variant="danger" onClick={() => setStatus('Rejected')}>
+              <Button variant="danger" disabled={saving} onClick={() => void setStatus('Rejected')}>
                 Reject
               </Button>
               <Button variant="ghost" onClick={() => setSelected(null)}>

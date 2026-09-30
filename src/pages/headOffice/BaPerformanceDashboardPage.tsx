@@ -1,31 +1,23 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { RotateCcw, Search } from 'lucide-react'
 import { Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
 import {
-  aggregateBaPerformance,
+  MONTH_ORDER,
   baPerformanceBrands,
   baPerformanceCategories,
-  baPerformanceMonths,
-  baPerformanceTowns,
-  buildSalesTargetSeries,
-  collectPeriodRecords,
+  demoCategorySalesForFilters,
+  demoTargetVsSalesForFilters,
+  demoTopSkusForFilters,
+  demoTopStoresForFilters,
   getSkusForCategory,
-  getStoresForTown,
-  MONTH_ORDER,
-  periodsForRange,
-  type DataPeriod,
   type ProductCategory,
   type SalesPeriodMode,
 } from '../../data/baPerformance'
 import {
-  attendanceForRange,
-  attendanceRows,
-  baCities,
-  baStatusByCity,
-  daysInRange,
-  workingHoursSeries,
-} from '../../data/baAttendance'
+  fetchBaPerformanceDashboard,
+  type BaPerformanceDashboard,
+} from '../../lib/baPerformanceApi'
 import {
   categoryColors,
   chartGold,
@@ -151,6 +143,7 @@ function FilterPanel({
 }
 
 const CHART_HEIGHT = 'h-[220px]'
+const TOP10_CHART_HEIGHT = 'h-[320px]'
 const PERIOD_CHART_HEIGHT = 'h-[260px]'
 
 function ChartCard({
@@ -158,11 +151,13 @@ function ChartCard({
   children,
   className,
   headerRight,
+  chartHeight = CHART_HEIGHT,
 }: {
   title: string
   children: ReactNode
   className?: string
   headerRight?: ReactNode
+  chartHeight?: string
 }) {
   return (
     <Card padding={false} className={cn('h-full', className)}>
@@ -171,7 +166,7 @@ function ChartCard({
         {headerRight}
       </div>
       <div className="p-3 sm:p-4">
-        <div className={cn('relative w-full', CHART_HEIGHT)}>{children}</div>
+        <div className={cn('relative w-full', chartHeight)}>{children}</div>
       </div>
     </Card>
   )
@@ -306,42 +301,155 @@ export function BaPerformanceDashboardPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>('mtd')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [dash, setDash] = useState<BaPerformanceDashboard | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [hoursCity, setHoursCity] = useState<string | null>(null)
 
   const range = useMemo(
     () => dateRangeForPreset(datePreset, customFrom, customTo),
     [datePreset, customFrom, customTo],
   )
 
-  // Performance data is monthly. A valid date range picks the months (and days of each month)
-  // it covers; otherwise the Month panel decides (one month, or all months when empty).
-  const rangePeriods = useMemo(
-    () => (range ? periodsForRange(range.start, range.end) : null),
-    [range],
-  )
-  const periods = useMemo<DataPeriod[]>(
-    () => rangePeriods?.periods ?? [{ month, share: null }],
-    [rangePeriods, month],
-  )
-  const storeOptions = useMemo(
-    () => getStoresForTown(town, periods.some((p) => p.month === null) ? null : periods.map((p) => p.month as string)),
-    [town, periods],
-  )
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true)
+      setError(null)
+    }
+    try {
+      const from = range ? dateInputValue(range.start) : customFrom || null
+      const to = range ? dateInputValue(range.end) : customTo || null
+      const apiPeriod = salesPeriod === 'yoy' ? 'ytd' : salesPeriod
+      let monthParam: string | null = null
+      if (month) {
+        const idx = MONTH_ORDER.indexOf(month)
+        if (idx >= 0) {
+          monthParam = `${new Date().getFullYear()}-${String(idx + 1).padStart(2, '0')}`
+        } else {
+          monthParam = month
+        }
+      }
+      const data = await fetchBaPerformanceDashboard({
+        town,
+        store,
+        month: from && to ? null : monthParam,
+        from: from && to ? from : null,
+        to: from && to ? to : null,
+        category,
+        sku,
+        salesPeriod: apiPeriod,
+      })
+      if (!data) {
+        if (!opts?.silent) setError('Sign in to load live dashboard data.')
+        setDash(null)
+      } else {
+        setDash(data)
+        if (!opts?.silent) setError(null)
+      }
+    } catch (err) {
+      if (!opts?.silent) {
+        setError(err instanceof Error ? err.message : 'Could not load dashboard')
+        setDash(null)
+      }
+    } finally {
+      if (!opts?.silent) setLoading(false)
+    }
+  }, [town, store, month, category, sku, salesPeriod, range, customFrom, customTo])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  // Silent poll so new daily reports show without a full page reload
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void load({ silent: true })
+    }, 30_000)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void load({ silent: true })
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [load])
+
+  const towns = dash?.filters.towns ?? []
+  const storesByTown = dash?.filters.storesByTown ?? {}
+  const monthOptions = useMemo(() => {
+    const fromApi = dash?.filters.months ?? []
+    return fromApi.map((m) => {
+      if (m.includes('-')) {
+        const mm = Number(m.split('-')[1]) - 1
+        return MONTH_ORDER[mm] ?? m
+      }
+      return m
+    })
+  }, [dash?.filters.months])
+
+  const storeOptions = useMemo(() => {
+    if (town) return storesByTown[town] ?? []
+    return Object.values(storesByTown).flat()
+  }, [town, storesByTown])
+
   const skuOptions = useMemo(() => getSkusForCategory(category), [category])
 
-  const data = useMemo(
-    () =>
-      aggregateBaPerformance(collectPeriodRecords({ town, store }, periods), town, {
-        category,
-        brand,
-        sku,
-      }),
-    [town, store, periods, category, brand, sku],
-  )
+  const data = useMemo(() => {
+    const liveStores = (dash?.topStores ?? []).filter((s) => s.sales > 0)
+    const liveSkus = (dash?.topSkus ?? []).filter((s) => s.sales > 0)
+    let liveCats = (dash?.categorySales ?? []).filter((c) => c.value > 0)
+    if (category && liveCats.length) {
+      liveCats = liveCats.filter((c) => c.name === category)
+    }
+
+    const tvs = dash?.townTargetVsSales
+    const liveSalesKpi = dash?.kpis.salesLtrKg ?? 0
+    const hasLiveSales =
+      liveSalesKpi > 0 || liveStores.length > 0 || liveSkus.length > 0 || liveCats.length > 0
+    const hasLiveTarget = Boolean(tvs && (tvs.target > 0 || (tvs.sales ?? 0) > 0 || hasLiveSales))
+
+    return {
+      customersIntercepted: dash?.kpis.customersIntercepted ?? 0,
+      productiveCalls: dash?.kpis.productiveCalls ?? 0,
+      productivePct: dash?.kpis.productivePct ?? 0,
+      targetLtrKg: dash?.kpis.targetLtrKg ?? 0,
+      salesLtrKg: liveSalesKpi,
+      achievementPct: dash?.kpis.achievementPct ?? 0,
+      categorySales: liveCats.length
+        ? liveCats
+        : hasLiveSales
+          ? []
+          : demoCategorySalesForFilters(category, town),
+      townTargetVsSales: hasLiveTarget && tvs
+        ? {
+            town: tvs.town || town || store || category || 'All towns',
+            target: tvs.target,
+            // Never invent sales — only show what the API returned
+            sales: tvs.sales ?? 0,
+          }
+        : demoTargetVsSalesForFilters({ town, store, category, sku }),
+      topStores: liveStores.length
+        ? liveStores.slice(0, 10)
+        : hasLiveSales
+          ? []
+          : demoTopStoresForFilters({ town, store, storeOptions, category }),
+      topSkus: liveSkus.length
+        ? liveSkus.slice(0, 10)
+        : hasLiveSales
+          ? []
+          : demoTopSkusForFilters({ category, sku, town }),
+    }
+  }, [dash, town, store, storeOptions, category, sku])
 
   const salesTargetPoints = useMemo(
     () =>
-      buildSalesTargetSeries({ town, store }, { category, brand, sku }, salesPeriod, month),
-    [town, store, category, brand, sku, salesPeriod, month],
+      (dash?.periodSales ?? []).map((p) => ({
+        label: p.label,
+        sales: p.sales,
+        target: p.target,
+      })),
+    [dash?.periodSales],
   )
 
   const periodSalesTitle =
@@ -351,26 +459,34 @@ export function BaPerformanceDashboardPage() {
         ? 'Month-wise sales (Kg)'
         : 'Year-to-date sales (Kg)'
 
-  // Town/Store filters narrow attendance the same way they narrow sales — by matching the
-  // BA's city/store. Attendance is a separate mock dataset from the sales stores, so a town
-  // or store with no attendance records simply shows no data, same as sales.
-  const attendance = useMemo(() => {
-    const all = range ? attendanceForRange(range) : []
-    return all.filter((r) => (!town || r.city === town) && (!store || r.store === store))
-  }, [range, town, store])
-  const cityStatus = useMemo(
-    () => (range ? baStatusByCity(range, { city: town, store }) : null),
-    [range, town, store],
-  )
-  const isSingleDay = range ? daysInRange(range) === 1 : false
-  const attendanceTable = useMemo(
-    () => attendanceRows(attendance, isSingleDay),
-    [attendance, isSingleDay],
-  )
-  const [hoursCity, setHoursCity] = useState<string | null>(null)
-  const workingHours = useMemo(
-    () => (range ? workingHoursSeries(attendance, range, hoursCity) : null),
-    [attendance, range, hoursCity],
+  const cityStatus = dash?.baStatus ?? null
+  const attendanceTable = dash?.attendance ?? []
+  const workingHoursBase = dash?.workingHours ?? null
+  const isSingleDay = (dash?.range.days ?? 0) === 1
+
+  const workingHours = useMemo(() => {
+    if (!workingHoursBase || !hoursCity) return workingHoursBase
+    const rows = attendanceTable.filter((r) => r.city === hoursCity)
+    if (!rows.length) return { avgHours: null as number | null, points: [] as { label: string; hours: number; count: number }[] }
+    const byStore = new Map<string, number[]>()
+    for (const r of rows) {
+      byStore.set(r.store, [...(byStore.get(r.store) ?? []), r.hours])
+    }
+    const points = [...byStore.entries()].map(([label, hs]) => ({
+      label,
+      hours: Math.round((hs.reduce((s, x) => s + x, 0) / hs.length) * 100) / 100,
+      count: hs.length,
+    }))
+    const all = rows.map((r) => r.hours)
+    return {
+      avgHours: Math.round((all.reduce((s, x) => s + x, 0) / all.length) * 100) / 100,
+      points,
+    }
+  }, [workingHoursBase, hoursCity, attendanceTable])
+
+  const baCities = useMemo(
+    () => [...new Set(attendanceTable.map((r) => r.city).filter(Boolean))].sort(),
+    [attendanceTable],
   )
 
   function applyDatePreset(preset: DatePreset, from = customFrom, to = customTo) {
@@ -416,8 +532,6 @@ export function BaPerformanceDashboardPage() {
     setMonth(next)
     setStore(null)
     setDatePreset('custom')
-    // A month picked by hand replaces any date range, so the whole month is shown —
-    // and attendance/working-hours pick it up too, since they follow the same range.
     if (next) {
       const { from, to } = dateRangeForMonth(next)
       setCustomFrom(from)
@@ -440,7 +554,9 @@ export function BaPerformanceDashboardPage() {
   }, [datePreset, customFrom, customTo, range])
 
   const baStatusHint = !cityStatus
-    ? 'Select a valid date range'
+    ? loading
+      ? 'Loading…'
+      : 'Select a valid date range'
     : cityStatus.days > 1
       ? `Avg per day · ${cityStatus.days} days`
       : undefined
@@ -581,7 +697,7 @@ export function BaPerformanceDashboardPage() {
           data: data.topStores.map((s) => s.sales),
           backgroundColor: chartGreenLight,
           borderRadius: 3,
-          maxBarThickness: 18,
+          maxBarThickness: 16,
         },
       ],
     }),
@@ -596,7 +712,7 @@ export function BaPerformanceDashboardPage() {
           data: data.topSkus.map((s) => s.sales),
           backgroundColor: chartGreenLight,
           borderRadius: 3,
-          maxBarThickness: 18,
+          maxBarThickness: 16,
         },
       ],
     }),
@@ -609,10 +725,24 @@ export function BaPerformanceDashboardPage() {
       indexAxis: 'y',
       plugins: { ...defaultChartOptions.plugins, legend: { display: false } },
       scales: {
-        x: { ...scaleDefaults, beginAtZero: true },
+        x: {
+          ...scaleDefaults,
+          beginAtZero: true,
+          ticks: {
+            ...scaleDefaults.ticks,
+            callback: (v) =>
+              typeof v === 'number' && v >= 1000
+                ? `${(v / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`
+                : String(v),
+          },
+        },
         y: {
           ...scaleDefaults,
-          ticks: { ...scaleDefaults.ticks, font: { size: 9 } },
+          ticks: {
+            ...scaleDefaults.ticks,
+            font: { size: 10 },
+            autoSkip: false,
+          },
         },
       },
     }),
@@ -636,36 +766,50 @@ export function BaPerformanceDashboardPage() {
   )
 
   const workingHoursOptions = useMemo<ChartOptions<'bar'>>(
-    () => ({
-      ...defaultChartOptions,
-      plugins: {
-        ...defaultChartOptions.plugins,
-        legend: { display: false },
-        tooltip: {
-          ...defaultChartOptions.plugins.tooltip,
-          displayColors: false,
-          callbacks: {
-            label: (ctx) => {
-              const visits = workingHours?.points[ctx.dataIndex]?.count ?? 0
-              return `${ctx.parsed.y} h avg · ${visits} ${visits === 1 ? 'visit' : 'visits'}`
+    () => {
+      const maxH = Math.max(0, ...(workingHours?.points.map((p) => p.hours) ?? [0]))
+      const suggestedMax = maxH <= 0 ? 1 : Math.ceil(maxH * 1.25 * 10) / 10
+      return {
+        ...defaultChartOptions,
+        plugins: {
+          ...defaultChartOptions.plugins,
+          legend: { display: false },
+          tooltip: {
+            ...defaultChartOptions.plugins.tooltip,
+            displayColors: false,
+            callbacks: {
+              label: (ctx) => {
+                const visits = workingHours?.points[ctx.dataIndex]?.count ?? 0
+                const y = typeof ctx.parsed.y === 'number' ? ctx.parsed.y : 0
+                return `${y.toFixed(2)} h avg · ${visits} ${visits === 1 ? 'visit' : 'visits'}`
+              },
             },
           },
         },
-      },
-      scales: {
-        x: scaleDefaults,
-        y: {
-          ...scaleDefaults,
-          beginAtZero: true,
-          ticks: { ...scaleDefaults.ticks, callback: (v) => `${v}h` },
+        scales: {
+          x: scaleDefaults,
+          y: {
+            ...scaleDefaults,
+            beginAtZero: true,
+            suggestedMax,
+            ticks: { ...scaleDefaults.ticks, callback: (v) => `${v}h` },
+          },
         },
-      },
-    }),
+      }
+    },
     [workingHours],
   )
 
   return (
     <div className="space-y-5">
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
+      )}
+      {loading && !dash && (
+        <Card>
+          <p className="text-sm text-slate-500">Loading live dashboard…</p>
+        </Card>
+      )}
       <Card className="!p-3 sm:!p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -738,7 +882,7 @@ export function BaPerformanceDashboardPage() {
         <aside className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
           <FilterPanel
             title="Town"
-            options={baPerformanceTowns}
+            options={towns}
             value={town}
             onChange={handleTownChange}
             allowAll
@@ -746,7 +890,7 @@ export function BaPerformanceDashboardPage() {
           />
           <FilterPanel
             title="Month"
-            options={baPerformanceMonths}
+            options={monthOptions}
             value={month}
             onChange={handleMonthChange}
             allowAll
@@ -800,7 +944,7 @@ export function BaPerformanceDashboardPage() {
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:items-stretch">
-          <ChartCard title="Category-wise sales">
+          <ChartCard title="Category-wise target">
             <Doughnut data={categoryChart} options={categoryOptions} />
           </ChartCard>
 
@@ -810,11 +954,11 @@ export function BaPerformanceDashboardPage() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-3 lg:items-stretch">
-          <ChartCard title="Top 5 stores">
+          <ChartCard title="Top 10 stores by target" chartHeight={TOP10_CHART_HEIGHT}>
             <Bar data={topStoresChart} options={horizontalBarOptions} />
           </ChartCard>
 
-          <ChartCard title="Top 5 SKUs">
+          <ChartCard title="Top 10 SKU targets" chartHeight={TOP10_CHART_HEIGHT}>
             <Bar data={topSkusChart} options={horizontalBarOptions} />
           </ChartCard>
         </div>
@@ -824,11 +968,7 @@ export function BaPerformanceDashboardPage() {
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
           <CardHeader
             title="Active BAs by city"
-            subtitle={
-              cityStatus && cityStatus.days > 1
-                ? `${dateRangeLabel} · average per day`
-                : dateRangeLabel
-            }
+            subtitle="Live now · checked-in vs offline by city"
           />
         </div>
         <TableScroll minWidth={520}>
@@ -891,7 +1031,7 @@ export function BaPerformanceDashboardPage() {
                   {!isSingleDay && <td className="px-4 py-3 tabular-nums">{row.days}</td>}
                   <td className="px-4 py-3 tabular-nums">{row.checkIn}</td>
                   <td className="px-4 py-3 tabular-nums text-slate-600">{row.checkOut}</td>
-                  <td className="px-4 py-3 tabular-nums">{row.hours.toFixed(1)} h</td>
+                  <td className="px-4 py-3 tabular-nums">{row.hours.toFixed(2)} h</td>
                   {isSingleDay && (
                     <td className="px-4 py-3">
                       <StatusBadge status={row.status ?? ''} />

@@ -2,6 +2,8 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useBaShift } from '../../context/BaShiftContext'
+import { useBaSession } from '../../lib/baAccounts'
+import { submitBaDailyReportApi } from '../../lib/earlyCheckoutApi'
 
 import {
   DEFAULT_OTHER_BRANDS,
@@ -13,6 +15,7 @@ import {
   oilSalesFields,
   stockGheeFields,
   stockOilFields,
+  stockWaadiFields,
   waadiSalesFields,
   whyNotFields,
   type FieldDef,
@@ -191,7 +194,7 @@ export function BaDailySalesPage() {
         ))}
       </Section>
 
-      <Section title="Kashmir Premium Oil">
+      <Section title="Kashmir Cooking Oil">
         {oilSalesFields.map((f) => (
           <NumberField
             key={f.key}
@@ -202,7 +205,7 @@ export function BaDailySalesPage() {
         ))}
       </Section>
 
-      <Section title="Kashmir Banaspati Ghee">
+      <Section title="Kashmir Banaspati">
         {gheeSalesFields.map((f) => (
           <NumberField
             key={f.key}
@@ -213,7 +216,7 @@ export function BaDailySalesPage() {
         ))}
       </Section>
 
-      <Section title="Waadi">
+      <Section title="Waadi Banaspati">
         {waadiSalesFields.map((f) => (
           <NumberField
             key={f.key}
@@ -238,19 +241,33 @@ export function BaStockReportPage() {
   const navigate = useNavigate()
   const { checkOut } = useBaShift()
   const [stock, setStock] = useState(() =>
-    emptyStock([...stockOilFields, ...stockGheeFields]),
+    emptyStock([...stockOilFields, ...stockGheeFields, ...stockWaadiFields]),
   )
+  const [formError, setFormError] = useState<string | null>(null)
 
   function setField(key: string, value: string) {
     setStock((prev) => ({ ...prev, [key]: value }))
+    setFormError(null)
   }
 
-  const allFilled = [...stockOilFields, ...stockGheeFields].every((f) => stock[f.key])
+  const allFilled = [...stockOilFields, ...stockGheeFields, ...stockWaadiFields].every(
+    (f) => stock[f.key],
+  )
 
   function handleContinue(e: FormEvent) {
     e.preventDefault()
-    if (!allFilled) return
-    checkOut()
+    if (!allFilled) {
+      setFormError('Mark stock status for every SKU before continuing.')
+      return
+    }
+    let reason: string | undefined
+    try {
+      reason = sessionStorage.getItem('ba-early-leave-reason') || undefined
+      sessionStorage.removeItem('ba-early-leave-reason')
+    } catch {
+      reason = undefined
+    }
+    checkOut(reason)
     sessionStorage.setItem(SESSION_KEYS.stock, JSON.stringify(stock))
     navigate('/ba/daily-sales')
   }
@@ -263,7 +280,7 @@ export function BaStockReportPage() {
         onBack={() => navigate('/ba/home')}
       />
 
-      <Section title="Kashmir Premium Oil">
+      <Section title="Kashmir Cooking Oil">
         {stockOilFields.map((f) => (
           <StockCheckboxes
             key={f.key}
@@ -285,6 +302,23 @@ export function BaStockReportPage() {
         ))}
       </Section>
 
+      <Section title="Waadi Banaspati">
+        {stockWaadiFields.map((f) => (
+          <StockCheckboxes
+            key={f.key}
+            label={f.label}
+            value={stock[f.key]}
+            onChange={(v) => setField(f.key, v)}
+          />
+        ))}
+      </Section>
+
+      {formError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {formError}
+        </div>
+      )}
+
       <button
         type="submit"
         disabled={!allFilled}
@@ -298,9 +332,12 @@ export function BaStockReportPage() {
 
 export function BaOtherBrandsPage() {
   const navigate = useNavigate()
+  const { account } = useBaSession()
   const { markReportSubmitted } = useBaShift()
   const [rows, setRows] = useState<OtherBrandRow[]>(DEFAULT_OTHER_BRANDS)
   const [submitted, setSubmitted] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   function updateRow(id: string, patch: Partial<OtherBrandRow>) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
@@ -308,11 +345,51 @@ export function BaOtherBrandsPage() {
 
   const canSubmit = rows.some((r) => r.name.trim() && r.price.trim())
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!canSubmit) return
+    if (busy) return
+    if (!canSubmit) {
+      setError('Enter at least one brand name and price.')
+      return
+    }
     const payload = rows.filter((r) => r.name.trim() || r.price.trim())
     sessionStorage.setItem(SESSION_KEYS.otherBrands, JSON.stringify(payload))
+
+    let stock: Record<string, string> = {}
+    let sales: Record<string, string> = {}
+    try {
+      stock = JSON.parse(sessionStorage.getItem(SESSION_KEYS.stock) || '{}') as Record<string, string>
+      sales = JSON.parse(sessionStorage.getItem(SESSION_KEYS.sales) || '{}') as Record<string, string>
+    } catch {
+      stock = {}
+      sales = {}
+    }
+
+    const token =
+      account?.accessToken && !account.accessToken.startsWith('demo-')
+        ? account.accessToken
+        : undefined
+
+    if (token) {
+      setBusy(true)
+      setError(null)
+      try {
+        await submitBaDailyReportApi({
+          token,
+          stock,
+          sales,
+          otherBrands: payload,
+          source: 'manual',
+          storeId: account?.storeId ?? undefined,
+        })
+      } catch (err) {
+        setBusy(false)
+        setError(err instanceof Error ? err.message : 'Could not save report.')
+        return
+      }
+      setBusy(false)
+    }
+
     markReportSubmitted()
     setSubmitted(true)
   }
@@ -383,12 +460,18 @@ export function BaOtherBrandsPage() {
         ))}
       </Section>
 
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
+
       <button
         type="submit"
-        disabled={!canSubmit}
+        disabled={!canSubmit || busy}
         className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
       >
-        Submit
+        {busy ? 'Submitting…' : 'Submit'}
       </button>
     </form>
   )

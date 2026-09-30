@@ -43,6 +43,8 @@ export type BrandConfig = {
   shopperSpin: ShopperSpinConfig
   baGoalProducts: BaGoalProduct[]
   loginEmail: string
+  /** Demo / local convenience — pre-fills Head Office password on the login screen. */
+  loginPassword: string
   sidebarOverlay: string
 }
 
@@ -76,5 +78,6 @@ export const brand: BrandConfig = {
     { src: kashmirWhyChooseUsImg, alt: 'Kashmir Banaspati Gold', position: '55% center', scale: '1.3' },
   ],
   loginEmail: 'headoffice@kashmir.pk',
+  loginPassword: 'Rightmoment',
   sidebarOverlay: 'from-navy-900/30 via-navy-900/20 to-navy-900/85',
 }

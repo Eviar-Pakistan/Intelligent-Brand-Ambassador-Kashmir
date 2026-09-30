@@ -1,14 +1,50 @@
+import { useEffect, useState } from 'react'
 import { Avatar, Card, CardHeader, KpiCard, ProgressBar, StatusBadge, TableScroll } from '../../components/ui'
 import { calculateSupervisorIncentive, formatPkr } from '../../lib/incentives'
-import { useKpiConfig } from '../../lib/kpiConfig'
+import { useKpiConfigSync } from '../../lib/kpiConfig'
 import { findCreatedStore, useCreatedStores } from '../../lib/storeRegistry'
-import { supervisorOverview, type Supervisor } from '../../lib/supervisors'
+import {
+  fetchMySupervisorOverview,
+  fetchSupervisorOverview,
+  supervisorOverview,
+  type Supervisor,
+  type SupervisorOverview,
+} from '../../lib/supervisors'
 
 /** The sections of a supervisor's view. Used in their own portal and on Head Office's supervisor page. */
 
-export function SupervisorSummary({ supervisor }: { supervisor: Supervisor }) {
+function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
+  const fallback = supervisorOverview(supervisor)
+  const [live, setLive] = useState<SupervisorOverview | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load =
+      mode === 'me' ? fetchMySupervisorOverview() : fetchSupervisorOverview(supervisor.id)
+    void load
+      .then((data) => {
+        if (!cancelled) setLive(data)
+      })
+      .catch(() => {
+        if (!cancelled) setLive(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [supervisor.id, mode, supervisor.storeIds.join(',')])
+
+  return live ?? fallback
+}
+
+export function SupervisorSummary({
+  supervisor,
+  mode = 'ho',
+}: {
+  supervisor: Supervisor
+  mode?: 'ho' | 'me'
+}) {
   useCreatedStores()
-  const o = supervisorOverview(supervisor)
+  const o = useLiveOverview(supervisor, mode)
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <KpiCard label="Stores" value={o.stores.length} />
@@ -20,9 +56,15 @@ export function SupervisorSummary({ supervisor }: { supervisor: Supervisor }) {
   )
 }
 
-export function SupervisorStoreCards({ supervisor }: { supervisor: Supervisor }) {
+export function SupervisorStoreCards({
+  supervisor,
+  mode = 'ho',
+}: {
+  supervisor: Supervisor
+  mode?: 'ho' | 'me'
+}) {
   useCreatedStores()
-  const { stores } = supervisorOverview(supervisor)
+  const { stores } = useLiveOverview(supervisor, mode)
 
   if (stores.length === 0) {
     return (
@@ -66,14 +108,12 @@ export function SupervisorStoreCards({ supervisor }: { supervisor: Supervisor })
             </div>
 
             <dl className="mt-4 space-y-1.5 text-xs">
-              <Row label="Peak hours" value={s.peak.join(' · ')} />
-              <Row label="Ambassadors" value={s.assigned.length ? s.assigned.map((a) => a.name).join(', ') : 'None assigned'} />
-              {details && (
-                <>
-                  <Row label="Address" value={details.address} />
-                  <Row label="Contact" value={[details.contactPerson, details.contactPhone].filter(Boolean).join(' · ')} />
-                </>
-              )}
+              <Row label="Peak hours" value={s.peak.join(' · ') || '—'} />
+              <Row
+                label="Ambassadors"
+                value={s.assigned.length ? s.assigned.map((a) => a.name).join(', ') : 'None assigned'}
+              />
+              {details && <Row label="Address" value={details.address} />}
             </dl>
           </Card>
         )
@@ -82,36 +122,46 @@ export function SupervisorStoreCards({ supervisor }: { supervisor: Supervisor })
   )
 }
 
-export function SupervisorBaTable({ supervisor }: { supervisor: Supervisor }) {
+export function SupervisorBaTable({
+  supervisor,
+  mode = 'ho',
+}: {
+  supervisor: Supervisor
+  mode?: 'ho' | 'me'
+}) {
   useCreatedStores()
-  const { bas } = supervisorOverview(supervisor)
+  const { bas } = useLiveOverview(supervisor, mode)
   const sorted = [...bas].sort((a, b) => b.conversion - a.conversion)
+
+  if (!sorted.length) {
+    return (
+      <Card>
+        <p className="text-sm text-slate-500">No ambassadors in this supervisor&apos;s stores yet.</p>
+      </Card>
+    )
+  }
 
   return (
     <Card padding={false}>
-      <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
-        <CardHeader title="BA performance" subtitle="Ambassadors working in your stores" />
-      </div>
-      <TableScroll minWidth={640}>
+      <TableScroll minWidth={720}>
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
-              <th className="px-4 py-3">BA</th>
+              <th className="px-4 py-3">Ambassador</th>
               <th className="px-4 py-3">Store</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Conversion</th>
               <th className="px-4 py-3">Sessions</th>
               <th className="px-4 py-3">Points</th>
-              <th className="px-4 py-3">Score</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((b) => (
-              <tr key={`${b.id}-${b.storeId}`} className="border-t border-slate-100">
+              <tr key={b.id} className="border-t border-slate-100">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Avatar name={b.name} size="sm" />
-                    <span className="font-medium text-slate-900">{b.name}</span>
+                    <span className="font-medium">{b.name}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{b.store}</td>
@@ -119,18 +169,10 @@ export function SupervisorBaTable({ supervisor }: { supervisor: Supervisor }) {
                   <StatusBadge status={b.state} />
                 </td>
                 <td className="px-4 py-3 font-semibold">{b.conversion}%</td>
-                <td className="px-4 py-3 tabular-nums">{b.sessions}</td>
-                <td className="px-4 py-3 tabular-nums">{b.points.toLocaleString()}</td>
-                <td className="px-4 py-3 tabular-nums">{b.score ? `${b.score}%` : '—'}</td>
+                <td className="px-4 py-3">{b.sessions}</td>
+                <td className="px-4 py-3">{b.points}</td>
               </tr>
             ))}
-            {sorted.length === 0 && (
-              <tr className="border-t border-slate-100">
-                <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">
-                  No ambassadors are assigned to these stores yet.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </TableScroll>
@@ -139,27 +181,19 @@ export function SupervisorBaTable({ supervisor }: { supervisor: Supervisor }) {
 }
 
 export function SupervisorIncentiveCard({ supervisor }: { supervisor: Supervisor }) {
-  const config = useKpiConfig()
+  const config = useKpiConfigSync()
   useCreatedStores()
   const pay = calculateSupervisorIncentive(supervisor, config)
 
   return (
     <Card>
-      <CardHeader title="Supervisor incentive" subtitle="This week · calculated from the KPIs set by Head Office" />
-      <div className="rounded-xl bg-navy-900 px-4 py-3 text-white">
-        <div className="text-xs text-emerald-200">Total this week</div>
-        <div className="text-2xl font-black">{formatPkr(pay.totalPkr)}</div>
-      </div>
-      <div className="mt-3 text-sm">
-        <PayRow label="Base pay" value={formatPkr(pay.base)} />
-        <PayRow
-          label={`Team conversion (${pay.teamConversion}% of ${config.supConversionTarget}% → ${formatPkr(config.supConversionAmount)})`}
-          value={formatPkr(pay.conversionPay)}
-        />
-        <PayRow
-          label={`Store coverage (${pay.coverage}% of ${config.supCoverageTarget}% → ${formatPkr(config.supCoverageAmount)})`}
-          value={formatPkr(pay.coveragePay)}
-        />
+      <CardHeader title="Supervisor package" subtitle="Monthly package from Head Office KPIs" />
+      <div className="mt-1 text-2xl font-black">{formatPkr(pay.totalPkr)}</div>
+      <div className="mt-3 space-y-2 text-sm">
+        <PayRow label="Sup salary" value={formatPkr(pay.salary)} />
+        <PayRow label="Fuel / DA" value={formatPkr(pay.fuelDa)} />
+        <PayRow label="Discipline / attendance" value={formatPkr(pay.discipline)} />
+        <PayRow label="Mobile / data" value={formatPkr(pay.mobile)} />
       </div>
     </Card>
   )
@@ -167,25 +201,25 @@ export function SupervisorIncentiveCard({ supervisor }: { supervisor: Supervisor
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-2 py-2.5">
-      <div className="text-[11px] text-slate-500">{label}</div>
-      <div className="text-base font-bold text-slate-900">{value}</div>
+    <div className="rounded-xl bg-slate-50 px-2 py-2">
+      <div className="text-sm font-bold text-slate-900">{value}</div>
+      <div className="text-[10px] text-slate-500">{label}</div>
     </div>
   )
 }
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-3">
-      <dt className="w-24 shrink-0 text-slate-500">{label}</dt>
-      <dd className="min-w-0 font-medium text-slate-800">{value || '—'}</dd>
+    <div className="flex justify-between gap-3">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-right font-medium text-slate-800">{value}</dd>
     </div>
   )
 }
 
 function PayRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-2 last:border-0">
+    <div className="flex items-start justify-between gap-3 border-b border-slate-50 py-1.5 last:border-0">
       <span className="text-slate-600">{label}</span>
       <span className="shrink-0 font-semibold text-slate-900">{value}</span>
     </div>

@@ -35,29 +35,40 @@ export type BaPerformanceFilters = {
   store: string | null
 }
 
-export type ProductCategory = 'Cooking Oil' | 'Banaspati Ghee'
+export type ProductCategory =
+  | 'Kashmir Cooking Oil'
+  | 'Kashmir Banaspati'
+  | 'Waadi Banaspati'
 
-export const baPerformanceCategories: ProductCategory[] = ['Cooking Oil', 'Banaspati Ghee']
-export const baPerformanceBrands = ['Kashmir'] as const
+export const baPerformanceCategories: ProductCategory[] = [
+  'Kashmir Cooking Oil',
+  'Kashmir Banaspati',
+  'Waadi Banaspati',
+]
+export const baPerformanceBrands = ['Kashmir', 'Waadi'] as const
 
-/** SKU names as they appear in performance source data, grouped by category. */
+/** LMT SKUs — 14 packs across KCO / KBP / WBP. */
 const OIL_SKUS = [
-  'Pouch 1LTR',
-  'POUCH 1KG',
-  'SUP 1LTR',
-  'BTL 3LTR',
-  'BTL 4.5LTR',
-  'CAN 10LTR',
-  'TIN 5LTR',
+  'KPGO 10 LTR CAN Cons. RED',
+  'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED',
+  'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED',
+  'KPGO 5 LTR TIN Cons. RED',
+  'KPGO POUCH (1LTR x 5) Cons. RED',
+  'KPGO Stand Up Pouch (1LTR x 5)',
 ] as const
 
 const GHEE_SKUS = [
-  'POUCH 1 KG',
-  'POUCH 1X5 KG Box',
-  'BKT 2.5KG',
-  'BKT 5KG',
-  'BKT 10KG',
-  'BUCKET 5 KG',
+  'KBP GOLD 10 KG BKT',
+  'KBP GOLD 2.5 KG BKT',
+  'KBP GOLD 5 KG BKT',
+  'KBP GOLD 5 KG TIN',
+  'KBP GOLD POUCH (1KG X 5)',
+] as const
+
+const WAADI_SKUS = [
+  'WBP 5 KG BKT',
+  'WBP POUCH (1KG X 5)',
+  'WBP 2.5 KG BKT',
 ] as const
 
 export type ProductFilters = {
@@ -67,9 +78,196 @@ export type ProductFilters = {
 }
 
 export function getSkusForCategory(category: ProductCategory | null): string[] {
-  if (category === 'Cooking Oil') return [...OIL_SKUS]
-  if (category === 'Banaspati Ghee') return [...GHEE_SKUS]
-  return [...OIL_SKUS, ...GHEE_SKUS]
+  if (category === 'Kashmir Cooking Oil') return [...OIL_SKUS]
+  if (category === 'Kashmir Banaspati') return [...GHEE_SKUS]
+  if (category === 'Waadi Banaspati') return [...WAADI_SKUS]
+  return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
+}
+
+/** Placeholder chart series until live target data is loaded (Top 10 style). */
+export const DEMO_CATEGORY_SALES = [
+  { name: 'Kashmir Cooking Oil', value: 11804 },
+  { name: 'Kashmir Banaspati', value: 6420 },
+  { name: 'Waadi Banaspati', value: 3180 },
+] as const
+
+/** Demo stores tagged by city so town filter can scope Top 10. */
+export const DEMO_STORES_BY_CITY: Record<string, string[]> = {
+  Lahore: [
+    'Raheem Store Iqbal Town',
+    'Al Fatah Gold Crest Mall',
+    'Al Fatah Exclusive Mall',
+    'Rahim Store Wapda Town',
+    'Risen Cash & Carry Manawan',
+    'Al Fazal Store',
+    'Aslam Cc College Road',
+    'Sana Cash & Carry',
+    'Rainbow Cash & Carry',
+    'Risen C&C Manawan',
+    'Packages Mall Kiosk',
+    'Emporium Mall Counter',
+  ],
+  Islamabad: [
+    'C4 - WTC Islamabad',
+    'Giga Mall BA Point',
+    'Centaurus Counter',
+    'F-10 Markaz Store',
+    'Blue Area Cash & Carry',
+    'I-8 Super Market',
+    'Bahria Phase 7 Store',
+    'PWD Sector Store',
+    'G-11 Mini Mart',
+    'Rawalpindi Saddar CC',
+  ],
+  Karachi: [
+    'Dolmen Clifton Counter',
+    'Lucky One Mall Store',
+    'Saddar Cash & Carry',
+    'Gulshan-e-Iqbal Mart',
+    'North Nazimabad CC',
+    'Tariq Road Emporium',
+    'Bahadurabad Store',
+    'Clifton Block 5 Store',
+    'Korangi Industrial Mart',
+    'Malir Cantt Store',
+  ],
+  Multan: [
+    'Multan Cantt Store',
+    'Gulgasht Colony Mart',
+    'Bosan Road CC',
+    'Shah Rukn-e-Alam Store',
+    'Hussain Agahi Mart',
+    'MDA Chowk Store',
+    'Vehari Road CC',
+    'Garden Town Multan',
+    'Mumtozabad Store',
+    'New Multan City Mart',
+  ],
+}
+
+export const DEMO_TOP_STORES_BY_TARGET = [
+  { store: 'Raheem Store Iqbal Town', sales: 3240 },
+  { store: 'Al Fatah Gold Crest Mall', sales: 2980 },
+  { store: 'Al Fatah Exclusive Mall', sales: 2750 },
+  { store: 'Rahim Store Wapda Town', sales: 2510 },
+  { store: 'Risen Cash & Carry Manawan', sales: 2380 },
+  { store: 'C4 - WTC Islamabad', sales: 2210 },
+  { store: 'Al Fazal Store', sales: 2090 },
+  { store: 'Aslam Cc College Road', sales: 1950 },
+  { store: 'Sana Cash & Carry', sales: 1820 },
+  { store: 'Rainbow Cash & Carry', sales: 1710 },
+] as const
+
+export const DEMO_TOP_SKU_TARGETS = [
+  { sku: 'KPGO 10 LTR CAN Cons. RED', sales: 12480 },
+  { sku: 'KBP GOLD 10 KG BKT', sales: 9620 },
+  { sku: 'KPGO 5 LTR TIN Cons. RED', sales: 7840 },
+  { sku: 'KBP GOLD 5 KG BKT', sales: 6510 },
+  { sku: 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED', sales: 5380 },
+  { sku: 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED', sales: 4720 },
+  { sku: 'KBP GOLD POUCH (1KG X 5)', sales: 3910 },
+  { sku: 'WBP 5 KG BKT', sales: 3280 },
+  { sku: 'KPGO Stand Up Pouch (1LTR x 5)', sales: 2650 },
+  { sku: 'WBP POUCH (1KG X 5)', sales: 1890 },
+] as const
+
+function demoSeed(text: string) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+function demoValue(seedText: string, min: number, max: number) {
+  const t = (demoSeed(seedText) % 1000) / 1000
+  return Math.round(min + t * (max - min))
+}
+
+/** Category doughnut values scoped to the active category filter. */
+export function demoCategorySalesForFilters(category: ProductCategory | null, town: string | null) {
+  const scope = town || 'all'
+  const all = DEMO_CATEGORY_SALES.map((c) => ({
+    name: c.name,
+    value: demoValue(`${scope}|${c.name}`, Math.round(c.value * 0.55), Math.round(c.value * 1.15)),
+  }))
+  if (!category) return all
+  return all.filter((c) => c.name === category)
+}
+
+/**
+ * Top 10 store targets for the active town/store filters.
+ * Prefers live store names from the filter panel when available.
+ */
+export function demoTopStoresForFilters(opts: {
+  town: string | null
+  store: string | null
+  storeOptions: string[]
+  category: ProductCategory | null
+}) {
+  const { town, store, storeOptions, category } = opts
+  if (store) {
+    return [{ store, sales: demoValue(`${town}|${store}|${category}`, 1600, 3600) }]
+  }
+
+  let names =
+    storeOptions.length > 0
+      ? [...storeOptions]
+      : (() => {
+          if (!town) return Object.values(DEMO_STORES_BY_CITY).flat()
+          const hit = Object.entries(DEMO_STORES_BY_CITY).find(
+            ([city]) => city.toLowerCase() === town.toLowerCase(),
+          )
+          return hit ? [...hit[1]] : Object.values(DEMO_STORES_BY_CITY).flat()
+        })()
+
+  // Stable unique, then score and take top 10
+  names = [...new Set(names)]
+  const scored = names.map((name) => ({
+    store: name,
+    sales: demoValue(`${town ?? 'all'}|${category ?? 'all'}|${name}`, 1400, 3600),
+  }))
+  scored.sort((a, b) => b.sales - a.sales)
+  return scored.slice(0, 10)
+}
+
+/** Top 10 SKU targets for the active category/sku (+ town scales values). */
+export function demoTopSkusForFilters(opts: {
+  category: ProductCategory | null
+  sku: string | null
+  town: string | null
+}) {
+  const { category, sku, town } = opts
+  const scope = `${town ?? 'all'}|${category ?? 'all'}`
+  if (sku) {
+    return [{ sku, sales: demoValue(`${scope}|${sku}`, 1800, 13000) }]
+  }
+  const pool = getSkusForCategory(category)
+  const scored = pool.map((name) => ({
+    sku: name,
+    sales: demoValue(`${scope}|${name}`, 1200, 13000),
+  }))
+  scored.sort((a, b) => b.sales - a.sales)
+  return scored.slice(0, 10)
+}
+
+/** Target vs sales bars for the active filter scope. Sales stays 0 until live data exists. */
+export function demoTargetVsSalesForFilters(opts: {
+  town: string | null
+  store: string | null
+  category: ProductCategory | null
+  sku: string | null
+}) {
+  const label =
+    opts.store ||
+    opts.town ||
+    opts.sku ||
+    opts.category ||
+    'All towns'
+  const seed = `${opts.town}|${opts.store}|${opts.category}|${opts.sku}`
+  const target = demoValue(`${seed}|target`, 3500, 12000)
+  return { town: label, target, sales: 0 }
 }
 
 function skuBelongsToCategory(sku: string, category: ProductCategory | null) {
@@ -251,8 +449,9 @@ export function aggregateBaPerformance(
     if (product.sku) {
       return r.skuSales.find((s) => s.sku === product.sku)?.sales ?? 0
     }
-    if (product.category === 'Cooking Oil') return r.oilSales
-    if (product.category === 'Banaspati Ghee') return r.gheeSales
+    if (product.category === 'Kashmir Cooking Oil') return r.oilSales
+    if (product.category === 'Kashmir Banaspati') return r.gheeSales
+    if (product.category === 'Waadi Banaspati') return r.waadiSales
     return r.salesLtrKg
   }
 
@@ -261,13 +460,17 @@ export function aggregateBaPerformance(
       const skuAmt = r.skuSales.find((s) => s.sku === product.sku)?.sales ?? 0
       return r.salesLtrKg > 0 ? r.targetLtrKg * (skuAmt / r.salesLtrKg) : 0
     }
-    if (product.category === 'Cooking Oil') {
+    if (product.category === 'Kashmir Cooking Oil') {
       const cat = r.oilSales + r.gheeSales + r.waadiSales
       return cat > 0 ? r.targetLtrKg * (r.oilSales / cat) : 0
     }
-    if (product.category === 'Banaspati Ghee') {
+    if (product.category === 'Kashmir Banaspati') {
       const cat = r.oilSales + r.gheeSales + r.waadiSales
       return cat > 0 ? r.targetLtrKg * (r.gheeSales / cat) : 0
+    }
+    if (product.category === 'Waadi Banaspati') {
+      const cat = r.oilSales + r.gheeSales + r.waadiSales
+      return cat > 0 ? r.targetLtrKg * (r.waadiSales / cat) : 0
     }
     return r.targetLtrKg
   }
@@ -294,7 +497,7 @@ export function aggregateBaPerformance(
   const topStores = [...storeMap.entries()]
     .map(([store, sales]) => ({ store, sales: Math.round(sales * 10) / 10 }))
     .sort((a, b) => b.sales - a.sales)
-    .slice(0, 5)
+    .slice(0, 10)
 
   const skuMap = new Map<string, number>()
   for (const r of records) {
@@ -307,22 +510,24 @@ export function aggregateBaPerformance(
   const topSkus = [...skuMap.entries()]
     .map(([sku, sales]) => ({ sku, sales: Math.round(sales * 10) / 10 }))
     .sort((a, b) => b.sales - a.sales)
-    .slice(0, 5)
+    .slice(0, 10)
 
   const oilRounded = Math.round(oil * 10) / 10
   const gheeRounded = Math.round(ghee * 10) / 10
   const waadiRounded = Math.round(waadi * 10) / 10
 
   let categorySales: { name: string; value: number }[]
-  if (product.category === 'Cooking Oil') {
-    categorySales = [{ name: 'OIL SALES', value: oilRounded }]
-  } else if (product.category === 'Banaspati Ghee') {
-    categorySales = [{ name: 'GHEE-SALES', value: gheeRounded }]
+  if (product.category === 'Kashmir Cooking Oil') {
+    categorySales = [{ name: 'Kashmir Cooking Oil', value: oilRounded }]
+  } else if (product.category === 'Kashmir Banaspati') {
+    categorySales = [{ name: 'Kashmir Banaspati', value: gheeRounded }]
+  } else if (product.category === 'Waadi Banaspati') {
+    categorySales = [{ name: 'Waadi Banaspati', value: waadiRounded }]
   } else {
     categorySales = [
-      { name: 'OIL SALES', value: oilRounded },
-      { name: 'GHEE-SALES', value: gheeRounded },
-      { name: 'WAADI-SALES', value: waadiRounded },
+      { name: 'Kashmir Cooking Oil', value: oilRounded },
+      { name: 'Kashmir Banaspati', value: gheeRounded },
+      { name: 'Waadi Banaspati', value: waadiRounded },
     ]
   }
 

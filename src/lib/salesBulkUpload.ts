@@ -1,12 +1,13 @@
 /**
  * Kashmir targets bulk upload: download template → fill → upload.
- * Columns: BA Code, Month, SKU, Target, Sales (Kg)
+ * Columns: BA Code, BA Name, Month, SKU, Target, Sales (Kg)
  */
 
 const SHEET = 'Sales'
 
 const COLUMNS = [
   { key: 'code', header: 'BA Code', width: 12 },
+  { key: 'baName', header: 'BA Name', width: 22 },
   { key: 'month', header: 'Month', width: 14 },
   { key: 'sku', header: 'SKU', width: 20 },
   { key: 'target', header: 'Target', width: 12 },
@@ -15,10 +16,12 @@ const COLUMNS = [
 
 export type SalesBulkRow = {
   code: string
+  baName: string
   month: string
   sku: string
   target: number
-  sales: number
+  /** null = sales cell left blank (not filled). */
+  sales: number | null
 }
 
 export type ParsedSalesRow = { row: number; input: SalesBulkRow }
@@ -44,16 +47,44 @@ function parseNumber(value: unknown, label: string, row: number, errors: string[
   return Math.round(n * 10) / 10
 }
 
+/** Optional numeric cell — blank stays empty (null), not 0. */
+function parseOptionalNumber(value: unknown, label: string, row: number, errors: string[]) {
+  if (value === '' || value == null) return null
+  const n = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim())
+  if (!Number.isFinite(n) || n < 0) {
+    errors.push(`Row ${row}: ${label} must be a non-negative number.`)
+    return null
+  }
+  return Math.round(n * 10) / 10
+}
+
 /** Downloads the .xlsx template for BA target / sales upload. */
-export async function downloadSalesBulkTemplate() {
+export async function downloadSalesBulkTemplate(opts?: {
+  baSamples?: { code: string; name: string }[]
+}) {
   const XLSX = await import('xlsx')
-  const sampleRows = [
-    ['BA-001', 'September', 'Pouch 1LTR', 120, 96],
-    ['BA-001', 'September', 'BKT 5KG', 80, 72],
-    ['BA-002', 'September', 'Pouch 1LTR', 100, 88],
-    ['BA-003', 'September', 'Tin 16KG', 60, 54],
-    ['BA-004', 'September', 'Pouch 1LTR', 110, 102],
-  ]
+  const now = new Date()
+  const monthName = now.toLocaleString('en-PK', { month: 'long' })
+  const codes =
+    opts?.baSamples?.length
+      ? opts.baSamples
+      : [
+          { code: 'BA-001', name: 'Sample BA' },
+          { code: 'BA-002', name: 'Sample BA' },
+          { code: 'BA-003', name: 'Sample BA' },
+        ]
+
+  const sampleRows = codes.slice(0, 5).flatMap((b, i) => {
+    const skus =
+      i % 2 === 0
+        ? [
+            [b.code, b.name, monthName, 'Pouch 1LTR', 120, ''],
+            [b.code, b.name, monthName, 'BKT 5KG', 80, ''],
+          ]
+        : [[b.code, b.name, monthName, 'Tin 16KG', 60, '']]
+    return skus
+  })
+
   const sheet = XLSX.utils.aoa_to_sheet([COLUMNS.map((c) => c.header), ...sampleRows])
   sheet['!cols'] = COLUMNS.map((c) => ({ wch: c.width }))
 
@@ -62,15 +93,22 @@ export async function downloadSalesBulkTemplate() {
     [],
     [`1. The "${SHEET}" sheet already has sample rows — edit or replace them.`],
     ['2. Add one row per BA Code + Month + SKU. Do not change the header row.'],
-    ['3. BA Code — ambassador code (e.g. BA-001 for Ayesha Khan, BA-002 for Hamza Ali).'],
-    ['4. Month — full month name (e.g. January, February) or YYYY-MM.'],
-    ['5. SKU — pack size label (e.g. Pouch 1LTR, BKT 5KG).'],
-    ['6. Target — numeric target for that row.'],
-    ['7. Sales (Kg) — numeric sales in kilograms.'],
-    ['8. Save the file, then upload it via Upload targets on Ambassadors.'],
+    ['3. BA Code — optional if BA Name is filled; otherwise required. Matched to Ambassadors.'],
+    ['4. BA Name — used to find BA Code when Code is blank. Must match Ambassadors exactly.'],
+    ['5. Month — full month name (e.g. September) or YYYY-MM. Blank = current month.'],
+    ['6. SKU — pack size label (e.g. Pouch 1LTR, BKT 5KG).'],
+    ['7. Target — numeric target for that row (required).'],
+    ['8. Sales (Kg) — leave blank if not filled yet (do not put 0).'],
+    ['9. Save the file, then upload it via Upload targets on Ambassadors.'],
     [],
     COLUMNS.map((c) => c.header),
     ...sampleRows,
+    [],
+    ['BA code reference'],
+    ['BA Code', 'BA Name'],
+    ...(opts?.baSamples?.length
+      ? opts.baSamples.map((b) => [b.code, b.name])
+      : [['BA-001', 'Replace with real codes from Ambassadors']]),
   ])
   help['!cols'] = COLUMNS.map((c) => ({ wch: c.width }))
 
@@ -109,23 +147,27 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     code: headers.findIndex(
       (h) => h === 'ba code' || h === 'code' || h === 'ba' || h === 'ambassador code',
     ),
+    baName: headers.findIndex(
+      (h) => h === 'ba name' || h === 'name' || h === 'ambassador name' || h === 'ambassador',
+    ),
     month: headers.findIndex((h) => h === 'month'),
     sku: headers.findIndex((h) => h === 'sku'),
     target: headers.findIndex((h) => h === 'target'),
     sales: headers.findIndex((h) => h === 'sales (kg)' || h === 'sales'),
   }
 
-  if (idx.code < 0) {
+  if (idx.code < 0 && idx.baName < 0) {
     return {
       rows: [],
       errors: [
-        'This is not the targets template (no "BA Code" column). Download the template and fill that.',
+        'This is not the targets template (need "BA Code" or "BA Name"). Download the template and fill that.',
       ],
     }
   }
 
   const rows: ParsedSalesRow[] = []
   const errors: string[] = []
+  const defaultMonth = new Date().toLocaleString('en-PK', { month: 'long' })
 
   for (let r = 1; r < table.length; r += 1) {
     const line = table[r] ?? []
@@ -133,17 +175,25 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     if (isBlank) continue
 
     const rowNum = r + 1
-    const code = String(line[idx.code] ?? '').trim()
-    const month = idx.month >= 0 ? String(line[idx.month] ?? '').trim() : ''
+    const code = idx.code >= 0 ? String(line[idx.code] ?? '').trim() : ''
+    const baName = idx.baName >= 0 ? String(line[idx.baName] ?? '').trim() : ''
+    const monthRaw = idx.month >= 0 ? String(line[idx.month] ?? '').trim() : ''
+    const month = monthRaw || defaultMonth
     const sku = idx.sku >= 0 ? String(line[idx.sku] ?? '').trim() : ''
     const rowErrors: string[] = []
 
-    if (!code) rowErrors.push(`Row ${rowNum}: BA Code is required.`)
-    if (!month) rowErrors.push(`Row ${rowNum}: Month is required.`)
+    if (!code && !baName) {
+      rowErrors.push(`Row ${rowNum}: BA Code or BA Name is required.`)
+    }
     if (!sku) rowErrors.push(`Row ${rowNum}: SKU is required.`)
 
     const target = parseNumber(idx.target >= 0 ? line[idx.target] : '', 'Target', rowNum, rowErrors)
-    const sales = parseNumber(idx.sales >= 0 ? line[idx.sales] : '', 'Sales (Kg)', rowNum, rowErrors)
+    const sales = parseOptionalNumber(
+      idx.sales >= 0 ? line[idx.sales] : '',
+      'Sales (Kg)',
+      rowNum,
+      rowErrors,
+    )
 
     if (rowErrors.length) {
       errors.push(...rowErrors)
@@ -154,10 +204,11 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
       row: rowNum,
       input: {
         code,
+        baName,
         month,
         sku,
         target: target as number,
-        sales: sales as number,
+        sales,
       },
     })
   }

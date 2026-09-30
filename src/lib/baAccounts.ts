@@ -4,16 +4,12 @@ import type { AnswerMetrics, AssessmentResult } from './baAssessment'
 import { allocateBaCode, baCodeForId } from './baCodes'
 
 /**
- * Ambassadors Head Office creates. Each one gets a personal account link — there is no
- * email/password sign-in. Opening the link signs that ambassador into their account.
- * A newly created BA can only use Training — video, then verbal assessment — until they
- * are certified; after that the same link opens the full BA app.
- *
- * There is no backend, so accounts and the signed-in session live in this browser's
- * localStorage. Anyone with the link can open that account on this browser.
+ * Ambassadors created by Head Office. Each gets a personal invite link (no password).
+ * Until certified they only use Training; after that the same link opens the full BA app.
+ * Roster syncs from Django when HO is logged in; progress also caches in localStorage.
  */
 
-export type BaStatus = 'Invited' | 'Training' | 'Certified'
+export type BaStatus = 'Invited' | 'Training' | 'Certified' | 'Deployed'
 
 export type BaAccount = {
   id: string
@@ -31,6 +27,17 @@ export type BaAccount = {
   result: AssessmentResult | null
   /** Secret used in the personal account link. */
   accessToken: string
+  /** Deployed home store (from Django). */
+  storeId: number | null
+  storeName: string
+  /** Today's shift attendance clocks (filled when HO syncs shifts). */
+  checkIn: string | null
+  checkOut: string | null
+}
+
+/** True when BA has finished certification (may also be deployed). */
+export function isBaCertified(status: BaStatus) {
+  return status === 'Certified' || status === 'Deployed'
 }
 
 function newAccessToken() {
@@ -47,7 +54,8 @@ const DEMO_ACCESS_TOKENS: Record<string, string> = {
 }
 
 function demoAccountStatus(status: string): BaStatus {
-  if (status === 'Certified' || status === 'Deployed') return 'Certified'
+  if (status === 'Deployed') return 'Deployed'
+  if (status === 'Certified') return 'Certified'
   if (status === 'Training') return 'Training'
   return 'Invited'
 }
@@ -66,6 +74,10 @@ function demoAccounts(): BaAccount[] {
     answers: [],
     result: null,
     accessToken: DEMO_ACCESS_TOKENS[a.id] ?? `demo-${a.id}`,
+    storeId: null,
+    storeName: '',
+    checkIn: null,
+    checkOut: null,
   }))
 }
 
@@ -97,6 +109,10 @@ function normalizeAccount(raw: Partial<BaAccount> & { passwordHash?: string }): 
     answers: Array.isArray(raw.answers) ? raw.answers : [],
     result: raw.result ?? null,
     accessToken: raw.accessToken || newAccessToken(),
+    storeId: typeof raw.storeId === 'number' ? raw.storeId : null,
+    storeName: raw.storeName ?? '',
+    checkIn: raw.checkIn ?? null,
+    checkOut: raw.checkOut ?? null,
   }
 }
 
@@ -164,7 +180,36 @@ export function useBaAccounts() {
   return useSyncExternalStore(subscribe, () => accounts)
 }
 
+/** Current BA list (module snapshot — use after syncAmbassadorsFromApi). */
+export function getBaAccounts() {
+  return accounts
+}
+
 const normEmail = (email: string) => email.trim().toLowerCase()
+
+export const BA_EMAIL_DOMAIN = 'kashmir.pk'
+
+/** Turn "Ammara Bibi" into local-part "ammara.bibi". */
+export function slugFromBaName(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+  return slug || 'ambassador'
+}
+
+/** Unique BA email from name (Excel email column is ignored on bulk upload). */
+export function generateBaEmail(name: string, reserved: Set<string> = new Set()) {
+  const base = slugFromBaName(name)
+  let candidate = `${base}@${BA_EMAIL_DOMAIN}`
+  let n = 2
+  while (baEmailInUse(candidate) || reserved.has(normEmail(candidate))) {
+    candidate = `${base}${n}@${BA_EMAIL_DOMAIN}`
+    n += 1
+  }
+  return candidate
+}
 
 /** True when another ambassador already uses this email. */
 export function baEmailInUse(email: string, exceptId?: string) {
@@ -188,6 +233,10 @@ function toAccount(fields: BaAccountFields, code: string): BaAccount {
     answers: [],
     result: null,
     accessToken: newAccessToken(),
+    storeId: null,
+    storeName: '',
+    checkIn: null,
+    checkOut: null,
   }
 }
 
@@ -220,6 +269,389 @@ export function createBaAccounts(fields: BaAccountFields[]): BaAccount[] {
   })
   commit([...added.slice().reverse(), ...accounts])
   return added
+}
+
+// ─── Backend API (Django) ────────────────────────────────────────────────────
+
+type ApiAmbassador = {
+  id: number
+  code?: string
+  name: string
+  email?: string
+  city?: string
+  phone?: string
+  status?: string
+  invite_token?: string
+  training_url?: string
+  overall_score?: number | null
+  report_json?: Record<string, unknown> | null
+  certified_at?: string | null
+  store?: number | null
+  store_name?: string | null
+  store_city?: string | null
+  created_at?: string
+}
+
+function mapApiBaStatus(status?: string): BaStatus {
+  if (status === 'Deployed') return 'Deployed'
+  if (status === 'Certified') return 'Certified'
+  if (status === 'Training' || status === 'Assessed') return 'Training'
+  return 'Invited'
+}
+
+/** Prefer API roster status; keep Certified if local assessment already passed. */
+function mergeBaStatus(
+  apiStatus: BaStatus,
+  existing?: BaAccount | null,
+  result?: BaAccount['result'],
+): BaStatus {
+  if (apiStatus === 'Deployed') return 'Deployed'
+  if (apiStatus === 'Certified') return 'Certified'
+  if (existing?.status === 'Certified' || existing?.result?.certified || result?.certified) {
+    return 'Certified'
+  }
+  if (existing?.status === 'Training' && apiStatus === 'Invited') return 'Training'
+  return apiStatus
+}
+
+function resultFromApi(a: ApiAmbassador, existing?: BaAccount | null) {
+  if (existing?.result) return existing.result
+  const report = a.report_json
+  if (report && typeof report === 'object' && typeof report.quality === 'number') {
+    return {
+      quality: Number(report.quality),
+      communication: Number(report.communication ?? report.quality),
+      relevance: Number(report.relevance ?? report.quality),
+      alignment: Number(report.alignment ?? report.quality),
+      wpm: Number(report.wpm ?? 0),
+      nervousness: Number(report.nervousness ?? 0),
+      mood: (report.mood as 'Positive' | 'Neutral' | 'Negative') || 'Neutral',
+      certified: Boolean(report.certified ?? (a.status === 'Certified' || a.status === 'Deployed')),
+      usedTranscript: Boolean(report.usedTranscript),
+      completedAt: String(report.completedAt || a.certified_at || new Date().toISOString()),
+    }
+  }
+  if (typeof a.overall_score === 'number') {
+    const certified = a.status === 'Certified' || a.status === 'Deployed'
+    return {
+      quality: a.overall_score,
+      communication: a.overall_score,
+      relevance: a.overall_score,
+      alignment: a.overall_score,
+      wpm: 0,
+      nervousness: 0,
+      mood: 'Neutral' as const,
+      certified,
+      usedTranscript: false,
+      completedAt: a.certified_at || new Date().toISOString(),
+    }
+  }
+  return null
+}
+
+function formatClock(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
+function apiAmbassadorToAccount(a: ApiAmbassador, existing?: BaAccount | null): BaAccount {
+  const result = resultFromApi(a, existing)
+  const status = mergeBaStatus(mapApiBaStatus(a.status), existing, result)
+  const storeId = typeof a.store === 'number' ? a.store : null
+  const storeName = a.store_name || ''
+  const videoWatched =
+    isBaCertified(status) ? true : result ? true : !!existing?.videoWatched
+  return {
+    id: String(a.id),
+    name: a.name,
+    city: a.city || a.store_city || '',
+    email: a.email || '',
+    phone: a.phone || '',
+    code: a.code || '',
+    createdAt: a.created_at || existing?.createdAt || new Date().toISOString(),
+    status,
+    videoWatched,
+    answers: existing?.answers?.length ? existing.answers : [],
+    result,
+    accessToken: a.invite_token || existing?.accessToken || newAccessToken(),
+    storeId,
+    storeName,
+    checkIn: existing?.checkIn ?? null,
+    checkOut: existing?.checkOut ?? null,
+  }
+}
+
+function findExistingForApi(a: ApiAmbassador): BaAccount | null {
+  const byId = accounts.find((x) => x.id === String(a.id))
+  if (byId) return byId
+  if (a.invite_token) return accounts.find((x) => x.accessToken === a.invite_token) ?? null
+  return null
+}
+
+function upsertAccount(account: BaAccount) {
+  const rest = accounts.filter((a) => a.id !== account.id && a.accessToken !== account.accessToken)
+  commit([account, ...rest])
+}
+
+/** Sync BA roster from Django into local account list. */
+export async function syncAmbassadorsFromApi() {
+  const { apiRequest, isApiAuthenticated } = await import('./api')
+  if (!isApiAuthenticated()) return []
+  const list = await apiRequest<ApiAmbassador[]>('/api/ambassadors/')
+  // Full replace from API (drops deleted BAs from local cache); demos stay available
+  const live = list.map((a) => apiAmbassadorToAccount(a))
+  commit(withDemoAccounts(live))
+  await enrichAttendanceFromShifts().catch(() => {})
+  void healCertifiedToApi(list)
+  return list
+}
+
+/** Merge today's shift clocks onto BA accounts for the HO Ambassadors table. */
+async function enrichAttendanceFromShifts() {
+  const { apiRequest, isApiAuthenticated } = await import('./api')
+  if (!isApiAuthenticated()) return
+  const today = new Date()
+  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const data = await apiRequest<{
+    results: {
+      baId: string | null
+      dateIso: string
+      storeId: number
+      storeName: string
+      checkedInAt?: string | null
+      checkedOutAt?: string | null
+    }[]
+  }>(`/api/shifts/?week_start=${encodeURIComponent(ymd)}`)
+  // Prefer today's shift per BA; fall back to any scheduled shift in the returned week.
+  const byBa = new Map<
+    string,
+    { storeId: number; storeName: string; checkIn: string | null; checkOut: string | null; today: boolean }
+  >()
+  for (const s of data.results || []) {
+    if (!s.baId) continue
+    const isToday = s.dateIso === ymd
+    const prev = byBa.get(s.baId)
+    if (prev?.today && !isToday) continue
+    byBa.set(s.baId, {
+      storeId: s.storeId,
+      storeName: s.storeName,
+      checkIn: formatClock(s.checkedInAt),
+      checkOut: formatClock(s.checkedOutAt),
+      today: isToday,
+    })
+  }
+  if (!byBa.size) return
+  commit(
+    accounts.map((a) => {
+      const hit = byBa.get(a.id)
+      if (!hit) {
+        // No shift this week — clear clocks; keep store only if API already set Deployed.
+        return { ...a, checkIn: null, checkOut: null }
+      }
+      return {
+        ...a,
+        // Prefer ambassador home store from API; fall back to shift store for display.
+        storeId: a.storeId ?? hit.storeId,
+        storeName: a.storeName || hit.storeName,
+        checkIn: hit.today ? hit.checkIn : null,
+        checkOut: hit.today ? hit.checkOut : null,
+      }
+    }),
+  )
+}
+
+/** Re-submit local Certified results when the API still says Training. */
+async function healCertifiedToApi(apiList: ApiAmbassador[]) {
+  for (const a of apiList) {
+    if (a.status === 'Certified' || a.status === 'Deployed') continue
+    const local = findExistingForApi(a)
+    if (!local?.result?.certified || !local.accessToken || local.accessToken.startsWith('demo-')) continue
+    try {
+      await syncAssessmentResultToApi(local, local.result)
+    } catch (err) {
+      console.warn('[ba] failed to heal certification to API', a.name, err)
+    }
+  }
+}
+
+/** Create one BA via API when logged in; otherwise local-only. */
+export async function createBaAccountAsync(fields: BaAccountFields): Promise<BaAccount> {
+  const { apiRequest, isApiAuthenticated } = await import('./api')
+  if (!isApiAuthenticated()) return createBaAccount(fields)
+
+  const a = await apiRequest<ApiAmbassador>('/api/ambassadors/', {
+    method: 'POST',
+    body: {
+      name: fields.name.trim(),
+      email: fields.email.trim(),
+      city: fields.city.trim(),
+      phone: fields.phone.trim(),
+    },
+  })
+  const account = apiAmbassadorToAccount(a)
+  upsertAccount(account)
+  return account
+}
+
+export async function createBaAccountsAsync(fields: BaAccountFields[]): Promise<{
+  created: BaAccount[]
+  errors: string[]
+}> {
+  const { isApiAuthenticated } = await import('./api')
+  if (!isApiAuthenticated()) {
+    return { created: createBaAccounts(fields), errors: [] }
+  }
+  const created: BaAccount[] = []
+  const errors: string[] = []
+  for (const f of fields) {
+    try {
+      created.push(await createBaAccountAsync(f))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'create failed'
+      errors.push(`${f.name} (${f.email}): ${msg}`)
+    }
+  }
+  return { created, errors }
+}
+
+export type InviteTrainingPayload = {
+  ready?: boolean
+  has_video?: boolean
+  has_questions?: boolean
+  question_count?: number
+  questions?: { id?: string; question?: string; title?: string; description?: string; type?: string }[]
+  original_name?: string | null
+  uploaded_at?: string | null
+  transcript_preview?: string
+  video_url?: string | null
+}
+
+/** Latest training snapshot from BA invite lookup (for onboarding video/questions). */
+let inviteTraining: InviteTrainingPayload | null = null
+const inviteTrainingListeners = new Set<() => void>()
+
+export function getInviteTraining() {
+  return inviteTraining
+}
+
+export function setInviteTraining(payload: InviteTrainingPayload | null) {
+  inviteTraining = payload
+  inviteTrainingListeners.forEach((l) => l())
+}
+
+export function subscribeInviteTraining(listener: () => void) {
+  inviteTrainingListeners.add(listener)
+  return () => {
+    inviteTrainingListeners.delete(listener)
+  }
+}
+
+/**
+ * Resolve a personal BA link token against the backend, cache the account locally, and return it.
+ */
+export async function resolveBaInvite(token: string): Promise<BaAccount | null> {
+  try {
+    const { apiRequest } = await import('./api')
+    const data = await apiRequest<{
+      ambassador: ApiAmbassador
+      certified: boolean
+      training?: InviteTrainingPayload
+    }>(`/api/ba/invite/${encodeURIComponent(token)}/`, { auth: false })
+
+    if (data.training) setInviteTraining(data.training)
+    else setInviteTraining(null)
+
+    const existing = findExistingForApi({
+      ...data.ambassador,
+      invite_token: data.ambassador.invite_token || token,
+    })
+    const account = apiAmbassadorToAccount(
+      {
+        ...data.ambassador,
+        invite_token: data.ambassador.invite_token || token,
+        status: data.certified ? 'Certified' : data.ambassador.status,
+      },
+      existing,
+    )
+    // Uncertified BAs who haven't started assessment answers must watch the video.
+    // Clears stuck localStorage from older builds that marked Training as already watched.
+    if (!data.certified && !account.result && account.answers.length === 0) {
+      account.videoWatched = false
+    }
+    upsertAccount(account)
+    return account
+  } catch {
+    return findBaByAccessToken(token)
+  }
+}
+
+/**
+ * Push one scored answer into Django AssessmentAnswer (via open session).
+ */
+export async function syncAnswerToApi(
+  account: BaAccount,
+  metrics: import('./baAssessment').AnswerMetrics,
+) {
+  if (!account.accessToken || account.accessToken.startsWith('demo-')) return null
+  const { apiRequest } = await import('./api')
+  return apiRequest<{ ok: boolean; sessionId: string; answerId: number }>('/api/ba/store-answer/', {
+    method: 'POST',
+    auth: false,
+    body: {
+      token: account.accessToken,
+      questionId: metrics.questionId,
+      prompt: metrics.prompt,
+      transcript: metrics.transcript,
+      communication: metrics.communication,
+      relevance: metrics.relevance,
+      alignment: metrics.alignment,
+      wpm: metrics.wpm,
+      nervousness: metrics.nervousness,
+      moodScore: metrics.moodScore,
+      words: metrics.words,
+      durationSec: metrics.durationSec,
+      usedTranscript: metrics.usedTranscript,
+    },
+  })
+}
+
+/**
+ * Push client-side assessment outcome to Django so HO Ambassadors list shows Certified.
+ * Also persists all answers into AssessmentAnswer rows.
+ * Throws on network/API failure so callers can surface or retry.
+ */
+export async function syncAssessmentResultToApi(
+  account: BaAccount,
+  result: import('./baAssessment').AssessmentResult,
+) {
+  if (!account.accessToken || account.accessToken.startsWith('demo-')) return null
+  const { apiRequest } = await import('./api')
+  const data = await apiRequest<ApiAmbassador>('/api/ba/complete-assessment/', {
+    method: 'POST',
+    auth: false,
+    body: {
+      token: account.accessToken,
+      certified: result.certified,
+      overall_score: result.quality,
+      report_json: {
+        quality: result.quality,
+        communication: result.communication,
+        relevance: result.relevance,
+        alignment: result.alignment,
+        wpm: result.wpm,
+        nervousness: result.nervousness,
+        mood: result.mood,
+        certified: result.certified,
+        usedTranscript: result.usedTranscript,
+        completedAt: result.completedAt,
+        answers: account.answers,
+      },
+    },
+  })
+  upsertAccount(apiAmbassadorToAccount(data, account))
+  return data
 }
 
 export function updateBaAccount(id: string, patch: Partial<BaAccount>) {
@@ -283,7 +715,6 @@ const SHEET = 'Ambassadors'
 const COLUMNS = [
   { key: 'name', header: 'Name *', width: 26 },
   { key: 'city', header: 'City', width: 16 },
-  { key: 'email', header: 'Email *', width: 28 },
   { key: 'phone', header: 'Phone', width: 18 },
 ] as const
 
@@ -297,13 +728,12 @@ export async function downloadAmbassadorTemplate() {
     ['How to fill the ambassador template'],
     [],
     [`1. Add one ambassador per row on the "${SHEET}" sheet, starting on row 2. Do not change the header row.`],
-    ['2. Name and Email are required. City and Phone are optional. There is no password.'],
+    ['2. Name is required. City and Phone are optional. Email is auto-generated (email column is ignored if present).'],
     ['3. Each ambassador gets a personal account link after creation. They open that link to enter their account.'],
-    ['4. An email already used by another ambassador is skipped.'],
-    ['5. Save the file, then upload it on the Ambassadors page. Account links can be downloaded after creation.'],
+    ['4. Save the file, then upload it on the Ambassadors page. Account links can be downloaded after creation.'],
     [],
     COLUMNS.map((c) => c.header),
-    ['Ayesha Khan', 'Lahore', 'ayesha.khan@example.com', '0300-1234567'],
+    ['Ayesha Khan', 'Lahore', '0300-1234567'],
   ])
   help['!cols'] = COLUMNS.map((c) => ({ wch: c.width }))
 
@@ -314,12 +744,15 @@ export async function downloadAmbassadorTemplate() {
 }
 
 export type ParsedAmbassadorRow = { row: number; input: BaAccountFields }
-export type AmbassadorParseResult = { rows: ParsedAmbassadorRow[]; errors: string[] }
+export type AmbassadorParseResult = {
+  rows: ParsedAmbassadorRow[]
+  errors: string[]
+  skippedNoEmail?: number
+}
 
 const headerKey = (h: unknown) => String(h ?? '').replace('*', '').trim().toLowerCase()
-const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
-/** Reads a filled template. Valid rows are returned even when others have problems. */
+/** Reads a filled template. Every named row is created; Excel email column is ignored. */
 export async function parseAmbassadorFile(file: File): Promise<AmbassadorParseResult> {
   const XLSX = await import('xlsx')
 
@@ -348,7 +781,7 @@ export async function parseAmbassadorFile(file: File): Promise<AmbassadorParseRe
 
   const rows: ParsedAmbassadorRow[] = []
   const errors: string[] = []
-  const seen = new Set<string>()
+  const reservedEmails = new Set<string>()
 
   table.slice(headerAt + 1).forEach((r, i) => {
     const rowNo = headerAt + i + 2
@@ -356,29 +789,24 @@ export async function parseAmbassadorFile(file: File): Promise<AmbassadorParseRe
 
     const name = cell(r, 'name')
     const city = cell(r, 'city')
-    const email = cell(r, 'email')
     const phone = cell(r, 'phone')
-    const problems: string[] = []
-    if (!name) problems.push('Name is required')
-    if (!email) problems.push('Email is required')
-    else if (!validEmail(email)) problems.push(`Email looks invalid (found "${email}")`)
 
-    if (email) {
-      const key = normEmail(email)
-      if (seen.has(key)) problems.push('Duplicate of an earlier row in this file')
-      else if (baEmailInUse(email)) problems.push('An ambassador with this email already exists')
-      seen.add(key)
-    }
-
-    if (problems.length > 0) {
-      errors.push(`Row ${rowNo}${name ? ` (${name})` : ''}: ${problems.join('; ')}.`)
+    if (!name) {
+      errors.push(`Row ${rowNo}: Name is required.`)
       return
     }
+
+    // Ignore Excel email column — always generate from name
+    const email = generateBaEmail(name, reservedEmails)
+    reservedEmails.add(normEmail(email))
+
     rows.push({ row: rowNo, input: { name, city, email, phone } })
   })
 
-  if (rows.length === 0 && errors.length === 0) errors.push('No ambassadors found. Add one per row under the header.')
-  return { rows, errors }
+  if (rows.length === 0 && errors.length === 0) {
+    errors.push('No ambassadors found. Add one per row under the header.')
+  }
+  return { rows, errors, skippedNoEmail: 0 }
 }
 
 /** Downloads each ambassador's personal account link. */

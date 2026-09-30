@@ -227,6 +227,8 @@ export function PasswordField({
   onGenerate,
   hint = 'At least 6 characters. You will see it once after saving.',
   autoFocus,
+  required = true,
+  minLength = 6,
 }: {
   label?: string
   value: string
@@ -234,6 +236,8 @@ export function PasswordField({
   onGenerate?: () => void
   hint?: string | false
   autoFocus?: boolean
+  required?: boolean
+  minLength?: number
 }) {
   const [visible, setVisible] = useState(false)
   return (
@@ -244,6 +248,8 @@ export function PasswordField({
           <input
             type={visible ? 'text' : 'password'}
             autoFocus={autoFocus}
+            required={required}
+            minLength={minLength}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pr-10 pl-3.5 font-mono text-sm outline-none focus:border-brand-500"

@@ -2,20 +2,26 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
 import {
-  initialComplaints,
   type Complaint,
   type ComplaintCategory,
   type ComplaintKind,
   type ComplaintStatus,
   type ProductComplaintCategory,
 } from '../data/complaints'
+import { isApiAuthenticated } from '../lib/api'
+import {
+  fetchComplaints,
+  submitBaComplaintApi,
+  updateComplaintStatusApi,
+} from '../lib/complaintsApi'
 
-type SubmitComplaintInput = {
+export type SubmitComplaintInput = {
   kind: ComplaintKind
   baId: string
   baName: string
@@ -31,37 +37,103 @@ type SubmitComplaintInput = {
   customerName?: string
   customerPhone?: string
   imageName?: string
+  imageFile?: File | null
+  /** BA invite token — required when posting to API */
+  token?: string
 }
 
 type ComplaintsContextValue = {
   complaints: Complaint[]
-  submitComplaint: (input: SubmitComplaintInput) => Complaint
-  updateComplaintStatus: (id: string, status: ComplaintStatus, hoNote?: string) => void
+  loading: boolean
+  refreshComplaints: () => Promise<void>
+  submitComplaint: (input: SubmitComplaintInput) => Promise<Complaint>
+  updateComplaintStatus: (id: string, status: ComplaintStatus, hoNote?: string) => Promise<void>
 }
 
 const ComplaintsContext = createContext<ComplaintsContextValue | null>(null)
 
 export function ComplaintsProvider({ children }: { children: ReactNode }) {
-  const [complaints, setComplaints] = useState<Complaint[]>(initialComplaints)
+  const [complaints, setComplaints] = useState<Complaint[]>([])
+  const [loading, setLoading] = useState(false)
 
-  const submitComplaint = useCallback((input: SubmitComplaintInput) => {
+  const refreshComplaints = useCallback(async () => {
+    if (!isApiAuthenticated()) {
+      setComplaints([])
+      return
+    }
+    setLoading(true)
+    try {
+      const list = await fetchComplaints()
+      setComplaints(list)
+    } catch {
+      // Keep last known list on network error
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshComplaints()
+  }, [refreshComplaints])
+
+  const submitComplaint = useCallback(async (input: SubmitComplaintInput) => {
+    if (input.token) {
+      const created = await submitBaComplaintApi({
+        token: input.token,
+        kind: input.kind,
+        storeId: input.storeId,
+        category: input.category,
+        subject: input.subject,
+        details: input.details,
+        productCategory: input.productCategory,
+        brand: input.brand,
+        sku: input.sku,
+        customerName: input.customerName,
+        customerPhone: input.customerPhone,
+        image: input.imageFile ?? null,
+      })
+      setComplaints((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
+      return created
+    }
+
+    // Offline / demo fallback
     const now = new Date().toISOString()
-    let created!: Complaint
-    setComplaints((prev) => {
-      created = {
-        id: `cmp-${1000 + prev.length + 1}`,
-        ...input,
-        status: 'Open',
-        createdAt: now,
-        updatedAt: now,
-      }
-      return [created, ...prev]
-    })
+    const created: Complaint = {
+      id: `cmp-${Date.now()}`,
+      kind: input.kind,
+      baId: input.baId,
+      baName: input.baName,
+      storeId: input.storeId,
+      storeName: input.storeName,
+      city: input.city,
+      category: input.category,
+      subject: input.subject,
+      details: input.details,
+      status: 'Open',
+      createdAt: now,
+      updatedAt: now,
+      productCategory: input.productCategory,
+      brand: input.brand,
+      sku: input.sku,
+      customerName: input.customerName,
+      customerPhone: input.customerPhone,
+      imageName: input.imageName,
+    }
+    setComplaints((prev) => [created, ...prev])
     return created
   }, [])
 
   const updateComplaintStatus = useCallback(
-    (id: string, status: ComplaintStatus, hoNote?: string) => {
+    async (id: string, status: ComplaintStatus, hoNote?: string) => {
+      if (isApiAuthenticated()) {
+        try {
+          const updated = await updateComplaintStatusApi(id, status, hoNote)
+          setComplaints((prev) => prev.map((c) => (c.id === id || c.id === updated.id ? updated : c)))
+          return
+        } catch (err) {
+          throw err
+        }
+      }
       const now = new Date().toISOString()
       setComplaints((prev) =>
         prev.map((c) =>
@@ -80,8 +152,14 @@ export function ComplaintsProvider({ children }: { children: ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ complaints, submitComplaint, updateComplaintStatus }),
-    [complaints, submitComplaint, updateComplaintStatus],
+    () => ({
+      complaints,
+      loading,
+      refreshComplaints,
+      submitComplaint,
+      updateComplaintStatus,
+    }),
+    [complaints, loading, refreshComplaints, submitComplaint, updateComplaintStatus],
   )
 
   return <ComplaintsContext.Provider value={value}>{children}</ComplaintsContext.Provider>

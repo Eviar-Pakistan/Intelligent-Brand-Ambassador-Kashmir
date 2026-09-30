@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Eye, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Avatar, Button, Card, Modal, PageHeader, PasswordField, TableScroll } from '../../components/ui'
@@ -9,13 +9,16 @@ import {
   createSupervisor,
   deleteSupervisor,
   emailInUse,
+  fetchSupervisorOverview,
   generatePassword,
+  generateSupervisorEmail,
   setLogin,
   signIn,
   supervisorOfStore,
   supervisorOverview,
-  useSupervisors,
+  useSupervisorsSync,
   type Supervisor,
+  type SupervisorOverview,
 } from '../../lib/supervisors'
 import {
   SupervisorBaTable,
@@ -43,7 +46,7 @@ function StoreChecklist({
   supervisorId: string | null
 }) {
   useCreatedStores() // include stores created since this page opened
-  useSupervisors()
+  useSupervisorsSync()
 
   return (
     <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
@@ -83,13 +86,21 @@ function AddSupervisorModal({
   onClose: () => void
   onCreated: (c: Credentials) => void
 }) {
-  const fresh = () => ({ name: '', phone: '', email: '', city: CITIES[0], password: generatePassword() })
+  const fresh = () => ({
+    name: '',
+    phone: '',
+    email: '',
+    city: CITIES[0],
+    password: generatePassword(),
+  })
   const [form, setForm] = useState(fresh)
+  const [emailTouched, setEmailTouched] = useState(false)
   const [storeIds, setStoreIds] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
 
   function close() {
     setForm(fresh())
+    setEmailTouched(false)
     setStoreIds([])
     setError(null)
     onClose()
@@ -98,15 +109,32 @@ function AddSupervisorModal({
   function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return setError('Name is required.')
-    if (!validEmail(form.email)) return setError('Enter a valid email — the supervisor signs in with it.')
-    if (emailInUse(form.email)) return setError('Another supervisor already uses this email.')
+    const email = form.email.trim() || generateSupervisorEmail(form.name)
+    if (!validEmail(email)) return setError('Could not generate a valid email from the name.')
+    if (emailInUse(email)) return setError('Another supervisor already uses this email.')
     if (form.password.length < 6) return setError('Password must be at least 6 characters.')
-    createSupervisor(form, storeIds)
-    onCreated({ name: form.name.trim(), email: form.email.trim(), password: form.password, updated: false })
-    close()
+    setError(null)
+    void createSupervisor({ ...form, email }, storeIds)
+      .then(() => {
+        onCreated({ name: form.name.trim(), email, password: form.password, updated: false })
+        close()
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Could not create supervisor')
+      })
   }
 
-  const set = (key: 'name' | 'phone' | 'email' | 'city') => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  function onNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const name = e.target.value
+    setForm((prev) => ({
+      ...prev,
+      name,
+      email: emailTouched ? prev.email : name.trim() ? generateSupervisorEmail(name) : '',
+    }))
+    setError(null)
+  }
+
+  const set = (key: 'phone' | 'city') => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm({ ...form, [key]: e.target.value })
     setError(null)
   }
@@ -116,7 +144,7 @@ function AddSupervisorModal({
       <form onSubmit={submit} className="space-y-4 text-sm">
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">Name *</span>
-          <input className={fieldClass} value={form.name} onChange={set('name')} autoFocus />
+          <input className={fieldClass} value={form.name} onChange={onNameChange} autoFocus required />
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
@@ -133,8 +161,22 @@ function AddSupervisorModal({
           </label>
         </div>
         <label className="block">
-          <span className="mb-1 block font-medium text-slate-700">Email * (sign-in name)</span>
-          <input className={fieldClass} type="email" value={form.email} onChange={set('email')} />
+          <span className="mb-1 block font-medium text-slate-700">Email * (sign-in — auto from name)</span>
+          <input
+            className={fieldClass}
+            type="email"
+            required
+            value={form.email}
+            onChange={(e) => {
+              setEmailTouched(true)
+              setForm({ ...form, email: e.target.value })
+              setError(null)
+            }}
+            placeholder="Generated when you type a name"
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            Auto-filled as name@kashmir.pk. You can edit it before creating.
+          </p>
         </label>
         <PasswordField
           value={form.password}
@@ -191,9 +233,15 @@ function LoginDetailsModal({ supervisor, onClose, onSaved }: { supervisor: Super
     if (!validEmail(current.email)) return setError('Enter a valid email.')
     if (emailInUse(current.email, supervisor.id)) return setError('Another supervisor already uses this email.')
     if (current.password.length < 6) return setError('Password must be at least 6 characters.')
-    setLogin(supervisor.id, current.email, current.password)
-    onSaved({ name: supervisor.name, email: current.email.trim(), password: current.password, updated: true })
-    close()
+    setError(null)
+    void setLogin(supervisor.id, current.email, current.password)
+      .then(() => {
+        onSaved({ name: supervisor.name, email: current.email.trim(), password: current.password, updated: true })
+        close()
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Could not save login')
+      })
   }
 
   return (
@@ -306,8 +354,7 @@ function EditStoresModal({ supervisor, onClose }: { supervisor: Supervisor | nul
           <div className="flex flex-col gap-2 sm:flex-row-reverse">
             <Button
               onClick={() => {
-                assignStores(supervisor.id, selected)
-                close()
+                void assignStores(supervisor.id, selected).then(() => close())
               }}
             >
               Save stores
@@ -333,12 +380,38 @@ function usePreview() {
 
 export function SupervisorsPage() {
   const base = useRoleBase()
-  const supervisors = useSupervisors()
+  const supervisors = useSupervisorsSync()
   useCreatedStores()
   const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
+  const [overviews, setOverviews] = useState<Record<string, SupervisorOverview>>({})
   const preview = usePreview()
+
+  const rosterKey = supervisors.map((s) => `${s.id}:${s.storeIds.join(',')}`).join('|')
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const entries = await Promise.all(
+        supervisors.map(async (s) => {
+          try {
+            const live = await fetchSupervisorOverview(s.id)
+            return [s.id, live ?? supervisorOverview(s)] as const
+          } catch {
+            return [s.id, supervisorOverview(s)] as const
+          }
+        }),
+      )
+      if (!cancelled) setOverviews(Object.fromEntries(entries))
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+    // rosterKey captures id + store assignments; supervisors list is read inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rosterKey])
 
   return (
     <div>
@@ -367,7 +440,7 @@ export function SupervisorsPage() {
             </thead>
             <tbody>
               {supervisors.map((s) => {
-                const o = supervisorOverview(s)
+                const o = overviews[s.id] ?? supervisorOverview(s)
                 return (
                   <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                     <td className="px-4 py-3">
@@ -425,7 +498,7 @@ export function SupervisorDetailPage() {
   const { id } = useParams()
   const base = useRoleBase()
   const navigate = useNavigate()
-  const supervisors = useSupervisors()
+  const supervisors = useSupervisorsSync()
   const supervisor = supervisors.find((s) => s.id === id)
   const [editing, setEditing] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
@@ -495,8 +568,7 @@ export function SupervisorDetailPage() {
             <Button
               variant="danger"
               onClick={() => {
-                deleteSupervisor(supervisor.id)
-                navigate(`${base}/supervisors`)
+                void deleteSupervisor(supervisor.id).then(() => navigate(`${base}/supervisors`))
               }}
             >
               Delete supervisor

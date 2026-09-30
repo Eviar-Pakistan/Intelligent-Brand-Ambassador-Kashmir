@@ -1,15 +1,35 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useState, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '../../components/ui'
 import { useDemo } from '../../context/AppContext'
 import { useBrand } from '../../context/BrandContext'
 import { Check, Gift, Leaf, Lock, Percent, Sparkles, Ticket } from 'lucide-react'
-import { productCategories, selectionReasons, surveyOptions } from './shopperData'
-import { getShopperStore } from '../../lib/storeRegistry'
+import { productCategories } from './shopperData'
+import { enterShopperStore, getShopperStore } from '../../lib/storeRegistry'
+import {
+  fetchShopperQuestions,
+  getShopperConsumerId,
+  submitShopperFeedback,
+  submitShopperSurvey,
+  type ShopperSurveyQuestion,
+} from '../../lib/shopperApi'
+import { ApiError } from '../../lib/api'
 
 export function ShopperLandingPage() {
   const { brand } = useBrand()
   const [line1, line2] = brand.shopperHeadline
+  const [params] = useSearchParams()
+  const [, setTick] = useState(0)
+
+  // Backend QR redirect lands on /shopper?store=<slug>
+  useEffect(() => {
+    const querySlug = (params.get('store') || '').trim()
+    if (querySlug && !getShopperStore()?.slug) {
+      enterShopperStore(querySlug, params)
+      setTick((n) => n + 1)
+    }
+  }, [params])
+
   const shopperStore = getShopperStore()
 
   return (
@@ -317,36 +337,136 @@ function Bubble({ children, side }: { children: ReactNode; side: 'user' | 'bot' 
   )
 }
 
-const SURVEY_STEPS = 3
 const genderOptions = ['Male', 'Female']
 
 export function ShopperSurveyPage() {
-  const [step, setStep] = useState(1)
+  const navigate = useNavigate()
+  const shopperStore = getShopperStore()
+  const storeSlug = shopperStore?.slug || ''
+
+  const [questions, setQuestions] = useState<ShopperSurveyQuestion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [step, setStep] = useState(1) // 1 = profile, then questions
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [gender, setGender] = useState<string | null>(null)
   const [age, setAge] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
-  const [reasons, setReasons] = useState<string[]>([])
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   const [consent, setConsent] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setLoadError(null)
+    void fetchShopperQuestions(storeSlug)
+      .then((rows) => {
+        if (cancelled) return
+        setQuestions(rows.filter((q) => q.is_active !== false))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setLoadError(err instanceof ApiError ? err.message : 'Could not load survey questions.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [storeSlug])
+
+  const totalSteps = 1 + Math.max(questions.length, 0)
+  const questionIndex = step - 2 // 0-based into questions when step >= 2
+  const currentQuestion = questionIndex >= 0 ? questions[questionIndex] : null
+  const isLastStep = step >= totalSteps && questions.length > 0
 
   const profileReady = name.trim() !== '' && phone.trim() !== '' && gender != null && age.trim() !== ''
+  const currentAnswer = currentQuestion ? answers[String(currentQuestion.id)] : undefined
   const canContinue =
-    step === 1 ? profileReady : step === 2 ? selected != null : reasons.length > 0 && consent
+    step === 1
+      ? profileReady && !!storeSlug && questions.length > 0
+      : currentQuestion
+        ? !!currentAnswer && (isLastStep ? consent : true)
+        : false
 
-  function toggleReason(opt: string) {
-    setReasons((current) => (current.includes(opt) ? current.filter((item) => item !== opt) : [...current, opt]))
+  async function finishSurvey() {
+    if (!storeSlug || !consent) return
+    const payload: Record<string, string> = {}
+    for (const q of questions) {
+      const val = answers[String(q.id)]
+      if (!val) {
+        setSubmitError('Please answer every question.')
+        return
+      }
+      payload[String(q.id)] = val
+    }
+    setBusy(true)
+    setSubmitError(null)
+    try {
+      await submitShopperSurvey({
+        storeSlug,
+        name,
+        phone,
+        consent,
+        answers: payload,
+      })
+      navigate('/shopper/product')
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : 'Could not save your survey. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center p-5 text-sm text-slate-500">
+        Loading survey…
+      </div>
+    )
+  }
+
+  if (loadError || !storeSlug) {
+    return (
+      <div className="flex min-h-[calc(100dvh-4rem)] flex-col items-center justify-center gap-3 p-5 text-center">
+        <p className="text-sm text-rose-700">
+          {!storeSlug
+            ? 'Open this journey from a store QR code so we know which store you are in.'
+            : loadError}
+        </p>
+        <Link to="/shopper" className="text-sm font-semibold text-brand-600">
+          Back
+        </Link>
+      </div>
+    )
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="flex min-h-[calc(100dvh-4rem)] flex-col items-center justify-center gap-3 p-5 text-center">
+        <p className="text-sm text-slate-600">No survey questions are set up for this store yet.</p>
+        <Link to="/shopper/product" className="text-sm font-semibold text-brand-600">
+          Continue anyway
+        </Link>
+      </div>
+    )
   }
 
   return (
     <div className="flex min-h-[calc(100dvh-4rem)] flex-col p-4 sm:p-5">
       <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-        Question {step} of {SURVEY_STEPS}
+        Question {step} of {totalSteps}
       </div>
 
       {step === 1 && (
         <>
           <h2 className="text-xl font-bold">Enter your details</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {shopperStore?.name ? `Survey for ${shopperStore.name}` : 'Your details are saved with your answers.'}
+          </p>
           <div className="mt-6 space-y-3">
             <SurveyField label="Name" value={name} onChange={setName} placeholder="Your name" />
             <SurveyField
@@ -369,63 +489,63 @@ export function ShopperSurveyPage() {
         </>
       )}
 
-      {step === 2 && (
+      {currentQuestion && (
         <>
-          <h2 className="text-xl font-bold">Which oil do you currently use?</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Captures preferred oil, brand, family size, frequency, price sensitivity & more.
-          </p>
+          <h2 className="text-xl font-bold">{currentQuestion.text}</h2>
+          <p className="mt-2 text-sm text-slate-500">Select one option to continue.</p>
           <div className="mt-6 space-y-3">
-            {surveyOptions.map((opt) => (
-              <SurveyChoice key={opt} label={opt} selected={selected === opt} onSelect={() => setSelected(opt)} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {step === 3 && (
-        <>
-          <h2 className="text-xl font-bold">Reason for selection</h2>
-          <p className="mt-2 text-sm text-slate-500">Why did you choose this oil? Select all that apply.</p>
-          <div className="mt-6 space-y-3">
-            {selectionReasons.map((opt) => (
+            {(currentQuestion.options || []).map((opt) => (
               <SurveyChoice
                 key={opt}
                 label={opt}
-                multiple
-                selected={reasons.includes(opt)}
-                onSelect={() => toggleReason(opt)}
+                selected={currentAnswer === opt}
+                onSelect={() =>
+                  setAnswers((prev) => ({
+                    ...prev,
+                    [String(currentQuestion.id)]: opt,
+                  }))
+                }
               />
             ))}
           </div>
-          <label className="mt-6 flex items-start gap-2 text-xs text-slate-500">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={consent}
-              onChange={(e) => setConsent(e.target.checked)}
-            />
-            I consent to store my preference data for campaign insights (CRM sync).
-          </label>
+          {isLastStep && (
+            <label className="mt-6 flex items-start gap-2 text-xs text-slate-500">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+              />
+              I consent to store my preference data for campaign insights (CRM sync).
+            </label>
+          )}
         </>
+      )}
+
+      {(submitError || (!storeSlug && step === 1)) && (
+        <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {submitError}
+        </div>
       )}
 
       <div className="mt-auto pt-8">
         <div className="mb-4 flex justify-center gap-2">
-          {Array.from({ length: SURVEY_STEPS }, (_, i) => i + 1).map((n) => (
+          {Array.from({ length: totalSteps }, (_, i) => i + 1).map((n) => (
             <span key={n} className={`h-2 w-2 rounded-full ${n <= step ? 'bg-brand-500' : 'bg-slate-200'}`} />
           ))}
         </div>
-        {step < SURVEY_STEPS ? (
-          <Button className="w-full" disabled={!canContinue} onClick={() => setStep((s) => s + 1)}>
-            Continue
+        {isLastStep ? (
+          <Button className="w-full" disabled={!canContinue || busy} onClick={() => void finishSurvey()}>
+            {busy ? 'Saving…' : 'Continue'}
           </Button>
         ) : (
-          <Link to={canContinue ? '/shopper/product' : '#'}>
-            <Button className="w-full" disabled={!canContinue}>
-              Continue
-            </Button>
-          </Link>
+          <Button
+            className="w-full"
+            disabled={!canContinue || busy}
+            onClick={() => setStep((s) => s + 1)}
+          >
+            Continue
+          </Button>
         )}
       </div>
     </div>
@@ -543,13 +663,27 @@ export function ShopperFeedbackPage() {
   const navigate = useNavigate()
   const [rating, setRating] = useState<number | null>(null)
   const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const labels = ['Poor', 'Fair', 'Good', 'Great', 'Excellent']
 
-  function finish() {
+  async function finish() {
     if (rating == null) return
-    demo.completeShopperSession()
-    navigate('/shopper/thanks', { state: { rating, label: labels[rating - 1] } })
+    setBusy(true)
+    setError(null)
+    const consumerId = getShopperConsumerId()
+    try {
+      if (consumerId != null) {
+        await submitShopperFeedback({ consumerId, rating, comment })
+      }
+      demo.completeShopperSession()
+      navigate('/shopper/thanks', { state: { rating, label: labels[rating - 1] } })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save feedback.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -604,13 +738,19 @@ export function ShopperFeedbackPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="mx-auto mt-4 w-full max-w-sm rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={finish}
-          disabled={rating == null}
+          onClick={() => void finish()}
+          disabled={rating == null || busy}
           className="mx-auto mt-6 w-full max-w-sm rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 enabled:active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
         >
-          Submit feedback
+          {busy ? 'Saving…' : 'Submit feedback'}
         </button>
       </div>
     </div>

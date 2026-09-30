@@ -2,9 +2,8 @@ import { useSyncExternalStore } from 'react'
 import { stores, type Store } from '../data/mock'
 
 /**
- * Stores created by hand or from an Excel sheet. There is no backend, so they live in this
- * browser's localStorage and are added to the shared `stores` list at startup, which makes
- * them show up on every page that lists stores.
+ * Stores created in HO (form or Excel). Synced to Django when authenticated;
+ * also cached in localStorage so the shared `stores` list stays available offline.
  */
 
 export type Footfall = Store['footfall']
@@ -17,11 +16,11 @@ export type StoreInput = {
   latitude: number | null
   longitude: number | null
   peakHours: string
-  contactPerson: string
-  contactPhone: string
+  contactPerson?: string
+  contactPhone?: string
 }
 
-export type CreatedStore = StoreInput & { id: number; slug: string; createdAt: string }
+export type CreatedStore = StoreInput & { id: number; slug: string; createdAt: string; code?: string }
 
 export const CITIES = [
   'Lahore',
@@ -46,6 +45,7 @@ function toStore(c: CreatedStore): Store {
     id: c.id,
     name: c.name,
     city: c.city,
+    code: c.code || `ST-${String(c.id).padStart(3, '0')}`,
     footfall: c.footfall,
     bas: 0,
     coverage: 0,
@@ -70,6 +70,8 @@ function load(): CreatedStore[] {
 }
 
 let created = load()
+/** Bumps on every persist so useSyncExternalStore always sees a new snapshot. */
+let storeEpoch = 0
 const listeners = new Set<() => void>()
 
 for (const c of created) if (!stores.some((s) => s.id === c.id)) stores.push(toStore(c))
@@ -82,7 +84,10 @@ function subscribe(listener: () => void) {
 }
 
 export function useCreatedStores() {
-  return useSyncExternalStore(subscribe, () => created)
+  // Snapshot must change when live `stores[]` metrics (bas/status) update in place;
+  // mutating `created` alone keeps the same array ref and React skips re-render.
+  useSyncExternalStore(subscribe, () => storeEpoch)
+  return created
 }
 
 export function findCreatedStore(id: number) {
@@ -109,6 +114,8 @@ export function createStores(inputs: StoreInput[]): CreatedStore[] {
       ...input,
       name: input.name.trim(),
       city: input.city.trim(),
+      contactPerson: input.contactPerson?.trim() || '',
+      contactPhone: input.contactPhone?.trim() || '',
       id,
       slug: `s${id}-${randomSuffix()}`,
       createdAt: new Date().toISOString(),
@@ -117,12 +124,172 @@ export function createStores(inputs: StoreInput[]): CreatedStore[] {
     added.push(record)
   }
   created = [...added.slice().reverse(), ...created]
+  storeEpoch += 1
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(created))
   } catch {
     // keep in memory for this session
   }
   listeners.forEach((l) => l())
+  return added
+}
+
+// ─── Backend API (Django) ────────────────────────────────────────────────────
+
+type ApiAssignedBa = { id: string; name: string; state?: 'Active' | 'Break' | 'Offline' | string }
+
+type ApiStore = {
+  id: number
+  code?: string
+  name: string
+  city: string
+  address: string
+  footfall: Footfall
+  peak_hours?: string
+  contact_name?: string
+  contact_phone?: string
+  status?: string
+  bas?: number
+  coverage?: number
+  today_footfall?: number
+  engagement?: number
+  conversion?: number
+  latitude?: string | number | null
+  longitude?: string | number | null
+  qr_slug?: string
+  created_at?: string
+  assigned?: ApiAssignedBa[]
+  assigned_bas?: number
+}
+
+function mapAssigned(list?: ApiAssignedBa[]): Store['assigned'] {
+  if (!Array.isArray(list)) return []
+  return list
+    .filter((a) => a && a.id && a.name)
+    .map((a) => {
+      const state = a.state === 'Active' || a.state === 'Break' ? a.state : 'Offline'
+      return { id: String(a.id), name: String(a.name), state }
+    })
+}
+
+function mapApiStatus(status?: string, basCount = 0): Store['status'] {
+  // Live BA roster wins: no BAs → needs BA; has BAs → covered (unless API says partial)
+  if (basCount <= 0) return 'NEEDS BA'
+  if (status === 'PARTIAL') return 'PARTIAL'
+  if (status === 'INACTIVE') return 'NEEDS BA'
+  return 'Covered'
+}
+
+function apiStoreToCreated(s: ApiStore): CreatedStore {
+  return {
+    id: s.id,
+    name: s.name,
+    city: s.city,
+    footfall: s.footfall || 'Medium',
+    address: s.address || '',
+    latitude: s.latitude == null || s.latitude === '' ? null : Number(s.latitude),
+    longitude: s.longitude == null || s.longitude === '' ? null : Number(s.longitude),
+    peakHours: s.peak_hours || DEFAULT_PEAK_HOURS,
+    contactPerson: '',
+    contactPhone: '',
+    slug: s.qr_slug || `s${s.id}-demo`,
+    createdAt: s.created_at || new Date().toISOString(),
+    code: s.code || `ST-${String(s.id).padStart(3, '0')}`,
+  }
+}
+
+function mergeStoreIntoApp(record: CreatedStore, api?: ApiStore) {
+  const view = toStore(record)
+  if (api) {
+    view.assigned = mapAssigned(api.assigned)
+    // Prefer live roster count over stale Store.bas column
+    view.bas = Math.max(
+      view.assigned.length,
+      typeof api.assigned_bas === 'number' ? api.assigned_bas : 0,
+      typeof api.bas === 'number' ? api.bas : 0,
+    )
+    view.coverage = api.coverage ?? view.coverage
+    view.todayFootfall = api.today_footfall ?? view.todayFootfall
+    view.engagement = api.engagement ?? view.engagement
+    view.conversion = api.conversion ?? view.conversion
+    view.status = mapApiStatus(api.status, view.bas)
+    view.qrCode = record.slug
+    view.code = record.code || api.code || view.code
+  }
+  const idx = stores.findIndex((s) => s.id === record.id)
+  if (idx >= 0) stores[idx] = { ...stores[idx], ...view }
+  else stores.push(view)
+
+  const cIdx = created.findIndex((c) => c.id === record.id)
+  if (cIdx >= 0) created[cIdx] = record
+  else created = [record, ...created]
+}
+
+function persistCreated() {
+  storeEpoch += 1
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(created))
+  } catch {
+    // ignore
+  }
+  listeners.forEach((l) => l())
+}
+
+/** Pull stores from Django and replace the shared list (drops deleted/local-only rows). */
+export async function syncStoresFromApi() {
+  const { apiRequest, isApiAuthenticated } = await import('./api')
+  if (!isApiAuthenticated()) return []
+  const list = await apiRequest<ApiStore[]>('/api/stores/')
+  const nextIds = new Set(list.map((s) => s.id))
+
+  // Remove stores that no longer exist on the server
+  for (let i = stores.length - 1; i >= 0; i -= 1) {
+    if (!nextIds.has(stores[i].id)) stores.splice(i, 1)
+  }
+
+  created = []
+  for (const s of list) mergeStoreIntoApp(apiStoreToCreated(s), s)
+  persistCreated()
+  return list
+}
+
+/** Create stores via API when logged in; otherwise local-only. */
+export async function createStoresAsync(
+  inputs: StoreInput[],
+  opts?: { onProgress?: (done: number, total: number, name: string) => void },
+): Promise<CreatedStore[]> {
+  const { apiRequest, isApiAuthenticated } = await import('./api')
+  if (!isApiAuthenticated()) {
+    const local = createStores(inputs)
+    opts?.onProgress?.(local.length, local.length, '')
+    return local
+  }
+
+  const added: CreatedStore[] = []
+  const total = inputs.length
+  for (let i = 0; i < inputs.length; i += 1) {
+    const input = inputs[i]
+    opts?.onProgress?.(i, total, input.name.trim())
+    const s = await apiRequest<ApiStore>('/api/stores/', {
+      method: 'POST',
+      body: {
+        name: input.name.trim(),
+        city: input.city.trim(),
+        address: input.address.trim() || `${input.city.trim()}`,
+        footfall: input.footfall,
+        peak_hours: input.peakHours.trim() || DEFAULT_PEAK_HOURS,
+        contact_name: '',
+        contact_phone: '',
+        latitude: input.latitude,
+        longitude: input.longitude,
+      },
+    })
+    const record = apiStoreToCreated(s)
+    mergeStoreIntoApp(record, s)
+    added.push(record)
+    opts?.onProgress?.(i + 1, total, input.name.trim())
+  }
+  persistCreated()
   return added
 }
 
@@ -147,20 +314,26 @@ export function shopperLink(store: Pick<Store, 'id' | 'qrCode' | 'name' | 'city'
   return `${window.location.origin}${shopperPath(store)}`
 }
 
-export type ShopperStore = { id: number | null; name: string; city: string }
+export type ShopperStore = { id: number | null; name: string; city: string; slug: string }
 
 const SHOPPER_KEY = 'shopper-store'
 
 /** Works out which store a scanned link is for, and remembers it for this shopper session. */
 export function enterShopperStore(slug: string, params: URLSearchParams): ShopperStore | null {
-  const id = Number(/^s(\d+)-/.exec(slug)?.[1])
+  const cleanSlug = (slug || '').trim()
+  const id = Number(/^s(\d+)-/.exec(cleanSlug)?.[1])
   const known = Number.isFinite(id) ? stores.find((s) => s.id === id) : undefined
   const name = known?.name ?? params.get('store') ?? ''
-  const shopperStore = name
-    ? { id: known?.id ?? null, name, city: known?.city ?? params.get('city') ?? '' }
-    : null
+  const city = known?.city ?? params.get('city') ?? ''
+  if (!cleanSlug && !name) return null
+  const shopperStore: ShopperStore = {
+    id: known?.id ?? (Number.isFinite(id) ? id : null),
+    name: name || cleanSlug,
+    city,
+    slug: cleanSlug || (known ? storeSlug(known) : ''),
+  }
   try {
-    if (shopperStore) sessionStorage.setItem(SHOPPER_KEY, JSON.stringify(shopperStore))
+    sessionStorage.setItem(SHOPPER_KEY, JSON.stringify(shopperStore))
   } catch {
     // ignore
   }
@@ -170,7 +343,21 @@ export function enterShopperStore(slug: string, params: URLSearchParams): Shoppe
 export function getShopperStore(): ShopperStore | null {
   try {
     const raw = sessionStorage.getItem(SHOPPER_KEY)
-    return raw ? (JSON.parse(raw) as ShopperStore) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<ShopperStore>
+    if (!parsed || (!parsed.slug && !parsed.name)) return null
+    // Backfill slug for older sessions that only stored name/city
+    let slug = parsed.slug || ''
+    if (!slug && parsed.id != null) {
+      const known = stores.find((s) => s.id === parsed.id)
+      if (known) slug = storeSlug(known)
+    }
+    return {
+      id: parsed.id ?? null,
+      name: parsed.name || slug,
+      city: parsed.city || '',
+      slug,
+    }
   } catch {
     return null
   }
@@ -192,13 +379,24 @@ const COLUMNS = [
   { key: 'name', header: 'Store name *', width: 30 },
   { key: 'city', header: 'City *', width: 16 },
   { key: 'footfall', header: 'Footfall', width: 12 },
-  { key: 'address', header: 'Address', width: 36 },
   { key: 'latitude', header: 'Latitude', width: 12 },
   { key: 'longitude', header: 'Longitude', width: 12 },
-  { key: 'peakHours', header: 'Peak hours', width: 16 },
-  { key: 'contactPerson', header: 'Contact person', width: 20 },
-  { key: 'contactPhone', header: 'Contact phone', width: 18 },
 ] as const
+
+const PEAK_HOUR_OPTIONS = [
+  '10 AM — 1 PM',
+  '12 PM — 3 PM',
+  '2 PM — 6 PM',
+  '4 PM — 8 PM',
+  '5 PM — 9 PM',
+  '6 PM — 10 PM',
+  '11 AM — 2 PM',
+  '3 PM — 7 PM',
+] as const
+
+function randomPeakHours() {
+  return PEAK_HOUR_OPTIONS[Math.floor(Math.random() * PEAK_HOUR_OPTIONS.length)]
+}
 
 /** Downloads the .xlsx a user fills in to create many stores at once. */
 export async function downloadStoreTemplate() {
@@ -210,14 +408,15 @@ export async function downloadStoreTemplate() {
     ['How to fill the store template'],
     [],
     [`1. Add one store per row on the "${SHEET}" sheet, starting on row 2. Do not change the header row.`],
-    ['2. Store name and City are required. Everything else is optional.'],
-    [`3. Footfall must be High, Medium or Low (blank = Medium). Peak hours is free text (blank = ${DEFAULT_PEAK_HOURS}).`],
-    ['4. Latitude and Longitude are decimal numbers, e.g. 24.8607 and 67.0011.'],
-    ['5. A store that already exists (same name and city) is skipped.'],
-    ['6. Save the file, then upload it on the Stores page. Each store gets its own shopper QR code.'],
+    ['2. Required columns: Store name, City, Latitude, Longitude.'],
+    ['3. Footfall is optional (High / Medium / Low). Blank = Medium. Address and Peak hours are ignored if present.'],
+    ['4. Address defaults to the city. Peak hours are assigned randomly.'],
+    ['5. Latitude and Longitude are optional. Blank or "-" creates the store without map coordinates.'],
+    ['6. A store that already exists (same name and city) is skipped.'],
+    ['7. Save the file, then upload it on the Stores page. Each store gets its own shopper QR code.'],
     [],
     COLUMNS.map((c) => c.header),
-    ['Carrefour Johar Town', 'Lahore', 'High', 'Main Boulevard, Johar Town', 31.4697, 74.2728, '5 PM — 9 PM', 'Ali Raza', '0300-1234567'],
+    ['Carrefour Johar Town', 'Lahore', 'High', 31.4697, 74.2728],
   ])
   help['!cols'] = COLUMNS.map((c) => ({ wch: c.width }))
 
@@ -228,9 +427,31 @@ export async function downloadStoreTemplate() {
 }
 
 export type ParsedStoreRow = { row: number; input: StoreInput }
-export type StoreParseResult = { rows: ParsedStoreRow[]; errors: string[] }
+export type StoreParseResult = {
+  rows: ParsedStoreRow[]
+  errors: string[]
+  /** Rows skipped because lat/lng were "-" or blank. */
+  skippedNoCoords?: number
+}
 
 const headerKey = (h: unknown) => String(h ?? '').replace('*', '').trim().toLowerCase()
+
+function cellByHeaders(r: unknown[], col: Map<string, number>, headers: string[]) {
+  for (const header of headers) {
+    const i = col.get(header)
+    if (i == null || i < 0) continue
+    const v = r[i]
+    const s = v === undefined || v === null ? '' : String(v).trim()
+    if (s) return s
+  }
+  return ''
+}
+
+/** Blank, dash, or N/A → no coordinates (skip store). */
+function isMissingCoord(raw: string) {
+  const t = raw.trim().toLowerCase()
+  return !t || t === '-' || t === '—' || t === '–' || t === 'n/a' || t === 'na' || t === 'null' || t === 'none'
+}
 
 /** Reads a filled template. Valid rows are returned even when others have problems. */
 export async function parseStoreFile(file: File): Promise<StoreParseResult> {
@@ -245,7 +466,12 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
     return { rows: [], errors: ['This file could not be read. Please upload the downloaded .xlsx template.'] }
   }
 
-  const headerAt = table.findIndex((r) => r.some((c) => headerKey(c) === 'store name'))
+  const headerAt = table.findIndex((r) =>
+    r.some((c) => {
+      const k = headerKey(c)
+      return k === 'store name' || k === 'name' || k === 'store'
+    }),
+  )
   if (headerAt === -1) {
     return {
       rows: [],
@@ -254,10 +480,6 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
   }
   const col = new Map<string, number>()
   table[headerAt].forEach((h, i) => col.set(headerKey(h), i))
-  const cell = (r: unknown[], header: string) => {
-    const v = r[col.get(header) ?? -1]
-    return v === undefined || v === null ? '' : String(v).trim()
-  }
 
   const rows: ParsedStoreRow[] = []
   const errors: string[] = []
@@ -267,28 +489,48 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
     const rowNo = headerAt + i + 2
     if (r.every((c) => String(c ?? '').trim() === '')) return
 
-    const name = cell(r, 'store name')
-    const city = cell(r, 'city')
+    const name = cellByHeaders(r, col, ['store name', 'name', 'store'])
+    const city = cellByHeaders(r, col, ['city', 'town'])
     const problems: string[] = []
     if (!name) problems.push('Store name is required')
     if (!city) problems.push('City is required')
 
-    const footRaw = cell(r, 'footfall')
-    const footfall = FOOTFALLS.find((f) => f.toLowerCase() === footRaw.toLowerCase())
-    if (footRaw && !footfall) problems.push(`Footfall must be High, Medium or Low (found "${footRaw}")`)
-
-    const coord = (header: string, limit: number) => {
-      const text = cell(r, header)
-      if (!text) return null
-      const n = Number(text)
-      if (!Number.isFinite(n) || Math.abs(n) > limit) {
-        problems.push(`${header[0].toUpperCase()}${header.slice(1)} must be a number between -${limit} and ${limit} (found "${text}")`)
-        return null
-      }
-      return n
+    // Footfall from Excel when present; blank → Medium. Address ignored.
+    const footRaw = cellByHeaders(r, col, ['footfall', 'foot fall', 'traffic'])
+    let footfall: Footfall = 'Medium'
+    if (footRaw && !isMissingCoord(footRaw)) {
+      const matched = FOOTFALLS.find((f) => f.toLowerCase() === footRaw.toLowerCase())
+      if (matched) footfall = matched
+      else problems.push(`Footfall must be High, Medium or Low (found "${footRaw}")`)
     }
-    const latitude = coord('latitude', 90)
-    const longitude = coord('longitude', 180)
+
+    const latRaw = cellByHeaders(r, col, ['latitude', 'lat'])
+    const lngRaw = cellByHeaders(r, col, ['longitude', 'long', 'lng', 'lon'])
+
+    let latitude: number | null = null
+    let longitude: number | null = null
+
+    // "-" / blank → create store without coordinates
+    if (!isMissingCoord(latRaw) || !isMissingCoord(lngRaw)) {
+      const parseCoord = (text: string, limit: number, label: string) => {
+        if (isMissingCoord(text)) return null
+        const n = Number(text)
+        if (!Number.isFinite(n) || Math.abs(n) > limit) {
+          problems.push(`${label} must be a number between -${limit} and ${limit} (found "${text}")`)
+          return null
+        }
+        return n
+      }
+      // Only parse when at least one side has a value; if one is missing, leave both null
+      if (!isMissingCoord(latRaw) && !isMissingCoord(lngRaw)) {
+        latitude = parseCoord(latRaw, 90, 'Latitude')
+        longitude = parseCoord(lngRaw, 180, 'Longitude')
+      } else if (!isMissingCoord(latRaw) || !isMissingCoord(lngRaw)) {
+        // Partial coords — still create store, but don't save incomplete pair
+        latitude = null
+        longitude = null
+      }
+    }
 
     if (name && city) {
       const key = `${norm(name)}|${norm(city)}`
@@ -306,19 +548,19 @@ export async function parseStoreFile(file: File): Promise<StoreParseResult> {
       input: {
         name,
         city,
-        footfall: footfall ?? 'Medium',
-        address: cell(r, 'address'),
+        footfall,
+        address: city, // address ignored from Excel
         latitude,
         longitude,
-        peakHours: cell(r, 'peak hours') || DEFAULT_PEAK_HOURS,
-        contactPerson: cell(r, 'contact person'),
-        contactPhone: cell(r, 'contact phone'),
+        peakHours: randomPeakHours(),
       },
     })
   })
 
-  if (rows.length === 0 && errors.length === 0) errors.push('No stores found. Add one store per row under the header.')
-  return { rows, errors }
+  if (rows.length === 0 && errors.length === 0) {
+    errors.push('No stores found. Add one store per row under the header.')
+  }
+  return { rows, errors, skippedNoCoords: 0 }
 }
 
 /** Downloads a sheet of store names with their shopper links, e.g. to print QR posters. */

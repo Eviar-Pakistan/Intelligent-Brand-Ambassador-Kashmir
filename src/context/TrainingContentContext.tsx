@@ -9,6 +9,19 @@ import {
   type ReactNode,
 } from 'react'
 import defaultTrainingVideo from '../assets/kashmir-cooking-oil-.mp4'
+import { isApiAuthenticated } from '../lib/api'
+import {
+  baPublicTrainingVideoUrl,
+  deleteTrainingVideoFromApi,
+  fetchTrainingVideosFromApi,
+  mapApiQuestions,
+  uploadTrainingVideoToApi,
+} from '../lib/trainingApi'
+import {
+  getInviteTraining,
+  subscribeInviteTraining,
+  type InviteTrainingPayload,
+} from '../lib/baAccounts'
 
 /** The built-in training video and question. Bundled as a static asset, so it can't be lost
  *  or deleted — it is always available even before Head Office uploads anything of their own. */
@@ -31,11 +44,21 @@ export type TrainingModule = {
 
 type TrainingContentContextValue = {
   modules: TrainingModule[]
+  /** Prefer this for BA onboarding (API invite video → HO upload → default). */
+  activeModule: TrainingModule | undefined
+  loading: boolean
+  refreshFromApi: () => Promise<void>
   addModule: (
     module: Omit<TrainingModule, 'id' | 'createdAt'>,
     videoFile?: File,
   ) => TrainingModule
-  removeModule: (id: string) => void
+  uploadModule: (input: {
+    title: string
+    description: string
+    videoFile: File
+    questions: string[]
+  }) => Promise<{ module: TrainingModule; warning?: string }>
+  removeModule: (id: string) => void | Promise<void>
 }
 
 const TrainingContentContext = createContext<TrainingContentContextValue | null>(null)
@@ -101,10 +124,51 @@ function readStoredModules(): StoredModule[] | null {
   }
 }
 
+function moduleFromInvite(training: InviteTrainingPayload | null): TrainingModule | null {
+  if (!training?.has_video) return null
+  const questions = mapApiQuestions(training.questions)
+  return {
+    id: 'api-active-invite',
+    title: training.original_name || 'BA training video',
+    description: training.transcript_preview || '',
+    videoName: training.original_name || 'training.mp4',
+    videoUrl: training.video_url || baPublicTrainingVideoUrl(),
+    questions: questions.length
+      ? questions
+      : DEFAULT_MODULE.questions,
+    createdAt: training.uploaded_at || new Date().toISOString(),
+  }
+}
+
 export function TrainingContentProvider({ children }: { children: ReactNode }) {
   // Only Head-Office-uploaded modules live here; the default module is appended below.
   const [customModules, setCustomModules] = useState<TrainingModule[]>([])
+  const [apiModules, setApiModules] = useState<TrainingModule[]>([])
+  const [inviteSnap, setInviteSnap] = useState<InviteTrainingPayload | null>(() => getInviteTraining())
+  const [loading, setLoading] = useState(false)
   const hydrated = useRef(false)
+
+  useEffect(() => subscribeInviteTraining(() => setInviteSnap(getInviteTraining())), [])
+
+  const refreshFromApi = useCallback(async () => {
+    if (!isApiAuthenticated()) {
+      setApiModules([])
+      return
+    }
+    setLoading(true)
+    try {
+      const list = await fetchTrainingVideosFromApi()
+      setApiModules(list)
+    } catch {
+      // keep previous / local modules
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshFromApi()
+  }, [refreshFromApi])
 
   useEffect(() => {
     let cancelled = false
@@ -160,23 +224,100 @@ export function TrainingContentProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const removeModule = useCallback((id: string) => {
-    // the default module isn't in customModules, so this can never remove it
-    deleteVideo(id).catch(() => {})
-    setCustomModules((prev) => {
-      const target = prev.find((m) => m.id === id)
-      if (target?.videoUrl) URL.revokeObjectURL(target.videoUrl)
-      return prev.filter((m) => m.id !== id)
-    })
-  }, [])
+  const uploadModule = useCallback(
+    async (input: {
+      title: string
+      description: string
+      videoFile: File
+      questions: string[]
+    }) => {
+      if (isApiAuthenticated()) {
+        const { module, warning } = await uploadTrainingVideoToApi({
+          file: input.videoFile,
+          questions: input.questions,
+        })
+        // Prefer HO title in the list UI when provided
+        const withTitle: TrainingModule = {
+          ...module,
+          title: input.title.trim() || module.title,
+          description: input.description.trim() || module.description,
+        }
+        await refreshFromApi()
+        return { module: withTitle, warning }
+      }
+      const videoUrl = URL.createObjectURL(input.videoFile)
+      const module = addModule(
+        {
+          title: input.title.trim(),
+          description: input.description.trim(),
+          videoName: input.videoFile.name,
+          videoUrl,
+          questions: input.questions.map((prompt, i) => ({
+            id: `q-${Date.now()}-${i}`,
+            prompt: prompt.trim(),
+          })),
+        },
+        input.videoFile,
+      )
+      return { module }
+    },
+    [addModule, refreshFromApi],
+  )
 
-  // Newest upload first, so it's what `modules.find((m) => m.videoUrl)` picks; the default
-  // module is always last, so it's the fallback whenever nothing has been uploaded yet.
-  const modules = useMemo(() => [...customModules, DEFAULT_MODULE], [customModules])
+  const removeModule = useCallback(
+    async (id: string) => {
+      if (id === DEFAULT_MODULE_ID) return
+      if (id.startsWith('api-')) {
+        const numericId = Number(id.replace(/^api-/, ''))
+        if (!Number.isFinite(numericId) || numericId < 1) return
+        await deleteTrainingVideoFromApi(numericId)
+        await refreshFromApi()
+        return
+      }
+      deleteVideo(id).catch(() => {})
+      setCustomModules((prev) => {
+        const target = prev.find((m) => m.id === id)
+        if (target?.videoUrl) URL.revokeObjectURL(target.videoUrl)
+        return prev.filter((m) => m.id !== id)
+      })
+    },
+    [refreshFromApi],
+  )
+
+  const inviteModule = useMemo(() => moduleFromInvite(inviteSnap), [inviteSnap])
+
+  // API uploads first, then local uploads. Default fallback only when nothing else exists.
+  const modules = useMemo(() => {
+    const seen = new Set<string>()
+    const out: TrainingModule[] = []
+    const primary = [...apiModules, ...customModules]
+    for (const m of primary) {
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
+      out.push(m)
+    }
+    if (out.length === 0) {
+      out.push(DEFAULT_MODULE)
+    }
+    return out
+  }, [apiModules, customModules])
+
+  const activeModule = useMemo(() => {
+    if (inviteModule?.videoUrl) return inviteModule
+    return modules.find((m) => m.videoUrl) ?? modules[0]
+  }, [inviteModule, modules])
 
   const value = useMemo(
-    () => ({ modules, addModule, removeModule }),
-    [modules, addModule, removeModule],
+    () => ({
+      modules,
+      activeModule,
+      loading,
+      refreshFromApi,
+      addModule,
+      uploadModule,
+      removeModule,
+    }),
+    [modules, activeModule, loading, refreshFromApi, addModule, uploadModule, removeModule],
   )
 
   return (

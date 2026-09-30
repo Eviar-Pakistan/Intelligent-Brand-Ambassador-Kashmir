@@ -12,7 +12,7 @@ import { useRole, type Role } from '../context/AppContext'
 import { cn } from './ui'
 import { useBrand } from '../context/BrandContext'
 import { BaShiftProvider } from '../context/BaShiftContext'
-import { baSignOut, useBaSession } from '../lib/baAccounts'
+import { baSignOut, isBaCertified, useBaSession } from '../lib/baAccounts'
 
 /** Sync active role from URL prefix so each experience stays isolated. */
 export function RoleSync({ role }: { role: Role }) {
@@ -32,19 +32,13 @@ const baTabs = [
 
 export function BaShell() {
   const navigate = useNavigate()
-  const { pathname } = useLocation()
   const { brand } = useBrand()
   const { account } = useBaSession()
 
   if (!account) return <Navigate to="/login" replace />
 
-  // A newly created BA can only use Training until they pass the assessment
-  const onboarding = account.status !== 'Certified'
-  if (onboarding && pathname !== '/ba/training') return <Navigate to="/ba/training" replace />
-  const locked = onboarding
-
   return (
-    <BaShiftProvider>
+    <BaShiftProvider inviteToken={account.accessToken} enabled>
       <div className="flex min-h-[100dvh] flex-col bg-slate-50">
         <RoleSync role="ba" />
         <header className="safe-top sticky top-0 z-20 border-b border-slate-200 bg-white">
@@ -54,7 +48,12 @@ export function BaShell() {
                 {brand.productName} · BA
               </div>
               <div className="truncate text-sm font-bold text-slate-900">
-                {account.name} · {account.status === 'Certified' ? 'Certified' : 'Training'}
+                {account.name} ·{' '}
+                {account.status === 'Deployed'
+                  ? 'Deployed'
+                  : isBaCertified(account.status)
+                    ? 'Certified'
+                    : account.status}
               </div>
             </div>
             <button
@@ -75,18 +74,7 @@ export function BaShell() {
 
         <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex h-[3.75rem] w-full max-w-lg items-stretch px-1 pb-[env(safe-area-inset-bottom)]">
-            {baTabs.map(({ to, label, icon: Icon, end }) =>
-              locked && to !== '/ba/training' ? (
-                <span
-                  key={to}
-                  aria-disabled
-                  title="Complete the training assessment to unlock"
-                  className="flex min-w-0 flex-1 cursor-not-allowed flex-col items-center justify-center gap-1 px-1 text-[11px] font-semibold text-slate-300"
-                >
-                  <Icon size={20} strokeWidth={2.25} />
-                  <span className="leading-none">{label}</span>
-                </span>
-              ) : (
+            {baTabs.map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -101,8 +89,7 @@ export function BaShell() {
                 <Icon size={20} strokeWidth={2.25} />
                 <span className="leading-none">{label}</span>
               </NavLink>
-              ),
-            )}
+            ))}
           </div>
         </nav>
       </div>

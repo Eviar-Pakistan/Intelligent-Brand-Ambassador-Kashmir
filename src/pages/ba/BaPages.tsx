@@ -12,13 +12,15 @@ import {
   Trophy,
   Upload,
 } from 'lucide-react'
-import { buildIncentiveRoster, formatPkr } from '../../lib/incentives'
+import { fetchBaOwnIncentive, formatPkr, type IncentiveBreakdown } from '../../lib/incentives'
 import { useBrand } from '../../context/BrandContext'
-import { formatDate, formatTime, useBaShift } from '../../context/BaShiftContext'
+import { formatDate, formatTime, formatCoord, useBaShift } from '../../context/BaShiftContext'
 import { useTrainingContent } from '../../context/TrainingContentContext'
 import { downloadBaReportTemplate, parseBaReportFile, saveBaReport } from '../../lib/baReport'
 import { Modal } from '../../components/ui'
-import { useBaSession } from '../../lib/baAccounts'
+import { useBaSession, isBaCertified, syncAssessmentResultToApi, updateBaAccount } from '../../lib/baAccounts'
+import { formatMonthLabel, fetchBaOwnTargets, monthInputValue, sumBaTargetsForMonth } from '../../lib/baTargets'
+import { submitBaDailyReportApi } from '../../lib/earlyCheckoutApi'
 import { BaOnboarding } from './BaOnboarding'
 
 function greetingFor(hour: number) {
@@ -53,17 +55,29 @@ export function BaHomePage() {
   const navigate = useNavigate()
   const {
     city,
+    storeLabel,
     shiftLabel,
     shiftEndLabel,
+    storeLat,
+    storeLng,
+    checkInLat,
+    checkInLng,
+    hasShift,
+    shiftMessage,
+    loading: shiftLoading,
+    busy: shiftBusy,
+    error: shiftError,
+    upcoming,
     checkedIn,
+    checkedOut,
     checkInAt,
     canCheckOut,
     reportSubmitted,
     isEarlyCheckout,
     checkIn,
     checkOut,
-    setEarlyCheckoutReason,
     markReportSubmitted,
+    refresh: refreshShift,
   } = useBaShift()
 
   const [now, setNow] = useState(() => new Date())
@@ -77,20 +91,72 @@ export function BaHomePage() {
   const [excelBusy, setExcelBusy] = useState(false)
   const excelInputRef = useRef<HTMLInputElement>(null)
 
+  // Reload today's shift whenever Home opens (any BA status).
+  useEffect(() => {
+    let cancelled = false
+    async function loadShift() {
+      if (!account) return
+      if (
+        account.result?.certified &&
+        account.accessToken &&
+        !account.accessToken.startsWith('demo-')
+      ) {
+        try {
+          await syncAssessmentResultToApi(account, account.result)
+          if (!cancelled && !isBaCertified(account.status)) {
+            updateBaAccount(account.id, { status: 'Certified' })
+          }
+        } catch (err) {
+          console.warn('[ba] certification sync on Home failed', err)
+        }
+      }
+      if (!cancelled) await refreshShift()
+    }
+    void loadShift()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.id, account?.accessToken])
+
   async function saveExcelUpload(file: File | undefined) {
     if (!file) return
     setExcelBusy(true)
     const result = await parseBaReportFile(file)
-    setExcelBusy(false)
     if ('errors' in result) {
+      setExcelBusy(false)
       setExcelErrors(result.errors)
       return
     }
     setExcelErrors([])
     setExcelFileName(file.name)
     saveBaReport(result.data, file.name)
+
+    const token =
+      account?.accessToken && !account.accessToken.startsWith('demo-')
+        ? account.accessToken
+        : undefined
+    if (token) {
+      try {
+        await submitBaDailyReportApi({
+          token,
+          stock: result.data.stock,
+          sales: result.data.sales,
+          otherBrands: result.data.otherBrands,
+          source: 'excel',
+          fileName: file.name,
+          storeId: account?.storeId ?? undefined,
+        })
+      } catch (err) {
+        setExcelBusy(false)
+        setExcelErrors([err instanceof Error ? err.message : 'Could not save report to server.'])
+        return
+      }
+    }
+
+    setExcelBusy(false)
     if (!reportSubmitted) {
-      checkOut()
+      checkOut(earlyReason.trim() || undefined)
       markReportSubmitted()
     }
   }
@@ -105,9 +171,12 @@ export function BaHomePage() {
   }
 
   function submitEarlyReason() {
-    const reason = earlyReason.trim()
-    if (reason.length < 8) return
-    setEarlyCheckoutReason(reason)
+    if (earlyReason.trim().length < 8) return
+    try {
+      sessionStorage.setItem('ba-early-leave-reason', earlyReason.trim())
+    } catch {
+      // ignore
+    }
     setEarlyReasonOpen(false)
     setCheckoutWarningOpen(true)
   }
@@ -211,71 +280,133 @@ export function BaHomePage() {
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <h3 className="text-sm font-bold text-slate-900">Today&apos;s Shift</h3>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-100 to-brand-200 text-sm font-bold text-brand-700 ring-2 ring-white">
-            {initialsOf(baName)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold text-slate-900">Store #12, {city}</div>
-            <div className="text-sm text-slate-500">{shiftLabel}</div>
-          </div>
-          {!checkedIn ? (
-            <button
-              type="button"
-              onClick={checkIn}
-              className="shrink-0 rounded-full bg-navy-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
-            >
-              Check In
-            </button>
-          ) : (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
-              <CheckCircle2 size={14} />
-              Checked In
-            </span>
-          )}
-        </div>
-
-        {checkedIn && checkInAt && (
-          <div className="mt-3 rounded-xl bg-[#faf6ee] px-3 py-2.5 text-sm text-slate-700">
-            <span className="font-medium text-slate-500">Check-in time</span>
-            <div className="mt-0.5 font-semibold tabular-nums text-slate-900">
-              {formatTime(checkInAt)}
-            </div>
-          </div>
-        )}
-
-        {checkedIn && !reportSubmitted && (
+        {shiftLoading ? (
+          <p className="mt-3 text-sm text-slate-500">Loading shift…</p>
+        ) : (
           <>
-            <button
-              type="button"
-              disabled={!canCheckOut}
-              onClick={handleCheckOutClick}
-              className="mt-3 w-full rounded-2xl bg-navy-900 py-3 text-sm font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
-            >
-              Check Out
-            </button>
-            {!canCheckOut && (
-              <p className="mt-2 text-center text-xs text-slate-500">
-                Check Out enables 10 seconds after check-in
+            {shiftError && (
+              <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{shiftError}</p>
+            )}
+            {!hasShift && (
+              <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {shiftMessage || 'No shift scheduled for today.'}
               </p>
             )}
-            {canCheckOut && isEarlyCheckout && (
-              <p className="mt-2 text-center text-xs text-amber-700">
-                Shift ends at {shiftEndLabel}. Early checkout requires a reason.
-              </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-100 to-brand-200 text-sm font-bold text-brand-700 ring-2 ring-white">
+                {initialsOf(baName)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-slate-900">{storeLabel}</div>
+                <div className="text-sm text-slate-500">{shiftLabel}</div>
+                {(storeLat != null && storeLng != null) ? (
+                  <div className="mt-0.5 flex items-center gap-1 text-xs tabular-nums text-slate-400">
+                    <MapPin size={12} className="shrink-0" />
+                    <span>
+                      {formatCoord(storeLat)}, {formatCoord(storeLng)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-0.5 text-xs text-slate-400">Location after store assignment</div>
+                )}
+              </div>
+              {hasShift && !checkedIn && !checkedOut ? (
+                <button
+                  type="button"
+                  disabled={shiftBusy}
+                  onClick={checkIn}
+                  className="shrink-0 rounded-full bg-navy-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
+                >
+                  {shiftBusy ? 'Checking in…' : 'Check In'}
+                </button>
+              ) : null}
+              {hasShift && checkedIn && !checkedOut ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
+                  <CheckCircle2 size={14} />
+                  Checked In
+                </span>
+              ) : null}
+              {hasShift && checkedOut ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                  <CheckCircle2 size={14} />
+                  Done today
+                </span>
+              ) : null}
+            </div>
+
+            {checkedIn && checkInAt && (
+              <div className="mt-3 rounded-xl bg-[#faf6ee] px-3 py-2.5 text-sm text-slate-700">
+                <span className="font-medium text-slate-500">Check-in time</span>
+                <div className="mt-0.5 font-semibold tabular-nums text-slate-900">
+                  {formatTime(checkInAt)}
+                </div>
+                {(checkInLat != null || checkInLng != null) && (
+                  <div className="mt-1 text-xs tabular-nums text-slate-500">
+                    GPS {formatCoord(checkInLat) ?? '—'}, {formatCoord(checkInLng) ?? '—'}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {hasShift && checkedIn && !checkedOut && (
+              <>
+                <button
+                  type="button"
+                  disabled={!canCheckOut || shiftBusy}
+                  onClick={handleCheckOutClick}
+                  className="mt-3 w-full rounded-2xl bg-navy-900 py-3 text-sm font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                >
+                  {shiftBusy ? 'Checking out…' : 'Check Out'}
+                </button>
+                {!canCheckOut && (
+                  <p className="mt-2 text-center text-xs text-slate-500">
+                    Check Out enables 10 seconds after check-in
+                  </p>
+                )}
+                {canCheckOut && isEarlyCheckout && (
+                  <p className="mt-2 text-center text-xs text-amber-700">
+                    Shift ends at {shiftEndLabel}. Early checkout requires a reason.
+                  </p>
+                )}
+              </>
+            )}
+
+            {checkedOut && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+                <CheckCircle2 size={16} />
+                Checked out · Check In returns tomorrow
+              </div>
+            )}
+
+            {reportSubmitted && !checkedOut && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+                <CheckCircle2 size={16} />
+                Today&apos;s report submitted
+              </div>
+            )}
+
+            {upcoming.length > 0 && (
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  Upcoming
+                </div>
+                <ul className="mt-2 space-y-1.5">
+                  {upcoming.slice(0, 5).map((s) => (
+                    <li key={s.id} className="flex justify-between gap-2 text-sm text-slate-700">
+                      <span className="truncate">
+                        {s.date} · {s.storeName}
+                      </span>
+                      <span className="shrink-0 text-slate-500">{s.shift}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </>
         )}
-
-        {reportSubmitted && (
-          <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
-            <CheckCircle2 size={16} />
-            Today&apos;s report submitted
-          </div>
-        )}
       </div>
 
-      {checkedIn && (
+      {checkedIn && !checkedOut && (
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
           <div className="flex items-center gap-2">
             <FileSpreadsheet size={18} className="text-brand-600" />
@@ -552,9 +683,23 @@ const TRAINING_TOTAL = trainingScenarios.length
 
 export function BaTrainingPage() {
   const { account } = useBaSession()
-  // A BA still onboarding goes through the video + verbal assessment; once certified,
-  // the Training tab opens the fuller scenario library instead.
-  if (account && account.status !== 'Certified') return <BaOnboarding account={account} />
+  if (!account) return null
+
+  // Still onboarding, or certified but assessment report not dismissed yet.
+  const reportPending =
+    isBaCertified(account.status) &&
+    !!account.result &&
+    (() => {
+      try {
+        return sessionStorage.getItem(`ba-report-dismissed-${account.id}`) !== '1'
+      } catch {
+        return true
+      }
+    })()
+
+  if (!isBaCertified(account.status) || reportPending) {
+    return <BaOnboarding account={account} />
+  }
   return <BaTrainingLibrary />
 }
 
@@ -760,16 +905,72 @@ function BaTrainingLibrary() {
 }
 
 export function BaPerformancePage() {
-  const me = buildIncentiveRoster().find((r) => r.baId === 'ayesha')
-  const rank = me?.rank ?? 2
-  const basePay = me?.base ?? 0
-  const incentive = me?.incentive ?? 0
-  const totalPkr = basePay + incentive
-  const daysWorked = 18
-  const targetKg = 120
-  const salesKg = 96
-  const achievementPct = Math.round((salesKg / targetKg) * 100)
-  const sku = 'Pouch 1LTR'
+  const { account } = useBaSession()
+  const [pay, setPay] = useState<IncentiveBreakdown | null>(null)
+  const [payLoading, setPayLoading] = useState(false)
+  const month = monthInputValue()
+  const [liveTarget, setLiveTarget] = useState<{
+    targetKg: number
+    salesKg: number
+    skus: string[]
+  } | null>(null)
+
+  useEffect(() => {
+    const token = account?.accessToken
+    if (!token) {
+      setPay(null)
+      setLiveTarget(null)
+      return
+    }
+    let cancelled = false
+    setPayLoading(true)
+    void fetchBaOwnTargets(token, month)
+      .then((data) => {
+        if (!cancelled) {
+          setLiveTarget({
+            targetKg: data.targetKg,
+            salesKg: data.salesKg,
+            skus: data.skus,
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLiveTarget(null)
+      })
+    void fetchBaOwnIncentive(token)
+      .then((data) => {
+        if (!cancelled) setPay(data)
+      })
+      .catch(() => {
+        if (!cancelled) setPay(null)
+      })
+      .finally(() => {
+        if (!cancelled) setPayLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account?.accessToken, month])
+
+  // Live API only — never fall back to demo roster (that caused Rank #2 / fake pay).
+  const rank = pay?.rank ?? 0
+  const basePay = pay?.base ?? 0
+  const incentive = pay?.incentive ?? 0
+  const totalPkr = pay?.totalPkr ?? 0
+  const daysWorked = pay?.daysWorked ?? 0
+  const rating =
+    pay?.rating != null && Number.isFinite(pay.rating)
+      ? pay.rating.toFixed(1)
+      : account?.result?.quality != null
+        ? (Math.round((account.result.quality / 20) * 10) / 10).toFixed(1)
+        : '—'
+
+  const monthTarget = account ? sumBaTargetsForMonth(account.id, month) : null
+  const targetKg = liveTarget?.targetKg ?? monthTarget?.targetKg ?? 0
+  const salesKg = liveTarget?.salesKg ?? monthTarget?.salesKg ?? 0
+  const achievementPct = targetKg > 0 ? Math.round((salesKg / targetKg) * 100) : 0
+  const sku = liveTarget?.skus[0] || monthTarget?.skus[0] || '—'
+  const monthLabel = formatMonthLabel(month)
 
   return (
     <div className="space-y-4 bg-[#f7f4ec] p-4 pb-6">
@@ -783,8 +984,10 @@ export function BaPerformancePage() {
           <div>
             <div className="text-xs font-semibold tracking-wide text-gold-400 uppercase">Your rank</div>
             <div className="mt-1 flex items-baseline gap-1">
-              <span className="text-5xl font-black text-gold-400">#{rank}</span>
-              <span className="text-sm text-white/80">Lahore</span>
+              <span className="text-5xl font-black text-gold-400">
+                {payLoading ? '…' : rank > 0 ? `#${rank}` : '—'}
+              </span>
+              <span className="text-sm text-white/80">{account?.city || '—'}</span>
             </div>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gold-500/20 ring-2 ring-gold-400/40">
@@ -793,14 +996,16 @@ export function BaPerformancePage() {
         </div>
         <div className="mt-4 rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
           <div className="text-[10px] font-medium text-white/70 uppercase">Earned</div>
-          <div className="mt-0.5 text-lg font-bold text-gold-400">{formatPkr(totalPkr)}</div>
+          <div className="mt-0.5 text-lg font-bold text-gold-400">
+            {payLoading ? '…' : formatPkr(totalPkr)}
+          </div>
         </div>
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <div className="flex items-start justify-between gap-2">
           <div className="text-sm font-bold text-slate-900">Target vs achievement</div>
-          <div className="shrink-0 text-xs text-slate-400">September 2026</div>
+          <div className="shrink-0 text-xs text-slate-400">{monthLabel}</div>
         </div>
         <div className="mt-4 grid grid-cols-4 gap-2 text-center">
           <div>
@@ -829,15 +1034,15 @@ export function BaPerformancePage() {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <BaStatPill label="Rating" value="4.8" />
-        <BaStatPill label="Days worked" value={String(daysWorked)} />
+        <BaStatPill label="Rating" value={rating} />
+        <BaStatPill label="Days worked" value={payLoading ? '…' : String(daysWorked)} />
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <div className="text-sm font-bold text-slate-900">PKR breakdown</div>
         <div className="mt-3 space-y-2.5">
-          <BaPayRow label="Base pay" value={basePay} />
-          <BaPayRow label="Incentive" value={incentive} />
+          <BaPayRow label="BA salary" value={basePay} />
+          <BaPayRow label="Target Ach + allowances" value={incentive} />
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
           <span className="text-sm font-bold text-slate-900">Total earned</span>

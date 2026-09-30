@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { baSignIn, findBaByAccessToken } from '../../lib/baAccounts'
+import { baSignIn, findBaByAccessToken, resolveBaInvite } from '../../lib/baAccounts'
 
 /** Opens one ambassador's account from their personal link. No password. */
 export function BaAccessPage() {
@@ -9,13 +9,42 @@ export function BaAccessPage() {
   const [missing, setMissing] = useState(false)
 
   useEffect(() => {
-    const account = token ? findBaByAccessToken(token) : null
-    if (!account) {
-      setMissing(true)
-      return
+    let cancelled = false
+
+    async function open() {
+      if (!token) {
+        setMissing(true)
+        return
+      }
+
+      // Always resolve against the backend when possible so training video metadata is fresh.
+      // Demo tokens (demo-*) fall back to local accounts.
+      let account =
+        token.startsWith('demo-')
+          ? findBaByAccessToken(token)
+          : await resolveBaInvite(token)
+
+      if (!account && token.startsWith('demo-')) {
+        account = await resolveBaInvite(token)
+      }
+      if (!account) {
+        account = findBaByAccessToken(token)
+      }
+
+      if (cancelled) return
+      if (!account) {
+        setMissing(true)
+        return
+      }
+
+      baSignIn(account.id)
+      navigate('/ba/home', { replace: true })
     }
-    baSignIn(account.id)
-    navigate(account.status === 'Certified' ? '/ba/home' : '/ba/training', { replace: true })
+
+    void open()
+    return () => {
+      cancelled = true
+    }
   }, [token, navigate])
 
   if (!missing) {

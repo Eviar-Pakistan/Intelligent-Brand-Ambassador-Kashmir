@@ -5,8 +5,26 @@ import { MapPin } from 'lucide-react'
 import { useCreatedStores } from '../../lib/storeRegistry'
 
 export function ManagerDashboard() {
-  const store = stores[0]
   useCreatedStores() // re-render when stores are added
+  const store = stores[0]
+  if (!store) {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          title="Store Operations"
+          description="No stores yet · create one to start live attendance & coverage"
+          actions={
+            <Link to="/manager/stores/new">
+              <Button>Create Store</Button>
+            </Link>
+          }
+        />
+        <Card>
+          <p className="text-sm text-slate-500">Create a store to see live BA status and coverage here.</p>
+        </Card>
+      </div>
+    )
+  }
   return (
     <div className="space-y-5">
       <PageHeader

@@ -6,7 +6,7 @@ import {
   CITIES,
   DEFAULT_PEAK_HOURS,
   FOOTFALLS,
-  createStores,
+  createStoresAsync,
   downloadStoreLinks,
   downloadStoreTemplate,
   parseStoreFile,
@@ -42,8 +42,6 @@ const emptyForm = {
   latitude: '',
   longitude: '',
   peakHours: DEFAULT_PEAK_HOURS,
-  contactPerson: '',
-  contactPhone: '',
 }
 
 export function CreateStorePage() {
@@ -52,12 +50,13 @@ export function CreateStorePage() {
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState<string | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const set = (key: keyof typeof emptyForm) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) => setForm({ ...form, [key]: e.target.value })
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     const name = form.name.trim()
     if (!name) return setError('Store name is required.')
@@ -77,20 +76,26 @@ export function CreateStorePage() {
     const longitude = coord(form.longitude, 180, 'Longitude')
     if (longitude === undefined) return
 
-    const [store] = createStores([
-      {
-        name,
-        city: form.city,
-        footfall: form.footfall,
-        address: form.address.trim(),
-        latitude,
-        longitude,
-        peakHours: form.peakHours.trim() || DEFAULT_PEAK_HOURS,
-        contactPerson: form.contactPerson.trim(),
-        contactPhone: form.contactPhone.trim(),
-      },
-    ])
-    navigate(`${base}/stores/${store.id}`)
+    setBusy(true)
+    setError(null)
+    try {
+      const [store] = await createStoresAsync([
+        {
+          name,
+          city: form.city,
+          footfall: form.footfall,
+          address: form.address.trim(),
+          latitude,
+          longitude,
+          peakHours: form.peakHours.trim() || DEFAULT_PEAK_HOURS,
+        },
+      ])
+      navigate(`${base}/stores/${store.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create store. Is the backend running?')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -113,6 +118,7 @@ export function CreateStorePage() {
               onChange={set('name')}
               placeholder="e.g. Carrefour Johar Town"
               autoFocus
+              required
             />
           </Field>
 
@@ -159,21 +165,14 @@ export function CreateStorePage() {
             <input className={fieldClass} value={form.peakHours} onChange={set('peakHours')} />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Contact person">
-              <input className={fieldClass} value={form.contactPerson} onChange={set('contactPerson')} placeholder="Store contact name" />
-            </Field>
-            <Field label="Contact phone">
-              <input className={fieldClass} value={form.contactPhone} onChange={set('contactPhone')} placeholder="03XX-XXXXXXX" inputMode="tel" />
-            </Field>
-          </div>
-
           {error && (
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
           )}
 
           <div className="flex gap-2 pt-1">
-            <Button type="submit">Create Store</Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? 'Creating…' : 'Create Store'}
+            </Button>
             <Button type="button" variant="secondary" onClick={() => navigate(`${base}/stores`)}>
               Cancel
             </Button>
@@ -191,24 +190,56 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
   const base = useRoleBase()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number; name: string } | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
   const [result, setResult] = useState<StoreParseResult | null>(null)
   const [created, setCreated] = useState<CreatedStore[] | null>(null)
 
   function close() {
+    if (creating) return
     setResult(null)
     setCreated(null)
     setFileName('')
+    setProgress(null)
+    setCreateError(null)
     onClose()
   }
 
   async function onFile(file: File | undefined) {
-    if (!file) return
+    if (!file || creating) return
     setBusy(true)
     setFileName(file.name)
+    setCreateError(null)
     setResult(await parseStoreFile(file))
     setBusy(false)
   }
+
+  async function createAll() {
+    if (!result?.rows.length || creating) return
+    setCreating(true)
+    setCreateError(null)
+    setProgress({ done: 0, total: result.rows.length, name: '' })
+    try {
+      const stores = await createStoresAsync(
+        result.rows.map((r) => r.input),
+        {
+          onProgress: (done, total, name) => setProgress({ done, total, name }),
+        },
+      )
+      setCreated(stores)
+      setProgress(null)
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not create stores.')
+      setProgress(null)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const progressPct =
+    progress && progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0
 
   return (
     <Modal open={open} onClose={close} title="Create stores from Excel">
@@ -243,9 +274,10 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
             <div className="space-y-2">
               <div className="font-semibold text-slate-900">1. Download the template</div>
               <p className="text-xs text-slate-500">
-                Fill in one store per row. Store name and City are required; the Instructions sheet explains the rest.
+                Columns: Store name *, City *, Footfall (optional), Latitude, Longitude. Address is ignored.
+                Peak hours are set randomly. Blank or "-" lat/lng still creates the store (without map pin).
               </p>
-              <Button variant="secondary" onClick={() => void downloadStoreTemplate()}>
+              <Button variant="secondary" disabled={creating} onClick={() => void downloadStoreTemplate()}>
                 <Download size={14} /> Download store template
               </Button>
             </div>
@@ -257,13 +289,14 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
                 type="file"
                 accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                 className="hidden"
+                disabled={creating}
                 onChange={(e) => {
                   void onFile(e.target.files?.[0])
                   e.target.value = ''
                 }}
               />
               <div className="flex items-center gap-3">
-                <Button variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+                <Button variant="secondary" disabled={busy || creating} onClick={() => inputRef.current?.click()}>
                   <Upload size={14} /> {busy ? 'Checking…' : result ? 'Choose another file' : 'Upload Excel file'}
                 </Button>
                 {fileName && <span className="truncate text-xs text-slate-500">{fileName}</span>}
@@ -272,12 +305,38 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
 
             {result && (
               <div className="space-y-3 border-t border-slate-100 pt-4">
-                {result.rows.length > 0 && (
+                {result.rows.length > 0 && !creating && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
                     {result.rows.length} {result.rows.length === 1 ? 'store is' : 'stores are'} ready to create.
                   </div>
                 )}
-                {result.errors.length > 0 && (
+                {creating && progress && (
+                  <div className="space-y-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-3 text-brand-900">
+                    <div className="flex items-center justify-between gap-2 text-sm font-semibold">
+                      <span>
+                        Creating {progress.done} of {progress.total}…
+                      </span>
+                      <span className="tabular-nums text-brand-700">{progressPct}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-brand-100">
+                      <div
+                        className="h-full rounded-full bg-brand-600 transition-[width] duration-200"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    {progress.name ? (
+                      <p className="truncate text-xs text-brand-800/80">Adding {progress.name}</p>
+                    ) : (
+                      <p className="text-xs text-brand-800/80">Please wait — do not close this window.</p>
+                    )}
+                  </div>
+                )}
+                {createError && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">
+                    {createError}
+                  </div>
+                )}
+                {result.errors.length > 0 && !creating && (
                   <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800">
                     <div className="font-semibold">
                       {result.rows.length > 0
@@ -289,15 +348,16 @@ export function BulkStoreModal({ open, onClose }: { open: boolean; onClose: () =
                         <li key={err}>{err}</li>
                       ))}
                     </ul>
-                    {result.errors.length > 8 && <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>}
+                    {result.errors.length > 8 && (
+                      <div className="mt-1 font-medium">…and {result.errors.length - 8} more</div>
+                    )}
                   </div>
                 )}
                 {result.rows.length > 0 && (
-                  <Button
-                    className="w-full"
-                    onClick={() => setCreated(createStores(result.rows.map((r) => r.input)))}
-                  >
-                    Create {result.rows.length} {result.rows.length === 1 ? 'store' : 'stores'}
+                  <Button className="w-full" disabled={creating} onClick={() => void createAll()}>
+                    {creating
+                      ? `Creating… ${progress?.done ?? 0}/${progress?.total ?? result.rows.length}`
+                      : `Create ${result.rows.length} ${result.rows.length === 1 ? 'store' : 'stores'}`}
                   </Button>
                 )}
               </div>

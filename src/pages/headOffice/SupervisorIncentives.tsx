@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom'
 import { Banknote, CheckCircle2, Wallet } from 'lucide-react'
 import { Avatar, Button, Card, Modal, StatusBadge, TableScroll } from '../../components/ui'
 import { buildSupervisorRoster, formatPkr, type SupervisorIncentive } from '../../lib/incentives'
-import { useKpiConfig } from '../../lib/kpiConfig'
+import { useKpiConfigSync } from '../../lib/kpiConfig'
 import { useCreatedStores } from '../../lib/storeRegistry'
-import { useSupervisors } from '../../lib/supervisors'
+import { useSupervisorsSync } from '../../lib/supervisors'
 import { useRoleBase } from './StoreCreation'
 
 type PayoutStatus = 'Pending' | 'Approved' | 'Paid'
@@ -22,8 +22,8 @@ function Row({ label, value }: { label: string; value: number }) {
 /** Supervisor incentives: base pay plus their stores' team conversion and coverage, from the Set KPIs dialog. */
 export function SupervisorIncentives() {
   const base = useRoleBase()
-  const config = useKpiConfig()
-  const supervisors = useSupervisors()
+  const config = useKpiConfigSync()
+  const supervisors = useSupervisorsSync()
   const createdStores = useCreatedStores()
   const roster = useMemo(
     () => buildSupervisorRoster(config),
@@ -70,10 +70,10 @@ export function SupervisorIncentives() {
               <tr>
                 <th className="px-4 py-3">Supervisor</th>
                 <th className="px-4 py-3">Stores</th>
-                <th className="px-4 py-3">Team conversion</th>
-                <th className="px-4 py-3">Coverage</th>
-                <th className="px-4 py-3">Base pay</th>
-                <th className="px-4 py-3">Incentive</th>
+                <th className="px-4 py-3">Salary</th>
+                <th className="px-4 py-3">Fuel/DA</th>
+                <th className="px-4 py-3">Discipline</th>
+                <th className="px-4 py-3">Mobile</th>
                 <th className="px-4 py-3">Total (PKR)</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
@@ -98,10 +98,10 @@ export function SupervisorIncentives() {
                     <td className="px-4 py-3">
                       {r.storeCount} <span className="text-xs text-slate-400">· {r.baCount} BAs</span>
                     </td>
-                    <td className="px-4 py-3">{r.teamConversion}%</td>
-                    <td className="px-4 py-3">{r.coverage}%</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.base)}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.incentive)}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.salary)}</td>
+                    <td className="px-4 py-3">{formatPkr(r.fuelDa)}</td>
+                    <td className="px-4 py-3">{formatPkr(r.discipline)}</td>
+                    <td className="px-4 py-3">{formatPkr(r.mobile)}</td>
                     <td className="px-4 py-3">
                       <button className="font-bold text-slate-900 hover:text-brand-600" onClick={() => setSelected(r)}>
                         {formatPkr(r.totalPkr)}
@@ -156,21 +156,17 @@ export function SupervisorIncentives() {
         {selected && (
           <div className="space-y-3 text-sm">
             <div className="rounded-xl bg-navy-900 px-4 py-3 text-white">
-              <div className="text-xs text-emerald-200">Total this week</div>
+              <div className="text-xs text-emerald-200">Monthly package</div>
               <div className="text-2xl font-black">{formatPkr(selected.totalPkr)}</div>
               <div className="text-xs text-slate-300">
                 {selected.storeCount} stores · {selected.baCount} BAs
               </div>
             </div>
-            <Row label="Base pay" value={selected.base} />
-            <Row
-              label={`Team conversion (${selected.teamConversion}% of ${config.supConversionTarget}% → ${formatPkr(config.supConversionAmount)})`}
-              value={selected.conversionPay}
-            />
-            <Row
-              label={`Store coverage (${selected.coverage}% of ${config.supCoverageTarget}% → ${formatPkr(config.supCoverageAmount)})`}
-              value={selected.coveragePay}
-            />
+            <Row label="Sup salary" value={selected.salary} />
+            <Row label="Fuel / DA" value={selected.fuelDa} />
+            <Row label="Discipline / attendance" value={selected.discipline} />
+            <Row label="Mobile / data" value={selected.mobile} />
+            <Row label="Total" value={selected.totalPkr} />
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setSelected(null)}>
                 Close

@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
 import { DemoProvider, RoleProvider } from './context/AppContext'
 import { BrandProvider } from './context/BrandContext'
 import { ScheduleProvider } from './context/ScheduleContext'
@@ -9,6 +10,7 @@ import { ScreenHub } from './pages/ScreenHub'
 import { LoginPage } from './pages/LoginPage'
 import { CommandCenterPage, OptimizationPage } from './pages/headOffice/CommandCenterPage'
 import { BaPerformanceDashboardPage } from './pages/headOffice/BaPerformanceDashboardPage'
+import { DailyReportsPage } from './pages/headOffice/DailyReportsPage'
 import { CampaignOverviewPage, CampaignsPage } from './pages/headOffice/CampaignPages'
 import { AmbassadorProfilePage, AmbassadorsPage } from './pages/headOffice/AmbassadorPages'
 import { TrainingManagerPage } from './pages/headOffice/TrainingManagerPage'
@@ -21,7 +23,6 @@ import {
   SupervisorHomePage,
   SupervisorStoresPage,
 } from './pages/supervisor/SupervisorPortal'
-import { SupervisorMarketVisitPage } from './pages/supervisor/MarketVisitReportPage'
 import { ShopperStoreEntry } from './pages/shopper/ShopperStoreEntry'
 import {
   ConsumersPage,
@@ -31,7 +32,6 @@ import {
 } from './pages/headOffice/IntelligencePages'
 import { IncentivesPage } from './pages/headOffice/IncentivesPage'
 import { ComplaintsPage } from './pages/headOffice/ComplaintPages'
-import { MarketVisitReportsPage } from './pages/headOffice/MarketVisitReportsPage'
 import {
   AttendancePage,
   CoveragePage,
@@ -46,6 +46,9 @@ import { BaDailySalesPage, BaOtherBrandsPage, BaStockReportPage } from './pages/
 import { BaComplaintPage } from './pages/ba/BaComplaintPage'
 import { BaAccessPage } from './pages/ba/BaAccessPage'
 import { ComplaintsProvider } from './context/ComplaintsContext'
+import { isApiAuthenticated } from './lib/api'
+import { syncAmbassadorsFromApi } from './lib/baAccounts'
+import { syncStoresFromApi } from './lib/storeRegistry'
 import {
   ShopperAiPage,
   ShopperFeedbackPage,
@@ -60,9 +63,10 @@ import {
 
 const hoPages = (
   <>
-    <Route index element={<Navigate to="dashboard" replace />} />
+    <Route index element={<Navigate to="ba-performance" replace />} />
     <Route path="dashboard" element={<CommandCenterPage />} />
     <Route path="ba-performance" element={<BaPerformanceDashboardPage />} />
+    <Route path="daily-reports" element={<DailyReportsPage />} />
     <Route path="ambassadors" element={<AmbassadorsPage />} />
     <Route path="ambassadors/training" element={<TrainingManagerPage />} />
     <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
@@ -77,10 +81,20 @@ const hoPages = (
     <Route path="leaderboard" element={<LeaderboardPage />} />
     <Route path="incentives" element={<IncentivesPage />} />
     <Route path="complaints" element={<ComplaintsPage />} />
-    <Route path="market-visits" element={<MarketVisitReportsPage />} />
     <Route path="reports" element={<ReportPage />} />
   </>
 )
+
+/** When a JWT is already in localStorage, refresh stores/BAs from the API. */
+function ApiBootstrap() {
+  useEffect(() => {
+    if (!isApiAuthenticated()) return
+    void Promise.all([syncStoresFromApi(), syncAmbassadorsFromApi()]).catch(() => {
+      // ignore — offline / expired token
+    })
+  }, [])
+  return null
+}
 
 export default function App() {
   return (
@@ -91,6 +105,7 @@ export default function App() {
           <ScheduleProvider>
           <TrainingContentProvider>
           <BrowserRouter>
+          <ApiBootstrap />
           <Routes>
             <Route path="/" element={<LoginPage />} />
             <Route path="/login" element={<LoginPage />} />
@@ -133,7 +148,6 @@ export default function App() {
               <Route index element={<SupervisorHomePage />} />
               <Route path="stores" element={<SupervisorStoresPage />} />
               <Route path="bas" element={<SupervisorBasPage />} />
-              <Route path="market-visit" element={<SupervisorMarketVisitPage />} />
             </Route>
 
             {/* Personal BA link — signs that ambassador in, then opens their app */}
@@ -165,7 +179,7 @@ export default function App() {
               <Route path=":storeSlug" element={<ShopperStoreEntry />} />
             </Route>
 
-            <Route path="/app/*" element={<Navigate to="/ho/dashboard" replace />} />
+            <Route path="/app/*" element={<Navigate to="/ho/ba-performance" replace />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
           </BrowserRouter>

@@ -483,6 +483,8 @@ export type Store = {
   id: number
   name: string
   city: string
+  /** Business store code e.g. ST-Z9QHPW */
+  code?: string
   footfall: 'High' | 'Medium' | 'Low'
   bas: number
   coverage: number
@@ -495,96 +497,15 @@ export type Store = {
   qrCode: string
 }
 
-/** Demo stores plus any created by the user (added at startup by lib/storeRegistry). */
-export const stores: Store[] = [
-  {
-    id: 12,
-    name: 'Carrefour DHA',
-    city: 'Lahore',
-    footfall: 'High' as const,
-    bas: 3,
-    coverage: 96,
-    status: 'Covered' as const,
-    todayFootfall: 2340,
-    engagement: 71,
-    conversion: 34,
-    peak: ['12 PM — 3 PM', '6 PM — 9 PM'],
-    assigned: [
-      { id: 'ayesha', name: 'Ayesha Khan', state: 'Active' as const },
-      { id: 'hamza', name: 'Hamza Ali', state: 'Active' as const },
-      { id: 'sara', name: 'Sara Ahmed', state: 'Break' as const },
-    ],
-    qrCode: 'KO-STORE-12-LAH',
-  },
-  {
-    id: 7,
-    name: 'Imtiaz Clifton',
-    city: 'Karachi',
-    footfall: 'Medium' as const,
-    bas: 2,
-    coverage: 82,
-    status: 'Covered' as const,
-    todayFootfall: 1810,
-    engagement: 64,
-    conversion: 32,
-    peak: ['5 PM — 9 PM'],
-    assigned: [
-      { id: 'bilal', name: 'Bilal Ahmed', state: 'Active' as const },
-      { id: 'fatima', name: 'Fatima Noor', state: 'Offline' as const },
-    ],
-    qrCode: 'KO-STORE-07-KHI',
-  },
-  {
-    id: 4,
-    name: 'Metro Lahore',
-    city: 'Lahore',
-    footfall: 'High' as const,
-    bas: 4,
-    coverage: 91,
-    status: 'Covered' as const,
-    todayFootfall: 2100,
-    engagement: 69,
-    conversion: 30,
-    peak: ['11 AM — 2 PM', '6 PM — 9 PM'],
-    assigned: [{ id: 'fatima', name: 'Fatima Noor', state: 'Active' as const }],
-    qrCode: 'KO-STORE-04-LHR',
-  },
-  {
-    id: 19,
-    name: 'Al-Fatah Blue Area',
-    city: 'Islamabad',
-    footfall: 'Medium' as const,
-    bas: 2,
-    coverage: 76,
-    status: 'PARTIAL' as const,
-    todayFootfall: 980,
-    engagement: 58,
-    conversion: 29,
-    peak: ['1 PM — 4 PM', '7 PM — 9 PM'],
-    assigned: [{ id: 'sara', name: 'Sara Ahmed', state: 'Active' as const }],
-    qrCode: 'KO-STORE-19-ISB',
-  },
-  {
-    id: 23,
-    name: 'Hyperstar Multan',
-    city: 'Multan',
-    footfall: 'Low' as const,
-    bas: 1,
-    coverage: 41,
-    status: 'NEEDS BA' as const,
-    todayFootfall: 420,
-    engagement: 40,
-    conversion: 18,
-    peak: ['6 PM — 8 PM'],
-    assigned: [],
-    qrCode: 'KO-STORE-23-MUL',
-  },
-]
+/** Live stores only — populated from Django / HO create via lib/storeRegistry. */
+export const stores: Store[] = []
 
 export type ShiftSlot = {
   id: string
   day: string
   date: string
+  /** ISO calendar date YYYY-MM-DD when known (from API). */
+  dateIso?: string
   storeId: number
   storeName: string
   city: string
