@@ -306,6 +306,10 @@ export function BaPerformanceDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [hoursCity, setHoursCity] = useState<string | null>(null)
+  const [targetMonth, setTargetMonth] = useState<string>(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
 
   const range = useMemo(
     () => dateRangeForPreset(datePreset, customFrom, customTo),
@@ -339,6 +343,7 @@ export function BaPerformanceDashboardPage() {
         category,
         sku,
         salesPeriod: apiPeriod,
+        targetMonth,
       })
       if (!data) {
         if (!opts?.silent) setError('Sign in to load live dashboard data.')
@@ -355,7 +360,7 @@ export function BaPerformanceDashboardPage() {
     } finally {
       if (!opts?.silent) setLoading(false)
     }
-  }, [town, store, month, category, sku, salesPeriod, range, customFrom, customTo])
+  }, [town, store, month, category, sku, salesPeriod, range, customFrom, customTo, targetMonth])
 
   useEffect(() => {
     void load()
@@ -467,6 +472,29 @@ export function BaPerformanceDashboardPage() {
   const attendanceTable = dash?.attendance ?? []
   const workingHoursBase = dash?.workingHours ?? null
   const isSingleDay = (dash?.range.days ?? 0) === 1
+  const targetVsAchievement = dash?.targetVsAchievement
+  const targetRows = targetVsAchievement?.rows ?? []
+
+  const targetMonthOptions = useMemo(() => {
+    const fromApi = dash?.filters.months ?? []
+    const labels = dash?.filters.monthLabels ?? {}
+    const opts = fromApi.map((m) => ({
+      value: m.includes('-') ? m : m,
+      label: labels[m] || m,
+    }))
+    // Ensure current selection is present
+    if (targetMonth && !opts.some((o) => o.value === targetMonth)) {
+      const [y, mm] = targetMonth.split('-').map(Number)
+      const name = MONTH_ORDER[mm - 1] ?? targetMonth
+      opts.unshift({ value: targetMonth, label: `${name} ${y}` })
+    }
+    if (!opts.length) {
+      const d = new Date()
+      const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      opts.push({ value: v, label: `${MONTH_ORDER[d.getMonth()]} ${d.getFullYear()}` })
+    }
+    return opts
+  }, [dash?.filters.months, dash?.filters.monthLabels, targetMonth])
 
   const workingHours = useMemo(() => {
     if (!workingHoursBase || !hoursCity) return workingHoursBase
@@ -1008,12 +1036,16 @@ export function BaPerformanceDashboardPage() {
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
           <CardHeader
             title="BA check-in / check-out"
-            subtitle={isSingleDay ? `Store-wise · ${dateRangeLabel}` : `Per BA average · ${dateRangeLabel}`}
+            subtitle={
+              isSingleDay
+                ? `Overall BAs · ${dateRangeLabel}`
+                : `Overall BAs · averages · ${dateRangeLabel}`
+            }
           />
         </div>
-        <TableScroll minWidth={720}>
+        <TableScroll minWidth={720} className="max-h-80 overflow-y-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
                 <th className="px-4 py-3">BA</th>
                 <th className="px-4 py-3">Store</th>
@@ -1026,7 +1058,7 @@ export function BaPerformanceDashboardPage() {
             </thead>
             <tbody>
               {attendanceTable.map((row) => (
-                <tr key={`${row.ba}-${row.store}-${row.checkIn}`} className="border-t border-slate-100">
+                <tr key={`${row.ba}-${row.store}-${row.checkIn}-${row.days}`} className="border-t border-slate-100">
                   <td className="px-4 py-3 font-medium text-slate-900">{row.ba}</td>
                   <td className="px-4 py-3 text-slate-600">
                     <div>{row.store}</div>
@@ -1049,6 +1081,65 @@ export function BaPerformanceDashboardPage() {
         </TableScroll>
       </Card>
 
+
+      <Card padding={false}>
+        <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
+          <CardHeader
+            title="Target vs achievement"
+            subtitle={
+              targetVsAchievement?.monthLabel
+                ? `${targetVsAchievement.monthLabel} targets for each store's ambassador`
+                : 'BA targets from Ambassadors · sales from checkout forms'
+            }
+            action={
+              <label className="flex items-center gap-2 text-xs">
+                <span className="font-medium text-slate-500">Month</span>
+                <select
+                  value={targetMonth}
+                  onChange={(e) => setTargetMonth(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-brand-500"
+                >
+                  {targetMonthOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            }
+          />
+        </div>
+        <TableScroll minWidth={640} className="max-h-80 overflow-y-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="px-4 py-3">Ambassador</th>
+                <th className="px-4 py-3">Store</th>
+                <th className="px-4 py-3">Target (units)</th>
+                <th className="px-4 py-3">Sales (units)</th>
+                <th className="px-4 py-3">Achievement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {targetRows.map((row) => (
+                <tr key={row.ambassadorId} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">{row.ambassador}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <div>{row.store}</div>
+                    {row.city ? <div className="text-xs text-slate-400">{row.city}</div> : null}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{row.target.toLocaleString()}</td>
+                  <td className="px-4 py-3 tabular-nums">{row.sales.toLocaleString()}</td>
+                  <td className="px-4 py-3 font-semibold tabular-nums">
+                    {row.achievement == null ? '—' : `${Math.round(row.achievement)}%`}
+                  </td>
+                </tr>
+              ))}
+              {targetRows.length === 0 && <EmptyRow cols={5} />}
+            </tbody>
+          </table>
+        </TableScroll>
+      </Card>
 
       <Card>
         <CardHeader

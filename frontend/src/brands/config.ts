@@ -78,6 +78,6 @@ export const brand: BrandConfig = {
     { src: kashmirWhyChooseUsImg, alt: 'Kashmir Banaspati Gold', position: '55% center', scale: '1.3' },
   ],
   loginEmail: 'headoffice@kashmir.pk',
-  loginPassword: 'Rightmoment',
+  loginPassword: 'vR7!qN2',
   sidebarOverlay: 'from-navy-900/30 via-navy-900/20 to-navy-900/85',
 }

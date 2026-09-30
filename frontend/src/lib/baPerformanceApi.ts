@@ -56,6 +56,22 @@ export type WorkingHoursLive = {
   points: { label: string; hours: number; count: number }[]
 }
 
+export type TargetVsAchievementRow = {
+  ambassadorId: string
+  ambassador: string
+  store: string
+  city: string
+  target: number
+  sales: number
+  achievement: number | null
+}
+
+export type TargetVsAchievementPayload = {
+  month: string
+  monthLabel: string
+  rows: TargetVsAchievementRow[]
+}
+
 export type BaPerformanceDashboard = {
   filters: BaPerformanceFiltersPayload
   range: { from: string; to: string; days: number }
@@ -68,6 +84,7 @@ export type BaPerformanceDashboard = {
   baStatus: BaStatusPayload
   attendance: AttendanceRowLive[]
   workingHours: WorkingHoursLive
+  targetVsAchievement?: TargetVsAchievementPayload
 }
 
 export type FetchBaPerformanceParams = {
@@ -79,6 +96,7 @@ export type FetchBaPerformanceParams = {
   category?: string | null
   sku?: string | null
   salesPeriod?: 'wow' | 'mom' | 'ytd'
+  targetMonth?: string | null
 }
 
 export async function fetchBaPerformanceDashboard(
@@ -94,6 +112,7 @@ export async function fetchBaPerformanceDashboard(
   if (params.category) qs.set('category', params.category)
   if (params.sku) qs.set('sku', params.sku)
   if (params.salesPeriod) qs.set('sales_period', params.salesPeriod)
+  if (params.targetMonth) qs.set('target_month', params.targetMonth)
   const q = qs.toString()
   const path = q
     ? `/api/intelligence/ba-performance/?${q}`

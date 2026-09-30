@@ -114,6 +114,90 @@ def _sales_num(sales: dict, *keys: str) -> float:
     return total
 
 
+def _ba_target_vs_achievement(
+    *,
+    month: str,
+    town: str | None,
+    store_name: str | None,
+    store_ids: list[int] | None,
+) -> dict:
+    """Per-BA target (Ambassadors BaTarget) vs checkout sales for one YYYY-MM."""
+    from .incentives import ba_month_achievement
+
+    ba_ids = list(
+        BaTarget.objects.filter(month=month, target_kg__gt=0)
+        .values_list('ambassador_id', flat=True)
+        .distinct()
+    )
+    # Also include BAs who only have checkout sales that month (no target yet).
+    try:
+        y, m = map(int, month.split('-')[:2])
+        m_from = date(y, m, 1)
+        if m == 12:
+            m_to = date(y, 12, 31)
+        else:
+            m_to = date(y, m + 1, 1) - timedelta(days=1)
+    except ValueError:
+        m_from = timezone.localdate().replace(day=1)
+        m_to = timezone.localdate()
+
+    sales_ba_ids = list(
+        BaDailyReport.objects.filter(date__gte=m_from, date__lte=m_to)
+        .values_list('ambassador_id', flat=True)
+        .distinct()
+    )
+    all_ids = set(ba_ids) | {i for i in sales_ba_ids if i}
+
+    ambassadors = (
+        Ambassador.objects.filter(id__in=all_ids)
+        .select_related('store')
+        .order_by('name')
+    )
+    if store_ids is not None:
+        ambassadors = ambassadors.filter(Q(store_id__in=store_ids) | Q(store_id__isnull=True))
+    elif town:
+        ambassadors = ambassadors.filter(store__city__iexact=town)
+    if store_name:
+        ambassadors = ambassadors.filter(store__name__iexact=store_name)
+
+    rows = []
+    for ba in ambassadors:
+        # Skip town filter miss for null-store BAs when town filter is on
+        if town and ba.store_id and (ba.store.city or '').lower() != town.lower():
+            continue
+        if store_name and ba.store_id and (ba.store.name or '').lower() != store_name.lower():
+            continue
+        if store_ids is not None and ba.store_id and ba.store_id not in store_ids:
+            continue
+
+        target, sales, pct = ba_month_achievement(ba.id, month)
+        if target <= 0 and sales <= 0:
+            continue
+        rows.append(
+            {
+                'ambassadorId': str(ba.id),
+                'ambassador': ba.name,
+                'store': ba.store.name if ba.store_id else '—',
+                'city': ba.store.city if ba.store_id else '',
+                'target': round(target, 1),
+                'sales': round(sales, 1),
+                'achievement': round(pct, 1) if target > 0 else None,
+            }
+        )
+
+    rows.sort(
+        key=lambda r: (
+            -(r['achievement'] if r['achievement'] is not None else -1),
+            r['ambassador'].lower(),
+        )
+    )
+    return {
+        'month': month,
+        'monthLabel': _month_label(month),
+        'rows': rows,
+    }
+
+
 def build_ba_performance_dashboard(
     *,
     town: str | None = None,
@@ -124,6 +208,7 @@ def build_ba_performance_dashboard(
     category: str | None = None,
     sku: str | None = None,
     sales_period: str = 'mom',
+    target_month: str | None = None,
 ) -> dict:
     today = timezone.localdate()
 
@@ -419,6 +504,12 @@ def build_ba_performance_dashboard(
         'baStatus': ba_status,
         'attendance': attendance,
         'workingHours': working_hours,
+        'targetVsAchievement': _ba_target_vs_achievement(
+            month=(target_month or _month_key(date_to)),
+            town=town,
+            store_name=store_name,
+            store_ids=store_ids if (town or store_name) else None,
+        ),
     }
 
 
@@ -560,6 +651,57 @@ def _attendance_block(
         if s.checked_in_at and not s.checked_out_at:
             active_ba_ids.add(s.ambassador_id)
 
+    # Month-level deployments: live check-in may sit on the 1st-of-month row.
+    for s in (
+        ShiftAssignment.objects.filter(
+            date__year=today.year,
+            date__month=today.month,
+            ambassador__isnull=False,
+            checked_in_at__isnull=False,
+            checked_out_at__isnull=True,
+            status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+        )
+        .select_related('store', 'ambassador')
+    ):
+        if not s.ambassador_id or not s.store_id:
+            continue
+        if timezone.localtime(s.checked_in_at).date() != today:
+            continue
+        if store_ids is not None and s.store_id not in store_ids:
+            continue
+        if town and (s.store.city or '').lower() != town.lower():
+            continue
+        if store_name and (s.store.name or '').lower() != store_name.lower():
+            continue
+        ba_city[s.ambassador_id] = s.store.city or '—'
+        ba_stores[s.ambassador_id].add(s.store_id)
+        active_ba_ids.add(s.ambassador_id)
+
+    from .models import BaAttendanceDay
+
+    for row in BaAttendanceDay.objects.filter(
+        date=today,
+        checked_in_at__isnull=False,
+        checked_out_at__isnull=True,
+    ).select_related('store', 'ambassador'):
+        if not row.ambassador_id:
+            continue
+        sid = row.store_id or (row.ambassador.store_id if row.ambassador_id else None)
+        if store_ids is not None and sid not in store_ids:
+            continue
+        city = (row.store.city if row.store_id else None) or (
+            row.ambassador.store.city if row.ambassador and row.ambassador.store_id else None
+        )
+        if town and (city or '').lower() != town.lower():
+            continue
+        if store_name and row.store and row.store.name.lower() != store_name.lower():
+            continue
+        if city:
+            ba_city[row.ambassador_id] = city
+        if sid:
+            ba_stores[row.ambassador_id].add(sid)
+        active_ba_ids.add(row.ambassador_id)
+
     deployed = Ambassador.objects.filter(
         status__in=(Ambassador.Status.DEPLOYED, Ambassador.Status.CERTIFIED),
         store__isnull=False,
@@ -624,49 +766,182 @@ def _attendance_block(
         'asOf': 'live',
     }
 
-    # Attendance rows (date-range averages / single-day clocks)
+    # Attendance rows — prefer BaAttendanceDay (persists after month-shift clock roll).
+    from .models import BaAttendanceDay
+
     now = timezone.localtime()
     now_min = now.hour * 60 + now.minute
     records = []
-    for s in shifts:
-        if not s.checked_in_at:
-            # Single-day: still list scheduled BAs who have not checked in
-            if single_day and s.date == today:
-                records.append(
-                    {
-                        'ba': s.ambassador.name if s.ambassador_id else '—',
-                        'store': s.store.name if s.store_id else '—',
-                        'city': s.store.city if s.store_id else '—',
-                        'date': s.date.isoformat(),
-                        'checkInMin': None,
-                        'checkOutMin': None,
-                        'hours': 0.0,
-                        'status': 'Offline',
-                    }
-                )
+
+    att_qs = (
+        BaAttendanceDay.objects.filter(
+            date__gte=date_from,
+            date__lte=date_to,
+            ambassador_id__isnull=False,
+        )
+        .select_related('store', 'ambassador')
+        .order_by('date', 'id')
+    )
+    if store_ids is not None:
+        att_qs = att_qs.filter(store_id__in=store_ids)
+    elif town:
+        att_qs = att_qs.filter(store__city__iexact=town)
+    if store_name:
+        att_qs = att_qs.filter(store__name__iexact=store_name)
+
+    seen_keys: set[tuple] = set()
+    for row in att_qs:
+        if not row.checked_in_at:
             continue
-        cin = _minutes_of_day(s.checked_in_at)
-        cout = _minutes_of_day(s.checked_out_at) if s.checked_out_at else None
-        end_min = cout if cout is not None else (now_min if s.date == today else 20 * 60)
+        store_obj = row.store or (row.ambassador.store if row.ambassador_id else None)
+        cin = _minutes_of_day(row.checked_in_at)
+        cout = _minutes_of_day(row.checked_out_at) if row.checked_out_at else None
+        end_min = cout if cout is not None else (now_min if row.date == today else 20 * 60)
         hours = max(0.0, ((end_min or 0) - (cin or 0)) / 60.0)
+        key = (row.ambassador_id, row.date.isoformat())
+        seen_keys.add(key)
         records.append(
             {
-                'ba': s.ambassador.name if s.ambassador_id else '—',
-                'store': s.store.name if s.store_id else '—',
-                'city': s.store.city if s.store_id else '—',
-                'date': s.date.isoformat(),
+                'ba': row.ambassador.name if row.ambassador_id else '—',
+                'baId': row.ambassador_id,
+                'store': store_obj.name if store_obj else '—',
+                'city': store_obj.city if store_obj else '—',
+                'date': row.date.isoformat(),
                 'checkInMin': cin,
                 'checkOutMin': cout,
                 'hours': round(hours, 2),
                 'status': (
                     'Active'
-                    if cout is None and s.date == today
+                    if cout is None and row.date == today
                     else 'Checked Out'
                     if cout is not None
-                    else None
+                    else 'Offline'
                 ),
             }
         )
+
+    # Also fold in live ShiftAssignment clocks (exact-date + month-level for today).
+    for s in shifts:
+        if not s.ambassador_id:
+            continue
+        if s.checked_in_at:
+            cin_day = timezone.localtime(s.checked_in_at).date()
+            if cin_day < date_from or cin_day > date_to:
+                continue
+            key = (s.ambassador_id, cin_day.isoformat())
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            cin = _minutes_of_day(s.checked_in_at)
+            cout = _minutes_of_day(s.checked_out_at) if s.checked_out_at else None
+            end_min = cout if cout is not None else (now_min if cin_day == today else 20 * 60)
+            hours = max(0.0, ((end_min or 0) - (cin or 0)) / 60.0)
+            records.append(
+                {
+                    'ba': s.ambassador.name if s.ambassador else '—',
+                    'baId': s.ambassador_id,
+                    'store': s.store.name if s.store_id else '—',
+                    'city': s.store.city if s.store_id else '—',
+                    'date': cin_day.isoformat(),
+                    'checkInMin': cin,
+                    'checkOutMin': cout,
+                    'hours': round(hours, 2),
+                    'status': (
+                        'Active'
+                        if cout is None and cin_day == today
+                        else 'Checked Out'
+                        if cout is not None
+                        else 'Offline'
+                    ),
+                }
+            )
+        elif single_day and s.date == date_from:
+            # Scheduled but no check-in yet
+            key = (s.ambassador_id, s.date.isoformat())
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            records.append(
+                {
+                    'ba': s.ambassador.name if s.ambassador else '—',
+                    'baId': s.ambassador_id,
+                    'store': s.store.name if s.store_id else '—',
+                    'city': s.store.city if s.store_id else '—',
+                    'date': s.date.isoformat(),
+                    'checkInMin': None,
+                    'checkOutMin': None,
+                    'hours': 0.0,
+                    'status': 'Offline',
+                }
+            )
+
+    # Month-level rows (usually dated the 1st) may fall outside a mid-month day filter.
+    if date_from <= today <= date_to:
+        month_level = (
+            ShiftAssignment.objects.filter(
+                ambassador_id__isnull=False,
+                date__year=today.year,
+                date__month=today.month,
+                checked_in_at__isnull=False,
+                status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+            )
+            .select_related('store', 'ambassador')
+            .order_by('-checked_in_at', '-id')
+        )
+        if store_ids is not None:
+            month_level = month_level.filter(store_id__in=store_ids)
+        elif town:
+            month_level = month_level.filter(store__city__iexact=town)
+        if store_name:
+            month_level = month_level.filter(store__name__iexact=store_name)
+        for s in month_level:
+            cin_day = timezone.localtime(s.checked_in_at).date()
+            if cin_day != today:
+                continue
+            key = (s.ambassador_id, cin_day.isoformat())
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            cin = _minutes_of_day(s.checked_in_at)
+            cout = _minutes_of_day(s.checked_out_at) if s.checked_out_at else None
+            end_min = cout if cout is not None else now_min
+            hours = max(0.0, ((end_min or 0) - (cin or 0)) / 60.0)
+            records.append(
+                {
+                    'ba': s.ambassador.name if s.ambassador else '—',
+                    'baId': s.ambassador_id,
+                    'store': s.store.name if s.store_id else '—',
+                    'city': s.store.city if s.store_id else '—',
+                    'date': cin_day.isoformat(),
+                    'checkInMin': cin,
+                    'checkOutMin': cout,
+                    'hours': round(hours, 2),
+                    'status': 'Active' if cout is None else 'Checked Out',
+                }
+            )
+
+    # Single-day: include deployed BAs with no row yet so the roster is complete.
+    if single_day:
+        for ba in deployed:
+            key = (ba.id, date_from.isoformat())
+            if key in seen_keys:
+                continue
+            if not ba.store_id:
+                continue
+            seen_keys.add(key)
+            records.append(
+                {
+                    'ba': ba.name,
+                    'baId': ba.id,
+                    'store': ba.store.name if ba.store else '—',
+                    'city': ba.store.city if ba.store else '—',
+                    'date': date_from.isoformat(),
+                    'checkInMin': None,
+                    'checkOutMin': None,
+                    'hours': 0.0,
+                    'status': 'Offline',
+                }
+            )
 
     if single_day:
         attendance = [
@@ -680,10 +955,15 @@ def _attendance_block(
                 'hours': r['hours'],
                 'status': r['status']
                 if r['status']
-                else ('Active' if r['checkOutMin'] is None and r['checkInMin'] is not None else 'Offline'),
+                else (
+                    'Active'
+                    if r['checkOutMin'] is None and r['checkInMin'] is not None
+                    else 'Offline'
+                ),
             }
             for r in records
         ]
+        attendance.sort(key=lambda r: (r['city'], r['ba']))
     else:
         groups: dict[str, list] = defaultdict(list)
         for r in records:

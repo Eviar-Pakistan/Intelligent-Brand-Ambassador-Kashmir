@@ -18,16 +18,53 @@ def _pct(part: int, whole: int) -> float:
 
 
 def _ba_state(ambassador_id: int, today) -> str:
-    shift = (
+    """Active if currently checked in (not out); else Offline."""
+    from django.utils import timezone
+
+    from .models import BaAttendanceDay
+
+    # Prefer today's attendance log (survives month-shift clock roll).
+    if BaAttendanceDay.objects.filter(
+        ambassador_id=ambassador_id,
+        date=today,
+        checked_in_at__isnull=False,
+        checked_out_at__isnull=True,
+    ).exists():
+        return 'Active'
+    if BaAttendanceDay.objects.filter(
+        ambassador_id=ambassador_id,
+        date=today,
+        checked_in_at__isnull=False,
+        checked_out_at__isnull=False,
+    ).exists():
+        return 'Offline'
+
+    exact = (
         ShiftAssignment.objects.filter(ambassador_id=ambassador_id, date=today)
         .order_by('-checked_in_at', '-id')
         .first()
     )
-    if not shift or not shift.checked_in_at:
+    if exact and exact.checked_in_at and not exact.checked_out_at:
+        return 'Active'
+
+    # Month-level shift row (usually dated the 1st) with live clocks today.
+    month_qs = (
+        ShiftAssignment.objects.filter(
+            ambassador_id=ambassador_id,
+            date__year=today.year,
+            date__month=today.month,
+            checked_in_at__isnull=False,
+        )
+        .order_by('-checked_in_at', '-id')
+    )
+    for shift in month_qs[:5]:
+        cin_day = timezone.localtime(shift.checked_in_at).date()
+        if cin_day != today:
+            continue
+        if not shift.checked_out_at:
+            return 'Active'
         return 'Offline'
-    if shift.checked_out_at:
-        return 'Offline'
-    return 'Active'
+    return 'Offline'
 
 
 def build_supervisor_overview(supervisor: Supervisor) -> dict:
@@ -159,6 +196,9 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
         )
 
     ba_rows = []
+    from .incentives import ba_month_achievement
+
+    month = today.strftime('%Y-%m')
     for ba in ambassadors:
         sid = ba.store_id if ba.store_id in store_ids else shift_home.get(ba.id)
         store = next((s for s in stores if s.id == sid), ba.store)
@@ -179,6 +219,9 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
         ).count()
         sessions = checkins * 8 + max(0, int(score // 5))
         points = int(round(score * 10 + checkins * 40 + conversion * 5))
+        _target_kg, _sales_kg, ach_pct = ba_month_achievement(ba.id, month)
+        # Only show a % when a target exists; otherwise UI shows "—"
+        target_achievement = round(ach_pct, 1) if _target_kg > 0 else None
         ba_rows.append(
             {
                 'id': str(ba.id),
@@ -190,6 +233,9 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
                 'points': points,
                 'sessions': sessions,
                 'score': score,
+                'targetKg': round(_target_kg, 1) if _target_kg > 0 else None,
+                'salesKg': round(_sales_kg, 1),
+                'targetAchievement': target_achievement,
             }
         )
 

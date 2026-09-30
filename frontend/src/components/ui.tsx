@@ -123,6 +123,8 @@ export function StatusBadge({ status }: { status: string }) {
     Missed: 'bg-rose-50 text-rose-700 ring-rose-200',
     Cancelled: 'bg-slate-100 text-slate-600 ring-slate-200',
     Open: 'bg-rose-50 text-rose-700 ring-rose-200',
+    Present: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Absent: 'bg-rose-50 text-rose-700 ring-rose-200',
     'In Review': 'bg-amber-50 text-amber-700 ring-amber-200',
     Resolved: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   }
@@ -450,8 +452,9 @@ export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md'
   const sizes = { sm: 'h-8 w-8 text-[10px]', md: 'h-9 w-9 text-xs', lg: 'h-16 w-16 text-xl' }
   return (
     <div
+      translate="no"
       className={cn(
-        'flex items-center justify-center rounded-full bg-navy-900 font-semibold text-white',
+        'notranslate flex items-center justify-center rounded-full bg-navy-900 font-semibold text-white',
         sizes[size],
       )}
     >

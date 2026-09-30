@@ -1,6 +1,7 @@
 /**
  * Kashmir targets bulk upload: download template → fill → upload.
  * Columns: BA Name, Month, Category, SKU, Target
+ * BA Code is not in the template — it is resolved from Ambassadors by BA Name on upload.
  *
  * Categories (LMT):
  *   Kashmir Cooking Oil (KCO / KPGO) · Kashmir Banaspati (KBP) · Waadi Banaspati (WBP)
@@ -30,6 +31,8 @@ export type SalesBulkRow = {
   month: string
   category: ProductCategory
   sku: string
+  /** Pack labels assigned under this category/SKU target row. */
+  assignedSkus: string[]
   target: number
   /** Always null from the current template (sales not collected here). */
   sales: number | null
@@ -140,7 +143,7 @@ export async function downloadSalesBulkTemplate(opts?: {
     ['How to fill the Kashmir targets upload template'],
     [],
     [`1. Add rows on the "${SHEET}" sheet. Do not change the header row.`],
-    ['2. BA Name — required. Must match Ambassadors exactly.'],
+    ['2. BA Name — required. Must match Ambassadors (code is looked up from the database).'],
     ['3. Month — full month name (e.g. September) or YYYY-MM. Blank = current month.'],
     [
       '4. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP).',
@@ -149,14 +152,14 @@ export async function downloadSalesBulkTemplate(opts?: {
       '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category).',
     ],
     [
-      '6. Same BA can appear on many rows — e.g. Kinza × 3 categories (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).',
+      '6. Same BA can appear on many rows — e.g. three categories (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).',
     ],
     ['7. Target — numeric target for that row (required). Do not use 0.'],
     ['8. Save the file, then upload it via Upload targets on Ambassadors.'],
     [],
     COLUMNS.map((c) => c.header),
     [],
-    ['Example (Kinza — three category rows; comma-separated SKUs OK)'],
+    ['Example (three category rows; comma-separated SKUs OK)'],
     [
       'Kinza',
       '2026-09',
@@ -167,8 +170,8 @@ export async function downloadSalesBulkTemplate(opts?: {
     ['Kinza', '2026-09', 'Kashmir Banaspati', 'KBP GOLD 10 KG BKT', 80],
     ['Kinza', '2026-09', 'Waadi Banaspati', 'WBP 5 KG BKT', 40],
     [],
-    ['BA name reference'],
-    ['BA Name', 'BA Code'],
+    ['BA name reference (code is filled automatically from Ambassadors)'],
+    ['BA Name', 'BA Code (from database)'],
     ...(opts?.baSamples?.length
       ? opts.baSamples.map((b) => [b.name, b.code])
       : [['Use names from Ambassadors', '']]),
@@ -290,13 +293,17 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     }
 
     let sku = skuRaw
+    let assignedSkus: string[] = []
     if (category && skuRaw) {
       const parts = splitSkuCell(skuRaw)
       if (parts.length > 1) {
         // Category-level target: many SKUs in one cell, one Target for the category.
+        const matched: string[] = []
         const bad: string[] = []
         for (const part of parts) {
-          if (!resolveSkuInCategory(part, category)) bad.push(part)
+          const hit = resolveSkuInCategory(part, category)
+          if (!hit) bad.push(part)
+          else matched.push(hit)
         }
         if (bad.length) {
           rowErrors.push(
@@ -305,6 +312,7 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
         } else {
           // Store against the category name so monthly totals stay correct (one target, not × SKUs).
           sku = category
+          assignedSkus = matched
         }
       } else {
         const matched = resolveSkuInCategory(skuRaw, category)
@@ -314,6 +322,7 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
           )
         } else {
           sku = matched
+          assignedSkus = [matched]
         }
       }
     }
@@ -333,6 +342,7 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
         month,
         category,
         sku,
+        assignedSkus,
         target: target as number,
         sales: null,
       },

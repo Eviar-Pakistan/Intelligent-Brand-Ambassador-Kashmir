@@ -6,6 +6,7 @@ from .models import (
     AssessmentAnswer,
     AssessmentQuestion,
     AssessmentSession,
+    BaAttendanceDay,
     BaDailyReport,
     BaIncentivePayout,
     BaTarget,
@@ -227,6 +228,24 @@ class ShiftAssignmentAdmin(admin.ModelAdmin):
         'check_in_accuracy_m',
         'early_leave_reason',
     )
+
+
+@admin.register(BaAttendanceDay)
+class BaAttendanceDayAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'date',
+        'day_key',
+        'ambassador',
+        'store',
+        'shift_label',
+        'checked_in_at',
+        'checked_out_at',
+    )
+    list_filter = ('date', 'day_key')
+    search_fields = ('ambassador__name', 'store__name', 'shift_label')
+    raw_id_fields = ('ambassador', 'store', 'shift')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(BaDailyReport)

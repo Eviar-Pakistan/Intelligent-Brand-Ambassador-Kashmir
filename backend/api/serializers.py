@@ -642,6 +642,8 @@ class AmbassadorSerializer(serializers.ModelSerializer):
     created_by_email = serializers.EmailField(source='created_by.email', read_only=True)
     store_name = serializers.SerializerMethodField()
     store_city = serializers.SerializerMethodField()
+    lifecycle = serializers.SerializerMethodField()
+    lifecycle_current = serializers.SerializerMethodField()
 
     class Meta:
         model = Ambassador
@@ -662,6 +664,8 @@ class AmbassadorSerializer(serializers.ModelSerializer):
             'store_name',
             'store_city',
             'deployed_at',
+            'lifecycle',
+            'lifecycle_current',
             'created_by',
             'created_by_email',
             'created_at',
@@ -679,6 +683,8 @@ class AmbassadorSerializer(serializers.ModelSerializer):
             'store_name',
             'store_city',
             'deployed_at',
+            'lifecycle',
+            'lifecycle_current',
             'created_by',
             'created_by_email',
             'created_at',
@@ -693,6 +699,68 @@ class AmbassadorSerializer(serializers.ModelSerializer):
 
     def get_store_city(self, obj):
         return obj.store.city if obj.store_id else None
+
+    def _lifecycle_reached(self, obj):
+        """Cumulative stages from DB status / certification / store / today's clock."""
+        cache_attr = '_lifecycle_reached_cache'
+        cached = getattr(obj, cache_attr, None)
+        if cached is not None:
+            return cached
+
+        from django.utils import timezone
+
+        from .models import BaAttendanceDay, ShiftAssignment
+
+        reached = ['Recruited']
+        report = obj.report_json if isinstance(obj.report_json, dict) else {}
+        screening = (
+            obj.status != Ambassador.Status.PENDING
+            or bool(obj.overall_score)
+            or bool(report)
+            or bool(obj.certified_at)
+        )
+        if screening:
+            reached.append('AI Screened')
+
+        certified = (
+            obj.status in (Ambassador.Status.CERTIFIED, Ambassador.Status.DEPLOYED)
+            or bool(obj.certified_at)
+            or bool(report.get('certified'))
+        )
+        if certified:
+            reached.append('Certified')
+            reached.append('Trained')
+
+        deployed = obj.status == Ambassador.Status.DEPLOYED or obj.store_id is not None
+        if deployed:
+            reached.append('Deployed')
+
+        today = timezone.localdate()
+        live = BaAttendanceDay.objects.filter(
+            ambassador_id=obj.id,
+            date=today,
+            checked_in_at__isnull=False,
+        ).exists()
+        if not live:
+            for s in ShiftAssignment.objects.filter(
+                ambassador_id=obj.id,
+                checked_in_at__isnull=False,
+            ).only('checked_in_at')[:8]:
+                if timezone.localtime(s.checked_in_at).date() == today:
+                    live = True
+                    break
+        if live:
+            reached.append('Live')
+
+        setattr(obj, cache_attr, reached)
+        return reached
+
+    def get_lifecycle(self, obj):
+        return self._lifecycle_reached(obj)
+
+    def get_lifecycle_current(self, obj):
+        reached = self._lifecycle_reached(obj)
+        return reached[-1] if reached else 'Recruited'
 
 
 class PlatformSettingsSerializer(serializers.ModelSerializer):
@@ -1033,6 +1101,7 @@ class BaTargetSerializer(serializers.ModelSerializer):
     baCode = serializers.CharField(source='ambassador.code', read_only=True)
     targetKg = serializers.FloatField(source='target_kg')
     salesKg = serializers.FloatField(source='sales_kg', allow_null=True, required=False)
+    assignedSkus = serializers.JSONField(source='assigned_skus', required=False)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
 
     class Meta:
@@ -1047,6 +1116,7 @@ class BaTargetSerializer(serializers.ModelSerializer):
             'sku',
             'targetKg',
             'salesKg',
+            'assignedSkus',
             'updatedAt',
             'created_at',
         )

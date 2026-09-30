@@ -131,11 +131,17 @@ export function SupervisorBaTable({
 }) {
   useCreatedStores()
   const { bas } = useLiveOverview(supervisor, mode)
-  const sorted = [...bas].sort((a, b) => b.conversion - a.conversion)
+  const sorted = [...bas].sort((a, b) => {
+    const aAch = a.targetAchievement ?? -1
+    const bAch = b.targetAchievement ?? -1
+    if (bAch !== aAch) return bAch - aAch
+    return b.conversion - a.conversion
+  })
 
   if (!sorted.length) {
     return (
       <Card>
+        <CardHeader title="BA performance" subtitle="Ambassadors working in your stores" />
         <p className="text-sm text-slate-500">No ambassadors in this supervisor&apos;s stores yet.</p>
       </Card>
     )
@@ -143,34 +149,46 @@ export function SupervisorBaTable({
 
   return (
     <Card padding={false}>
-      <TableScroll minWidth={720}>
+      <div className="px-4 pt-4 sm:px-5">
+        <CardHeader title="BA performance" subtitle="Ambassadors working in your stores" />
+      </div>
+      <TableScroll minWidth={640}>
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
-              <th className="px-4 py-3">Ambassador</th>
+              <th className="px-4 py-3">BA</th>
               <th className="px-4 py-3">Store</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Conversion</th>
-              <th className="px-4 py-3">Sessions</th>
-              <th className="px-4 py-3">Points</th>
+              <th className="px-4 py-3">Target</th>
+              <th className="px-4 py-3">Achievement</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((b) => (
-              <tr key={b.id} className="border-t border-slate-100">
+              <tr key={`${b.id}-${b.storeId}`} className="border-t border-slate-100">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Avatar name={b.name} size="sm" />
                     <span className="font-medium">{b.name}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{b.store}</td>
+                <td className="px-4 py-3 text-slate-600">{b.store || '—'}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={b.state} />
                 </td>
                 <td className="px-4 py-3 font-semibold">{b.conversion}%</td>
-                <td className="px-4 py-3">{b.sessions}</td>
-                <td className="px-4 py-3">{b.points}</td>
+                <td className="px-4 py-3 tabular-nums text-slate-700">
+                  {b.targetKg == null ? '—' : `${b.targetKg.toLocaleString()} kg`}
+                </td>
+                <td className="px-4 py-3 font-semibold tabular-nums">
+                  {b.targetAchievement == null ? '—' : `${Math.round(b.targetAchievement)}%`}
+                  {b.targetAchievement != null && b.salesKg > 0 ? (
+                    <div className="text-[10px] font-normal text-slate-400">
+                      {b.salesKg.toLocaleString()} kg sold
+                    </div>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

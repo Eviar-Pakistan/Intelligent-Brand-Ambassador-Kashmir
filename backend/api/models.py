@@ -861,6 +861,11 @@ class BaTarget(models.Model):
     sku = models.CharField(max_length=80, blank=True, default='')
     target_kg = models.FloatField(default=0)
     sales_kg = models.FloatField(null=True, blank=True, default=None)
+    assigned_skus = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Pack SKUs assigned under this target row (category or multi-SKU upload).',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -886,6 +891,53 @@ class BaTarget(models.Model):
     def __str__(self):
         sku = self.sku or '—'
         return f'{self.ambassador_id} · {self.month} · {sku}'
+
+
+class BaAttendanceDay(models.Model):
+    """
+    One calendar day of BA attendance clocks.
+    Persists across month-level shift roll (which clears ShiftAssignment clocks each day).
+    """
+
+    ambassador = models.ForeignKey(
+        Ambassador,
+        on_delete=models.CASCADE,
+        related_name='attendance_days',
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ba_attendance_days',
+    )
+    shift = models.ForeignKey(
+        'ShiftAssignment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='attendance_days',
+    )
+    date = models.DateField(db_index=True)
+    day_key = models.CharField(max_length=3, blank=True, default='')
+    shift_label = models.CharField(max_length=64, blank=True, default='')
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    checked_out_at = models.DateTimeField(null=True, blank=True)
+    early_leave_reason = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ambassador', 'date'],
+                name='uniq_ba_attendance_day',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.ambassador_id} · {self.date} · {"in" if self.checked_in_at else "absent"}'
 
 
 class BaDailyReport(models.Model):

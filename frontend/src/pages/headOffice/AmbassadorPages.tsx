@@ -31,7 +31,6 @@ import {
   useBaAccounts,
   type AmbassadorParseResult,
   type BaAccount,
-  type BaStatus,
 } from '../../lib/baAccounts'
 import { AssessmentReport } from '../ba/AssessmentReport'
 import { fetchIncentivesOverview, formatPkr, type IncentiveBreakdown } from '../../lib/incentives'
@@ -39,23 +38,27 @@ import { shiftLabelFromTimes } from '../../context/ScheduleContext'
 import {
   createShift as createShiftApi,
   deployAmbassador,
+  fetchAmbassadorAttendance,
   fetchAmbassadorShifts,
   type ApiShift,
+  type AttendanceDayRow,
 } from '../../lib/deploymentApi'
 import { findCreatedStore, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
 import { isApiAuthenticated } from '../../lib/api'
 import {
+  listBaTargets,
   monthInputValue,
+  refreshBaTargetsFromApi,
   upsertBaTargets,
   useBaTargetsSync,
 } from '../../lib/baTargets'
-import { baCodeForId, resolveBaByCode, resolveBaByName } from '../../lib/baCodes'
+import { baCodeForId, resolveBaByCode, resolveBaByNameForTargets } from '../../lib/baCodes'
 import {
   downloadSalesBulkTemplate,
   parseSalesBulkFile,
   type SalesParseResult,
 } from '../../lib/salesBulkUpload'
-import { baPerformanceCategories } from '../../data/baPerformance'
+import { baPerformanceCategories, getSkusForCategory } from '../../data/baPerformance'
 
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
@@ -124,6 +127,7 @@ function SetTargetSalesModal({
         sku: cat,
         targetKg: n,
         salesKg: null,
+        assignedSkus: getSkusForCategory(cat),
       })
     }
     setSaving(true)
@@ -231,11 +235,40 @@ function certificationGrade(score: number | null | undefined): string {
   return 'C'
 }
 
-function lifecycleFromStatus(status: BaStatus): LifecycleStage[] {
-  if (status === 'Deployed') return [...allLifecycle]
-  if (status === 'Certified') return ['Recruited', 'AI Screened', 'Certified', 'Trained']
-  if (status === 'Training') return ['Recruited', 'AI Screened', 'Trained']
-  return ['Recruited']
+/**
+ * Build lifecycle progress from BA account fields (status, assessment, store, check-in).
+ * Stages are cumulative; `current` is the furthest reached stage.
+ */
+function lifecycleFromAccount(
+  account: BaAccount,
+  opts?: { liveToday?: boolean },
+): { reached: LifecycleStage[]; current: LifecycleStage } {
+  const reached: LifecycleStage[] = ['Recruited']
+
+  const screeningStarted =
+    account.status !== 'Invited' ||
+    account.videoWatched ||
+    account.answers.length > 0 ||
+    Boolean(account.result)
+  if (screeningStarted) reached.push('AI Screened')
+
+  const certified =
+    account.status === 'Certified' ||
+    account.status === 'Deployed' ||
+    Boolean(account.result?.certified)
+  if (certified) {
+    reached.push('Certified')
+    // Assessment pass = trained & ready for store assignment
+    reached.push('Trained')
+  }
+
+  const deployed = account.status === 'Deployed' || account.storeId != null
+  if (deployed) reached.push('Deployed')
+
+  const live = opts?.liveToday ?? Boolean(account.checkIn)
+  if (live) reached.push('Live')
+
+  return { reached, current: reached[reached.length - 1] ?? 'Recruited' }
 }
 
 function scoresFromAccount(account: BaAccount) {
@@ -607,6 +640,7 @@ function UploadTargetsModal({
     if (!result?.rows.length) return
     setBusy(true)
     await syncAmbassadorsFromApi().catch(() => {})
+    await refreshBaTargetsFromApi().catch(() => {})
     const liveAccounts = getBaAccounts().filter((a) => !isDemoBa(a.id))
     const extras = liveAccounts.map((a) => ({
       id: a.id,
@@ -615,40 +649,69 @@ function UploadTargetsModal({
       storeId: a.storeId,
       status: a.status,
     }))
+    const existingTargets = listBaTargets()
     const valid: Parameters<typeof upsertBaTargets>[0] = []
     const unknown: string[] = []
+    // Same BA Name across category rows must reuse one DB ambassador (and their code).
+    const baByNormalizedName = new Map<
+      string,
+      NonNullable<ReturnType<typeof resolveBaByNameForTargets>>
+    >()
 
     for (const r of result.rows) {
-      let ba = r.input.code ? resolveBaByCode(r.input.code, extras) : null
-      if ((!ba || isDemoBa(ba.id)) && r.input.baName) {
-        ba = resolveBaByName(r.input.baName, extras)
-      }
+      const nameKey = r.input.baName.trim().toLowerCase().replace(/\s+/g, ' ')
+      const month = (() => {
+        const m = r.input.month.trim()
+        if (/^\d{4}-\d{2}$/.test(m)) return m
+        const d = new Date(`${m} 1, ${new Date().getFullYear()}`)
+        if (!Number.isNaN(d.getTime())) return monthInputValue(d)
+        return monthInputValue()
+      })()
+
+      // Prefer BAs that still have no target for this month when names collide.
+      const alreadyHasTargetIds = new Set(
+        existingTargets.filter((t) => t.month === month && (t.targetKg ?? 0) > 0).map((t) => t.baId),
+      )
+
+      // Primary: match BA Name → reuse same DB ambassador (and code) for every category row.
+      let ba = nameKey ? baByNormalizedName.get(nameKey) ?? null : null
       if (!ba || isDemoBa(ba.id)) {
-        const hint = r.input.code
-          ? `BA Code "${r.input.code}"`
-          : `BA Name "${r.input.baName}"`
+        ba = r.input.baName
+          ? resolveBaByNameForTargets(r.input.baName, extras, alreadyHasTargetIds)
+          : null
+        if (ba && !isDemoBa(ba.id) && nameKey) {
+          baByNormalizedName.set(nameKey, ba)
+        }
+      }
+      // Optional: Excel BA Code only if name did not match.
+      if ((!ba || isDemoBa(ba.id)) && r.input.code) {
+        ba = resolveBaByCode(r.input.code, extras)
+      }
+
+      if (!ba || isDemoBa(ba.id)) {
         unknown.push(
-          `Row ${r.row}: unknown ${hint} — use a name/code from Ambassadors.`,
+          `Row ${r.row}: unknown BA Name "${r.input.baName}" — must match a name on Ambassadors (code is filled from the database).`,
         )
         continue
       }
-      if (!ba.code) {
-        ba = { ...ba, code: baCodeForId(ba.id, extras) || ba.code }
-      }
+
+      // Always take code from the matched DB / roster entry (Excel code not required).
+      const baCode = ba.code || baCodeForId(ba.id, extras) || ''
+      ba = { ...ba, code: baCode }
+
       valid.push({
         baId: ba.id,
         baName: ba.name,
         baCode: ba.code,
-        month: (() => {
-          const m = r.input.month.trim()
-          if (/^\d{4}-\d{2}$/.test(m)) return m
-          const d = new Date(`${m} 1, ${new Date().getFullYear()}`)
-          if (!Number.isNaN(d.getTime())) return monthInputValue(d)
-          return monthInputValue()
-        })(),
+        month,
         targetKg: r.input.target,
         salesKg: null,
         sku: r.input.sku,
+        assignedSkus: r.input.assignedSkus?.length
+          ? r.input.assignedSkus
+          : r.input.sku
+            ? [r.input.sku]
+            : getSkusForCategory(r.input.category),
       })
     }
 
@@ -683,9 +746,9 @@ function UploadTargetsModal({
         <div className="space-y-2">
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
-            Columns: BA Name, Month, Category, SKU, Target. Same BA can have many rows (e.g. all three
-            categories; one or more SKUs each). SKU must match the category — see sheet
-            &quot;Categories &amp; SKUs&quot; in the file.
+            Columns: BA Name, Month, Category, SKU, Target. BA Code is not required — it is taken from
+            Ambassadors using the BA Name. Same BA can have many rows (e.g. all three categories). SKU
+            must match the category — see sheet &quot;Categories &amp; SKUs&quot; in the file.
           </p>
           <Button
             variant="secondary"
@@ -936,7 +999,9 @@ export function AmbassadorsPage() {
                     className="flex items-center gap-3 text-left"
                   >
                     <Avatar name={a.name} />
-                    <span className="font-medium text-slate-900 hover:text-brand-600">{a.name}</span>
+                    <span translate="no" className="notranslate font-medium text-slate-900 hover:text-brand-600">
+                      {a.name}
+                    </span>
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{a.city || '—'}</td>
@@ -1099,11 +1164,14 @@ export function AmbassadorProfilePage() {
   )
 
   const [shiftOpen, setShiftOpen] = useState(false)
-  const [shiftTab, setShiftTab] = useState('Current shifts')
+  const [shiftTab, setShiftTab] = useState('Monthly shifts')
   const [toast, setToast] = useState<string | null>(null)
   const [incentive, setIncentive] = useState<IncentiveBreakdown | null>(null)
   const [apiShifts, setApiShifts] = useState<ApiShift[]>([])
+  const [attendanceRows, setAttendanceRows] = useState<AttendanceDayRow[]>([])
+  const [attendancePresent, setAttendancePresent] = useState(0)
   const [loadingShifts, setLoadingShifts] = useState(false)
+  const [loadingAttendance, setLoadingAttendance] = useState(false)
   const [savingShift, setSavingShift] = useState(false)
   const dayOptions = useMemo(() => dayOptionsFromToday(21), [])
   const [form, setForm] = useState({
@@ -1140,10 +1208,13 @@ export function AmbassadorProfilePage() {
   useEffect(() => {
     if (!account?.id || isDemoBa(account.id) || !isApiAuthenticated()) {
       setApiShifts([])
+      setAttendanceRows([])
+      setAttendancePresent(0)
       return
     }
     let cancelled = false
     setLoadingShifts(true)
+    setLoadingAttendance(true)
     void fetchAmbassadorShifts(account.id)
       .then((list) => {
         if (!cancelled) setApiShifts(list)
@@ -1153,6 +1224,21 @@ export function AmbassadorProfilePage() {
       })
       .finally(() => {
         if (!cancelled) setLoadingShifts(false)
+      })
+    void fetchAmbassadorAttendance(account.id, 30)
+      .then((data) => {
+        if (cancelled) return
+        setAttendanceRows(Array.isArray(data?.results) ? data.results : [])
+        setAttendancePresent(Number(data?.present) || 0)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAttendanceRows([])
+          setAttendancePresent(0)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAttendance(false)
       })
     return () => {
       cancelled = true
@@ -1166,7 +1252,6 @@ export function AmbassadorProfilePage() {
   }, [form.storeId, stores.length])
 
   const scores = account ? scoresFromAccount(account) : null
-  const lifecycle = account ? lifecycleFromStatus(account.status) : []
   const storeLabel = account?.storeName
     ? account.storeId
       ? `Store #${account.storeId} — ${account.storeName}`
@@ -1174,21 +1259,21 @@ export function AmbassadorProfilePage() {
     : 'No store assigned'
 
   const today = todayIsoLocal()
-  const currentShifts = useMemo(
-    () =>
-      apiShifts
-        .filter((s) => s.dateIso && s.dateIso >= today)
-        .slice()
-        .sort((a, b) => String(a.dateIso).localeCompare(String(b.dateIso))),
-    [apiShifts, today],
+  const liveToday = useMemo(() => {
+    if (account?.checkIn) return true
+    const row = attendanceRows.find((r) => r.date === today)
+    return row?.status === 'Present'
+  }, [account?.checkIn, attendanceRows, today])
+  const { reached: lifecycleReached, current: lifecycleCurrent } = useMemo(
+    () => (account ? lifecycleFromAccount(account, { liveToday }) : { reached: [] as LifecycleStage[], current: 'Recruited' as LifecycleStage }),
+    [account, liveToday],
   )
-  const historyShifts = useMemo(
+  const monthlyShifts = useMemo(
     () =>
       apiShifts
-        .filter((s) => s.dateIso && s.dateIso < today)
         .slice()
         .sort((a, b) => String(b.dateIso).localeCompare(String(a.dateIso))),
-    [apiShifts, today],
+    [apiShifts],
   )
 
   async function saveShift() {
@@ -1222,6 +1307,13 @@ export function AmbassadorProfilePage() {
       })
       const list = await fetchAmbassadorShifts(account.id)
       setApiShifts(list)
+      try {
+        const att = await fetchAmbassadorAttendance(account.id, 30)
+        setAttendanceRows(Array.isArray(att?.results) ? att.results : [])
+        setAttendancePresent(Number(att?.present) || 0)
+      } catch {
+        /* keep existing attendance */
+      }
       setShiftOpen(false)
       setToast(`Shift created for ${account.name} · ${store.name}`)
       setTimeout(() => setToast(null), 3000)
@@ -1328,21 +1420,21 @@ export function AmbassadorProfilePage() {
             </div>
             <ol className="mt-2 flex gap-1 overflow-x-auto pb-1">
               {allLifecycle.map((stage, i) => {
-                const done = lifecycle.includes(stage)
-                const current = lifecycle[lifecycle.length - 1] === stage
+                const done = lifecycleReached.includes(stage)
+                const current = lifecycleCurrent === stage
                 return (
                   <li
                     key={stage}
                     className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] sm:text-xs ${
                       current
-                        ? 'bg-brand-50 font-semibold text-brand-800 ring-1 ring-brand-200'
+                        ? 'bg-rose-50 font-semibold text-slate-900 ring-1 ring-slate-800'
                         : done
                           ? 'bg-emerald-50 text-emerald-800'
                           : 'bg-slate-50 text-slate-400'
                     }`}
                   >
                     {done ? (
-                      <Check size={12} className="shrink-0" />
+                      <Check size={12} className="shrink-0 text-emerald-700" />
                     ) : (
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-slate-300" />
                     )}
@@ -1358,30 +1450,32 @@ export function AmbassadorProfilePage() {
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <Tabs
-                tabs={['Current shifts', 'Shift history']}
+                tabs={['Monthly shifts', 'Attendance']}
                 value={shiftTab}
                 onChange={setShiftTab}
               />
               <span className="text-xs text-slate-400">
-                {loadingShifts
-                  ? 'Loading…'
-                  : shiftTab === 'Current shifts'
-                    ? `${currentShifts.length} upcoming`
-                    : `${historyShifts.length} past`}
+                {shiftTab === 'Monthly shifts'
+                  ? loadingShifts
+                    ? 'Loading…'
+                    : `${monthlyShifts.length} shift${monthlyShifts.length === 1 ? '' : 's'}`
+                  : loadingAttendance
+                    ? 'Loading…'
+                    : `${attendancePresent} days in the last 30`}
               </span>
             </div>
 
-            {shiftTab === 'Current shifts' ? (
-              currentShifts.length === 0 ? (
+            {shiftTab === 'Monthly shifts' ? (
+              monthlyShifts.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center">
-                  <p className="text-sm text-slate-500">No upcoming shifts</p>
+                  <p className="text-sm text-slate-500">No shifts scheduled</p>
                   <Button size="sm" className="mt-3" onClick={() => setShiftOpen(true)}>
                     Create shift
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {currentShifts.map((s) => (
+                  {monthlyShifts.map((s) => (
                     <div
                       key={s.id}
                       className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm"
@@ -1396,20 +1490,28 @@ export function AmbassadorProfilePage() {
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-slate-800">{s.shift}</span>
-                        <StatusBadge status={s.status === 'Conflict' ? 'Conflict' : 'Scheduled'} />
+                        <StatusBadge
+                          status={
+                            s.dateIso && s.dateIso >= today
+                              ? s.status === 'Conflict'
+                                ? 'Conflict'
+                                : 'Scheduled'
+                              : historyStatusForShift(s)
+                          }
+                        />
                       </div>
                     </div>
                   ))}
                 </div>
               )
-            ) : historyShifts.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-500">No past shifts on record.</p>
+            ) : attendanceRows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-500">No attendance records yet.</p>
             ) : (
-              <TableScroll minWidth={520}>
+              <TableScroll minWidth={560} className="max-h-80 overflow-y-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="text-xs text-slate-500 uppercase">
+                  <thead className="sticky top-0 z-10 bg-white text-xs text-slate-500 uppercase">
                     <tr>
-                      <th className="pb-2 pr-3 font-medium">Date</th>
+                      <th className="pb-2 pr-3 font-medium">Day</th>
                       <th className="pb-2 pr-3 font-medium">Store</th>
                       <th className="pb-2 pr-3 font-medium">Shift</th>
                       <th className="pb-2 pr-3 font-medium">In / Out</th>
@@ -1417,30 +1519,37 @@ export function AmbassadorProfilePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {historyShifts.map((s) => {
-                      const st = historyStatusForShift(s)
-                      return (
-                        <tr key={s.id} className="border-t border-slate-100">
-                          <td className="py-2.5 pr-3">
-                            <div className="font-medium">{s.day}</div>
-                            <div className="text-xs text-slate-400">{s.date}</div>
-                          </td>
-                          <td className="py-2.5 pr-3">
-                            <div className="max-w-[140px] truncate">
-                              #{s.storeId} {s.storeName}
-                            </div>
-                            <div className="text-xs text-slate-400">{s.city}</div>
-                          </td>
-                          <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{s.shift}</td>
-                          <td className="py-2.5 pr-3 tabular-nums text-slate-600 whitespace-nowrap">
-                            {formatShiftClock(s.checkedInAt)} → {formatShiftClock(s.checkedOutAt)}
-                          </td>
-                          <td className="py-2.5">
-                            <StatusBadge status={st} />
-                          </td>
-                        </tr>
-                      )
-                    })}
+                    {attendanceRows.map((row) => (
+                      <tr key={row.date} className="border-t border-slate-100">
+                        <td className="py-2.5 pr-3">
+                          <div className="font-medium">{row.day}</div>
+                          <div className="text-xs text-slate-400">{row.date}</div>
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          <div className="max-w-[180px] truncate font-medium text-slate-800">
+                            {row.storeName || '—'}
+                          </div>
+                          <div className="text-xs text-slate-400">{row.city || '—'}</div>
+                        </td>
+                        <td className="py-2.5 pr-3 font-medium whitespace-nowrap">
+                          {row.shift || '—'}
+                        </td>
+                        <td className="py-2.5 pr-3 tabular-nums text-slate-600 whitespace-nowrap">
+                          {formatShiftClock(row.checkedInAt)} → {formatShiftClock(row.checkedOutAt)}
+                        </td>
+                        <td className="py-2.5">
+                          <StatusBadge
+                            status={
+                              row.status === 'Present'
+                                ? 'Present'
+                                : row.status === 'Scheduled'
+                                  ? 'Scheduled'
+                                  : 'Absent'
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </TableScroll>

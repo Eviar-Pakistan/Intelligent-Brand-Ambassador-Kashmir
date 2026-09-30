@@ -169,3 +169,40 @@ export function resolveBaByName(
   const fromDir = pickUniqueByName(want, buildBaDirectory(extras), excludeIds)
   return fromDir ? { id: fromDir.id, name: fromDir.name, code: fromDir.code } : null
 }
+
+/**
+ * Target upload: same as resolveBaByName, but when several BAs share a name,
+ * prefer ones that do not already have targets for the month (so a re-upload
+ * fills the missing BA instead of overwriting the other same-name BA).
+ */
+export function resolveBaByNameForTargets(
+  name: string,
+  extras: BaCodeRef[] = [],
+  alreadyHasTargetIds?: Set<string>,
+): BaDirectoryEntry | null {
+  const want = normalizeBaName(name)
+  if (!want) return null
+
+  const exact = extras.filter((a) => normalizeBaName(a.name) === want)
+  if (exact.length > 1 && alreadyHasTargetIds?.size) {
+    const without = exact.filter((a) => !alreadyHasTargetIds.has(a.id))
+    const pool = without.length ? without : exact
+    // Prefer deployed / assigned store, then lower code id.
+    const picked = [...pool].sort((a, b) => {
+      const aStore = a.storeId == null || a.storeId === 0 ? 1 : 0
+      const bStore = b.storeId == null || b.storeId === 0 ? 1 : 0
+      if (aStore !== bStore) return aStore - bStore
+      const aDep = a.status === 'Deployed' ? 0 : 1
+      const bDep = b.status === 'Deployed' ? 0 : 1
+      if (aDep !== bDep) return aDep - bDep
+      return String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+    })[0]
+    return {
+      id: picked.id,
+      name: picked.name,
+      code: picked.code ? normalizeBaCode(picked.code) : baCodeForId(picked.id, extras),
+    }
+  }
+
+  return resolveBaByName(name, extras)
+}

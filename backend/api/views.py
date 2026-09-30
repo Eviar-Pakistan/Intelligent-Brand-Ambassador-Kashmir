@@ -392,7 +392,7 @@ def intelligence_ba_performance(request):
     """
     GET /api/intelligence/ba-performance/
     Live HO Dashboard aggregates (targets, field reports, attendance).
-    Query: town, store, month, from, to, category, sku, sales_period
+    Query: town, store, month, from, to, category, sku, sales_period, target_month
     """
     q = request.query_params
     date_from = None
@@ -420,6 +420,7 @@ def intelligence_ba_performance(request):
             category=(q.get('category') or None),
             sku=(q.get('sku') or None),
             sales_period=(q.get('sales_period') or 'mom'),
+            target_month=(q.get('target_month') or None),
         )
     )
 

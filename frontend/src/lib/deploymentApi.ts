@@ -107,6 +107,35 @@ export async function fetchAmbassadorShifts(ambassadorId: string | number): Prom
   return Array.isArray(data?.results) ? data.results : []
 }
 
+export type AttendanceDayRow = {
+  date: string
+  day: string
+  storeId: number | null
+  storeName: string
+  city: string
+  shift: string
+  checkedInAt: string | null
+  checkedOutAt: string | null
+  status: 'Present' | 'Absent' | 'Scheduled' | string
+}
+
+export type AttendanceChartResponse = {
+  days: number
+  present: number
+  absent: number
+  results: AttendanceDayRow[]
+}
+
+/** Last N days Present/Absent attendance for one BA (persisted in DB). */
+export async function fetchAmbassadorAttendance(
+  ambassadorId: string | number,
+  days = 30,
+): Promise<AttendanceChartResponse> {
+  return apiRequest<AttendanceChartResponse>(
+    `/api/ambassadors/${encodeURIComponent(String(ambassadorId))}/attendance/?days=${days}`,
+  )
+}
+
 export async function deployAmbassador(ambassadorId: string | number, storeId: number) {
   return apiRequest(`/api/ambassadors/${ambassadorId}/deploy/`, {
     method: 'POST',

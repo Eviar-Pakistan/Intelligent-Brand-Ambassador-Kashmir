@@ -311,6 +311,18 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
         ambassador.refresh_from_db()
         return Response(AmbassadorSerializer(ambassador, context={'request': request}).data)
 
+    @action(detail=True, methods=['get'], url_path='attendance')
+    def attendance(self, request, pk=None):
+        """Last N days Present/Absent chart for one BA (from BaAttendanceDay + shifts)."""
+        from .ba_attendance_views import build_attendance_chart
+
+        ambassador = self.get_object()
+        try:
+            days = int(request.query_params.get('days') or 30)
+        except (TypeError, ValueError):
+            days = 30
+        return Response(build_attendance_chart(ambassador, days=days))
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

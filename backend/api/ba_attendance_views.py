@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
 from rest_framework import status
@@ -10,8 +11,215 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Ambassador, AmbassadorComplaint, BaDailyReport, ShiftAssignment, Store
+from .models import Ambassador, AmbassadorComplaint, BaAttendanceDay, BaDailyReport, ShiftAssignment, Store
 from .serializers import AmbassadorComplaintSerializer
+
+
+DAY_KEYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+_SHIFT_TIME_RE = re.compile(r'(\d{1,2}):(\d{2})\s*(AM|PM)', re.IGNORECASE)
+
+
+def _day_key(d: date) -> str:
+    return DAY_KEYS[d.weekday()]
+
+
+def _parse_clock_token(hour: str, minute: str, ampm: str) -> time:
+    h = int(hour) % 12
+    if ampm.upper() == 'PM':
+        h += 12
+    return time(h, int(minute))
+
+
+def _parse_shift_bounds(label: str) -> tuple[time | None, time | None]:
+    """Parse '08:00 AM – 08:00 PM' → (start, end)."""
+    parts = _SHIFT_TIME_RE.findall(label or '')
+    if not parts:
+        return None, None
+    start = _parse_clock_token(*parts[0])
+    end = _parse_clock_token(*parts[1]) if len(parts) >= 2 else None
+    return start, end
+
+
+def _attendance_status_for_day(
+    *,
+    day: date,
+    today: date,
+    now: datetime,
+    checked_in,
+    shift_label: str,
+) -> str:
+    """
+    Present = checked in.
+    Scheduled = today, before shift start, no check-in yet.
+    Absent = past day with no check-in, or today after shift start with no check-in.
+    """
+    if checked_in:
+        return 'Present'
+    if day > today:
+        return 'Scheduled'
+    if day < today:
+        return 'Absent'
+
+    # Today — don't mark Absent until the shift window has begun.
+    start, _end = _parse_shift_bounds(shift_label)
+    if start is not None:
+        start_dt = timezone.make_aware(
+            datetime.combine(day, start),
+            timezone.get_current_timezone(),
+        )
+        if now < start_dt:
+            return 'Scheduled'
+    return 'Absent'
+
+
+def upsert_attendance_from_shift(shift: ShiftAssignment) -> BaAttendanceDay | None:
+    """
+    Persist today's clocks onto BaAttendanceDay so history survives month-shift roll.
+    Uses the local calendar date of checked_in_at (or shift.date as fallback).
+    """
+    if not shift.ambassador_id:
+        return None
+    if not shift.checked_in_at and not shift.checked_out_at:
+        return None
+    if shift.checked_in_at:
+        day = timezone.localtime(shift.checked_in_at).date()
+    else:
+        day = timezone.localtime(shift.checked_out_at).date() if shift.checked_out_at else shift.date
+    row, _ = BaAttendanceDay.objects.update_or_create(
+        ambassador_id=shift.ambassador_id,
+        date=day,
+        defaults={
+            'store_id': shift.store_id,
+            'shift_id': shift.id,
+            'day_key': _day_key(day),
+            'shift_label': shift.shift_label or '',
+            'checked_in_at': shift.checked_in_at,
+            'checked_out_at': shift.checked_out_at,
+            'early_leave_reason': shift.early_leave_reason or '',
+        },
+    )
+    return row
+
+
+def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
+    """Last N calendar days for one BA: Present / Scheduled / Absent."""
+    days = max(1, min(int(days or 30), 90))
+    now = timezone.localtime()
+    today = now.date()
+    start = today - timedelta(days=days - 1)
+
+    # Capture live clocks in case roll has not yet written history.
+    live = _today_shift_for(ambassador)
+    if live and (live.checked_in_at or live.checked_out_at):
+        upsert_attendance_from_shift(live)
+
+    logs = {
+        row.date: row
+        for row in BaAttendanceDay.objects.filter(
+            ambassador=ambassador,
+            date__gte=start,
+            date__lte=today,
+        ).select_related('store')
+    }
+
+    # Cover month-level rows whose date is the 1st (may be before `start`).
+    month_start = date(start.year, start.month, 1)
+    shifts = list(
+        ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            date__gte=month_start,
+            date__lte=today,
+            status__in=(
+                ShiftAssignment.Status.SCHEDULED,
+                ShiftAssignment.Status.CONFLICT,
+            ),
+        )
+        .select_related('store')
+        .order_by('date', 'id')
+    )
+
+    def covering_shift(d: date) -> ShiftAssignment | None:
+        exact = [s for s in shifts if s.date == d]
+        if exact:
+            return exact[0]
+        month = [s for s in shifts if s.date.year == d.year and s.date.month == d.month]
+        if month:
+            return sorted(month, key=lambda s: (s.date, s.id))[0]
+        return None
+
+    fallback_store = ambassador.store
+    fallback_label = '9:00 AM – 6:00 PM'
+    if shifts:
+        fallback_label = shifts[-1].shift_label or fallback_label
+
+    results = []
+    present_count = 0
+    absent_count = 0
+    for i in range(days):
+        d = today - timedelta(days=i)
+        log = logs.get(d)
+        cover = covering_shift(d)
+
+        store = None
+        store_name = ''
+        city = ''
+        shift_label = fallback_label
+        checked_in = None
+        checked_out = None
+
+        if log:
+            store = log.store
+            shift_label = log.shift_label or (cover.shift_label if cover else fallback_label)
+            checked_in = log.checked_in_at
+            checked_out = log.checked_out_at
+        elif cover:
+            store = cover.store
+            shift_label = cover.shift_label or fallback_label
+            # Live today clocks still only on the shift row.
+            if d == today and cover.checked_in_at:
+                cin_day = timezone.localtime(cover.checked_in_at).date()
+                if cin_day == today:
+                    checked_in = cover.checked_in_at
+                    checked_out = cover.checked_out_at
+        elif fallback_store:
+            store = fallback_store
+
+        if store:
+            store_name = store.name
+            city = store.city or ''
+
+        day_status = _attendance_status_for_day(
+            day=d,
+            today=today,
+            now=now,
+            checked_in=checked_in,
+            shift_label=shift_label,
+        )
+        if day_status == 'Present':
+            present_count += 1
+        elif day_status == 'Absent':
+            absent_count += 1
+
+        results.append(
+            {
+                'date': d.isoformat(),
+                'day': _day_key(d),
+                'storeId': store.id if store else None,
+                'storeName': store_name,
+                'city': city,
+                'shift': shift_label,
+                'checkedInAt': checked_in.isoformat() if checked_in else None,
+                'checkedOutAt': checked_out.isoformat() if checked_out else None,
+                'status': day_status,
+            }
+        )
+
+    return {
+        'days': days,
+        'present': present_count,
+        'absent': absent_count,
+        'results': results,
+    }
 
 
 def _ambassador_from_token(token: str | None) -> Ambassador | None:
@@ -36,6 +244,7 @@ def _roll_month_shift_for_new_day(shift: ShiftAssignment, today: date) -> ShiftA
     """
     Month-level assignments are stored once (typically on the 1st). Reuse that row
     for daily check-in by clearing yesterday's check-in/out when a new day starts.
+    Snapshot clocks to BaAttendanceDay first so history is not lost.
     """
     if shift.date == today:
         return shift
@@ -46,6 +255,7 @@ def _roll_month_shift_for_new_day(shift: ShiftAssignment, today: date) -> ShiftA
     last_day = cout_day or cin_day
     if last_day is None or last_day >= today:
         return shift
+    upsert_attendance_from_shift(shift)
     shift.checked_in_at = None
     shift.checked_out_at = None
     shift.check_in_lat = None
@@ -405,6 +615,7 @@ def ba_check_in(request):
             'updated_at',
         ]
     )
+    upsert_attendance_from_shift(shift)
     return Response(serialize_ba_shift(shift, ambassador))
 
 
@@ -441,6 +652,7 @@ def ba_check_out(request):
         shift.early_leave_reason = reason
         update_fields.append('early_leave_reason')
     shift.save(update_fields=update_fields)
+    upsert_attendance_from_shift(shift)
     return Response(serialize_ba_shift(shift, ambassador))
 
 

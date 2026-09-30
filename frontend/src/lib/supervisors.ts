@@ -412,6 +412,12 @@ export type SupervisorBa = {
   points: number
   sessions: number
   score: number
+  /** Monthly target kg from Ambassadors (BaTarget). null when unset. */
+  targetKg: number | null
+  /** Checkout form sales total (LTR/KG) for the month. */
+  salesKg: number
+  /** salesKg / targetKg * 100. null when no target set. */
+  targetAchievement: number | null
 }
 
 export type SupervisorOverview = {
@@ -442,6 +448,9 @@ export function supervisorOverview(supervisor: Supervisor): SupervisorOverview {
         points: ranked?.points ?? profile?.points ?? 0,
         sessions: profile?.today.interactions ?? 0,
         score: profile?.score ?? 0,
+        targetKg: profile?.score ?? null,
+        salesKg: 0,
+        targetAchievement: profile?.score ?? null,
       }
     }),
   )
@@ -492,6 +501,13 @@ function mapOverview(data: Record<string, unknown>): SupervisorOverview {
       points: Number(row.points ?? 0),
       sessions: Number(row.sessions ?? 0),
       score: Number(row.score ?? 0),
+      targetKg:
+        row.targetKg == null || row.targetKg === '' ? null : Number(row.targetKg),
+      salesKg: Number(row.salesKg ?? 0),
+      targetAchievement:
+        row.targetAchievement == null || row.targetAchievement === ''
+          ? null
+          : Number(row.targetAchievement),
     }
   })
   return {

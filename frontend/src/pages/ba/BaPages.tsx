@@ -879,7 +879,14 @@ export function BaPerformancePage() {
   const [liveTarget, setLiveTarget] = useState<{
     targetKg: number
     salesKg: number
+    achievementPct: number
     skus: string[]
+    categories: {
+      category: string
+      targetKg: number
+      salesKg: number
+      achievementPct: number | null
+    }[]
   } | null>(null)
 
   useEffect(() => {
@@ -896,8 +903,10 @@ export function BaPerformancePage() {
         if (!cancelled) {
           setLiveTarget({
             targetKg: data.targetKg,
-            salesKg: data.salesKg,
+            salesKg: data.salesKg ?? 0,
+            achievementPct: data.achievementPct,
             skus: data.skus,
+            categories: data.categories,
           })
         }
       })
@@ -940,8 +949,16 @@ export function BaPerformancePage() {
   const monthTarget = account ? sumBaTargetsForMonth(account.id, month) : null
   const targetKg = liveTarget?.targetKg ?? monthTarget?.targetKg ?? 0
   const salesKg = liveTarget?.salesKg ?? monthTarget?.salesKg ?? 0
-  const achievementPct = targetKg > 0 ? Math.round((salesKg / targetKg) * 100) : 0
-  const sku = liveTarget?.skus[0] || monthTarget?.skus[0] || '—'
+  const achievementPct =
+    liveTarget?.achievementPct != null
+      ? Math.round(liveTarget.achievementPct)
+      : targetKg > 0
+        ? Math.round((salesKg / targetKg) * 100)
+        : 0
+  const assignedSkus = liveTarget?.skus?.length
+    ? liveTarget.skus
+    : monthTarget?.skus ?? []
+  const categories = liveTarget?.categories ?? []
   const monthLabel = formatMonthLabel(month)
 
   return (
@@ -979,10 +996,12 @@ export function BaPerformancePage() {
           <div className="text-sm font-bold text-slate-900">Target vs achievement</div>
           <div className="shrink-0 text-xs text-slate-400">{monthLabel}</div>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+        <div className="mt-4 grid grid-cols-2 gap-2 text-center">
           <div>
-            <div className="text-xl font-bold text-slate-900">{targetKg}</div>
-            <div className="mt-0.5 text-[10px] font-medium text-slate-500">Target Kg</div>
+            <div className="text-xl font-bold text-slate-900">
+              {payLoading ? '…' : targetKg.toLocaleString()}
+            </div>
+            <div className="mt-0.5 text-[10px] font-medium text-slate-500">Total Target</div>
           </div>
           <div>
             <div
@@ -990,15 +1009,74 @@ export function BaPerformancePage() {
                 achievementPct >= 100 ? 'text-brand-600' : 'text-rose-600'
               }`}
             >
-              {achievementPct}%
+              {payLoading ? '…' : `${achievementPct}%`}
             </div>
             <div className="mt-0.5 text-[10px] font-medium text-slate-500">Achievement</div>
           </div>
-          <div>
-            <div className="truncate text-sm font-bold text-slate-900 sm:text-base">{sku}</div>
-            <div className="mt-0.5 text-[10px] font-medium text-slate-500">SKU</div>
-          </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="text-sm font-bold text-slate-900">Assigned SKUs</div>
+        {assignedSkus.length === 0 ? (
+          <p className="mt-3 text-center text-sm text-slate-400">No SKUs assigned for this month.</p>
+        ) : (
+          <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto">
+            {assignedSkus.map((s) => (
+              <li
+                key={s}
+                className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700"
+              >
+                {s}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="text-sm font-bold text-slate-900">Category targets</div>
+        <p className="mt-0.5 text-[11px] text-slate-400">
+          Target and checkout sales by category · total above is the sum
+        </p>
+        {categories.length === 0 ? (
+          <p className="mt-3 text-center text-sm text-slate-400">No category targets for this month.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {categories.map((c) => (
+              <div
+                key={c.category}
+                className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5"
+              >
+                <div className="text-xs font-semibold text-slate-800">{c.category}</div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      {c.targetKg.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] text-slate-500">Target</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      {c.salesKg.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] text-slate-500">Sales</div>
+                  </div>
+                  <div>
+                    <div
+                      className={`text-sm font-bold ${
+                        (c.achievementPct ?? 0) >= 100 ? 'text-brand-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {c.achievementPct == null ? '—' : `${Math.round(c.achievementPct)}%`}
+                    </div>
+                    <div className="text-[10px] text-slate-500">Achievement</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">

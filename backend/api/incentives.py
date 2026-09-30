@@ -39,16 +39,86 @@ def target_ach_incentive(achievement_pct: float, cfg: dict) -> int:
 
 
 def ba_month_achievement(ambassador_id: int, month: str | None = None) -> tuple[float, float, float]:
-    """Return (target_kg, sales_kg, achievement_pct) for a BA in YYYY-MM."""
+    """
+    Return (target_kg, sales_kg, achievement_pct) for a BA in YYYY-MM.
+
+    Target = sum of BaTarget.target_kg set in Head Office Ambassadors.
+    Sales  = sum of checkout field-report sales (BaDailyReport.sales_json) for that month.
+    """
+    from calendar import monthrange
+
+    from .models import BaDailyReport
+
     month = month or _month_key(timezone.localdate())
     agg = BaTarget.objects.filter(ambassador_id=ambassador_id, month=month).aggregate(
         t=Sum('target_kg'),
-        s=Sum('sales_kg'),
     )
     target = float(agg['t'] or 0)
-    sales = float(agg['s'] or 0)
+
+    try:
+        year, month_num = int(month[:4]), int(month[5:7])
+        date_from = date(year, month_num, 1)
+        date_to = date(year, month_num, monthrange(year, month_num)[1])
+    except (TypeError, ValueError):
+        date_from = timezone.localdate().replace(day=1)
+        date_to = timezone.localdate()
+
+    sales = 0.0
+    for report in BaDailyReport.objects.filter(
+        ambassador_id=ambassador_id,
+        date__gte=date_from,
+        date__lte=date_to,
+    ).only('sales_json'):
+        sales += _checkout_sales_total(report.sales_json)
+
+    sales = round(sales, 1)
     pct = (sales / target * 100.0) if target > 0 else 0.0
     return target, sales, pct
+
+
+def _checkout_sales_total(sales) -> float:
+    """Total LTR/KG from a BA checkout daily-sales form payload."""
+    if not isinstance(sales, dict):
+        return 0.0
+
+    def _f(val) -> float:
+        try:
+            if val is None or val == '':
+                return 0.0
+            return float(val)
+        except (TypeError, ValueError):
+            return 0.0
+
+    oil_keys = (
+        'kpgoCan10',
+        'kpgoBtl3',
+        'kpgoBtl45',
+        'kpgoTin5',
+        'kpgoPouch1x5',
+        'kpgoSup1x5',
+        'salesOil',
+    )
+    ghee_keys = (
+        'kbpBkt10',
+        'kbpBkt25',
+        'kbpBkt5',
+        'kbpTin5',
+        'kbpPouch1x5',
+        'salesGhee',
+    )
+    waadi_keys = (
+        'wbpBkt5',
+        'wbpPouch1x5',
+        'wbpBkt25',
+        'salesWaadi',
+    )
+    oil = sum(_f(sales.get(k)) for k in oil_keys)
+    ghee = sum(_f(sales.get(k)) for k in ghee_keys)
+    waadi = sum(_f(sales.get(k)) for k in waadi_keys)
+    sku_sum = oil + ghee + waadi
+    if sku_sum > 0:
+        return sku_sum
+    return _f(sales.get('totalSalesLtrKg'))
 
 
 def ba_days_worked(ambassador_id: int, month_start: date | None = None, today: date | None = None) -> int:

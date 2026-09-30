@@ -17,6 +17,8 @@ export type BaTargetEntry = {
   /** null/undefined = sales not filled yet */
   salesKg?: number | null
   sku?: string
+  /** Pack SKUs under this target row (category / multi-SKU upload). */
+  assignedSkus?: string[]
   updatedAt: string
 }
 
@@ -54,6 +56,7 @@ function commit(next: BaTargetEntry[], persistLocal = true) {
 }
 
 function mapApiRow(row: Record<string, unknown>): BaTargetEntry {
+  const assigned = row.assignedSkus ?? row.assigned_skus
   return {
     id: typeof row.id === 'number' ? row.id : undefined,
     baId: String(row.baId ?? row.ambassador ?? ''),
@@ -63,6 +66,7 @@ function mapApiRow(row: Record<string, unknown>): BaTargetEntry {
     targetKg: Number(row.targetKg ?? 0),
     salesKg: row.salesKg == null || row.salesKg === '' ? null : Number(row.salesKg),
     sku: row.sku ? String(row.sku) : '',
+    assignedSkus: Array.isArray(assigned) ? assigned.map(String) : [],
     updatedAt: String(row.updatedAt ?? row.updated_at ?? new Date().toISOString()),
   }
 }
@@ -112,6 +116,7 @@ export async function upsertBaTarget(entry: Omit<BaTargetEntry, 'updatedAt' | 'i
         sku: entry.sku ?? '',
         targetKg: entry.targetKg,
         salesKg: entry.salesKg,
+        assignedSkus: entry.assignedSkus ?? [],
       },
     })
     const mapped = mapApiRow(saved)
@@ -137,11 +142,13 @@ export async function upsertBaTargets(entries: Omit<BaTargetEntry, 'updatedAt' |
       body: {
         rows: entries.map((e) => ({
           baId: e.baId,
+          baName: e.baName,
           code: e.baCode,
           month: e.month,
           sku: e.sku ?? '',
           targetKg: e.targetKg,
           salesKg: e.salesKg ?? null,
+          assignedSkus: e.assignedSkus ?? [],
         })),
       },
     })
@@ -163,7 +170,14 @@ export async function upsertBaTargets(entries: Omit<BaTargetEntry, 'updatedAt' |
 export async function fetchBaOwnTargets(token: string, month?: string): Promise<{
   targetKg: number
   salesKg: number | null
+  achievementPct: number
   skus: string[]
+  categories: {
+    category: string
+    targetKg: number
+    salesKg: number
+    achievementPct: number | null
+  }[]
   rows: BaTargetEntry[]
 }> {
   const qs = new URLSearchParams({ token })
@@ -171,17 +185,30 @@ export async function fetchBaOwnTargets(token: string, month?: string): Promise<
   const data = await apiRequest<{
     target_kg: number
     sales_kg: number
+    achievement_pct?: number
     skus: string[]
+    assignedSkus?: string[]
+    categories?: {
+      category: string
+      targetKg: number
+      salesKg: number
+      achievementPct: number | null
+    }[]
     results: Record<string, unknown>[]
   }>(`/api/ba/targets/?${qs}`, { auth: false })
 
   const rows = (data.results ?? []).map(mapApiRow)
-  // Merge into cache for this BA so sum helpers work
   commit(mergeRows(rows), false)
+  const targetKg = Number(data.target_kg ?? 0)
+  const salesKg = data.sales_kg == null ? null : Number(data.sales_kg ?? 0)
   return {
-    targetKg: Number(data.target_kg ?? 0),
-    salesKg: data.sales_kg == null ? null : Number(data.sales_kg ?? 0),
-    skus: data.skus ?? [],
+    targetKg,
+    salesKg,
+    achievementPct: Number(
+      data.achievement_pct ?? (targetKg > 0 && salesKg != null ? (salesKg / targetKg) * 100 : 0),
+    ),
+    skus: data.assignedSkus ?? data.skus ?? [],
+    categories: Array.isArray(data.categories) ? data.categories : [],
     rows,
   }
 }
