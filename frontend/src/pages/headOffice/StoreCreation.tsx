@@ -104,6 +104,9 @@ export function CreateStorePage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
+      <Link to={`${base}/stores`} className="inline-block text-sm text-slate-500 hover:text-brand-600">
+        ← Back to stores
+      </Link>
       <PageHeader
         title="Create Store"
         description="Add a new store outlet for field operations"

@@ -36,6 +36,12 @@ export const CITIES = [
   'Sialkot',
   'Gujranwala',
   'Hyderabad',
+  'Sargodha',
+  'Wah Cantt',
+  'Gujrat',
+  'Jehlum',
+  'Kharian',
+  'Abbottabad',
 ]
 export const FOOTFALLS: Footfall[] = ['High', 'Medium', 'Low']
 export const DEFAULT_PEAK_HOURS = '5 PM — 9 PM'
