@@ -1,0 +1,210 @@
+"""Supervisor roster helpers and live overview for assigned stores / BAs."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import timedelta
+
+from django.db.models import Count
+from django.utils import timezone
+
+from .models import Ambassador, Consumer, ShiftAssignment, Store, Supervisor, SurveyQuestion
+
+
+def _pct(part: int, whole: int) -> float:
+    if whole <= 0:
+        return 0.0
+    return round((part / whole) * 100, 1)
+
+
+def _ba_state(ambassador_id: int, today) -> str:
+    shift = (
+        ShiftAssignment.objects.filter(ambassador_id=ambassador_id, date=today)
+        .order_by('-checked_in_at', '-id')
+        .first()
+    )
+    if not shift or not shift.checked_in_at:
+        return 'Offline'
+    if shift.checked_out_at:
+        return 'Offline'
+    return 'Active'
+
+
+def build_supervisor_overview(supervisor: Supervisor) -> dict:
+    from .deployment import reconcile_ambassador_deployments
+
+    reconcile_ambassador_deployments()
+    today = timezone.localdate()
+    stores = list(supervisor.stores.all().order_by('name'))
+    store_ids = [s.id for s in stores]
+
+    consumer_counts = {
+        row['store_id']: row['c']
+        for row in Consumer.objects.filter(store_id__in=store_ids).values('store_id').annotate(c=Count('id'))
+    }
+
+    switch_q = SurveyQuestion.objects.filter(is_active=True, order=5).first()
+    switch_id = str(switch_q.id) if switch_q else None
+    yes_by_store: dict[int, int] = defaultdict(int)
+    answered_by_store: dict[int, int] = defaultdict(int)
+    if switch_id and store_ids:
+        for c in Consumer.objects.filter(store_id__in=store_ids).only('store_id', 'answers'):
+            ans = c.answers if isinstance(c.answers, dict) else {}
+            val = str(ans.get(switch_id, ''))
+            if not val:
+                continue
+            answered_by_store[c.store_id] += 1
+            if val.lower().startswith('yes'):
+                yes_by_store[c.store_id] += 1
+
+    # Home-store BAs + anyone scheduled on these stores (deployment board).
+    home_bas = list(
+        Ambassador.objects.filter(
+            store_id__in=store_ids,
+            status__in=(Ambassador.Status.CERTIFIED, Ambassador.Status.DEPLOYED),
+        ).select_related('store')
+    )
+    shift_ba_ids = set(
+        ShiftAssignment.objects.filter(
+            store_id__in=store_ids,
+            ambassador_id__isnull=False,
+            status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+        ).values_list('ambassador_id', flat=True)
+    )
+    # Soonest upcoming shift store, else latest past — for BAs without home store FK.
+    future_pick: dict[int, tuple[int, object]] = {}
+    past_pick: dict[int, tuple[int, object]] = {}
+    for ba_id, sid, d in (
+        ShiftAssignment.objects.filter(
+            store_id__in=store_ids,
+            ambassador_id__isnull=False,
+            status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+        )
+        .order_by('date', 'id')
+        .values_list('ambassador_id', 'store_id', 'date')
+    ):
+        if ba_id is None or sid is None:
+            continue
+        if d >= today:
+            if ba_id not in future_pick or d < future_pick[ba_id][1]:
+                future_pick[ba_id] = (sid, d)
+        else:
+            if ba_id not in past_pick or d > past_pick[ba_id][1]:
+                past_pick[ba_id] = (sid, d)
+    shift_home = {ba_id: sid for ba_id, (sid, _) in past_pick.items()}
+    shift_home.update({ba_id: sid for ba_id, (sid, _) in future_pick.items()})
+
+    by_id: dict[int, Ambassador] = {ba.id: ba for ba in home_bas}
+    missing_ids = shift_ba_ids - set(by_id)
+    if missing_ids:
+        for ba in Ambassador.objects.filter(id__in=missing_ids).select_related('store'):
+            by_id[ba.id] = ba
+    ambassadors = list(by_id.values())
+
+    store_bas: dict[int, list[Ambassador]] = defaultdict(list)
+    for ba in ambassadors:
+        sid = ba.store_id if ba.store_id in store_ids else shift_home.get(ba.id)
+        if sid in store_ids:
+            store_bas[sid].append(ba)
+
+    store_rows = []
+    for store in stores:
+        shoppers = consumer_counts.get(store.id, 0)
+        answered = answered_by_store.get(store.id, 0)
+        yes = yes_by_store.get(store.id, 0)
+        conversion = _pct(yes, answered) if answered else 0.0
+        footfall = store.today_footfall or 0
+        engagement = _pct(shoppers, footfall) if footfall else (100.0 if shoppers else 0.0)
+        if engagement > 100:
+            engagement = 100.0
+        assigned = [
+            {
+                'id': str(ba.id),
+                'name': ba.name,
+                'state': _ba_state(ba.id, today),
+            }
+            for ba in store_bas.get(store.id, [])
+        ]
+        peak = [p.strip() for p in (store.peak_hours or '').split(',') if p.strip()]
+        status = store.status
+        # Map API store status to FE-ish labels when needed
+        if status == Store.Status.LIVE:
+            ui_status = 'Covered' if assigned else 'NEEDS BA'
+        elif status == Store.Status.PARTIAL:
+            ui_status = 'PARTIAL'
+        elif status == Store.Status.INACTIVE:
+            ui_status = 'NEEDS BA'
+        else:
+            ui_status = status
+
+        store_rows.append(
+            {
+                'id': store.id,
+                'name': store.name,
+                'city': store.city,
+                'address': store.address,
+                'footfall': store.footfall,
+                'bas': len(assigned),
+                'coverage': store.coverage,
+                'status': ui_status,
+                'todayFootfall': footfall,
+                'engagement': engagement,
+                'conversion': conversion,
+                'peak': peak,
+                'assigned': assigned,
+                'qrCode': store.qr_slug or '',
+                'contactPerson': store.contact_name,
+                'contactPhone': store.contact_phone,
+            }
+        )
+
+    ba_rows = []
+    for ba in ambassadors:
+        sid = ba.store_id if ba.store_id in store_ids else shift_home.get(ba.id)
+        store = next((s for s in stores if s.id == sid), ba.store)
+        answered = answered_by_store.get(sid, 0) if sid else 0
+        yes = yes_by_store.get(sid, 0) if sid else 0
+        if answered:
+            conversion = _pct(yes, answered)
+        elif ba.overall_score:
+            conversion = round(min(45.0, max(18.0, float(ba.overall_score) * 0.4)), 1)
+        else:
+            conversion = 0.0
+        score = float(ba.overall_score or 0)
+        checkins = ShiftAssignment.objects.filter(
+            ambassador_id=ba.id,
+            date__gte=today - timedelta(days=today.weekday()),
+            date__lte=today,
+            checked_in_at__isnull=False,
+        ).count()
+        sessions = checkins * 8 + max(0, int(score // 5))
+        points = int(round(score * 10 + checkins * 40 + conversion * 5))
+        ba_rows.append(
+            {
+                'id': str(ba.id),
+                'name': ba.name,
+                'storeId': sid,
+                'store': store.name if store else '',
+                'state': _ba_state(ba.id, today),
+                'conversion': conversion,
+                'points': points,
+                'sessions': sessions,
+                'score': score,
+            }
+        )
+
+    unique = {b['id']: b for b in ba_rows}
+    conversions = [b['conversion'] for b in unique.values()]
+    coverages = [s['coverage'] for s in store_rows]
+    team_conversion = round(sum(conversions) / len(conversions), 1) if conversions else 0.0
+    coverage = round(sum(coverages) / len(coverages)) if coverages else 0
+    today_footfall = sum(s['todayFootfall'] for s in store_rows)
+
+    return {
+        'supervisorId': str(supervisor.id),
+        'stores': store_rows,
+        'bas': list(unique.values()),
+        'teamConversion': team_conversion,
+        'coverage': coverage,
+        'todayFootfall': today_footfall,
+    }

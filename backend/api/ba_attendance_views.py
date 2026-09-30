@@ -1,0 +1,754 @@
+"""BA invite-token endpoints for today's shift check-in / check-out."""
+
+from __future__ import annotations
+
+from datetime import date
+
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+
+from .models import Ambassador, AmbassadorComplaint, BaDailyReport, ShiftAssignment, Store
+from .serializers import AmbassadorComplaintSerializer
+
+
+def _ambassador_from_token(token: str | None) -> Ambassador | None:
+    token = (token or '').strip()
+    if not token:
+        return None
+    return Ambassador.objects.filter(invite_token=token).first()
+
+
+def _pick_from_qs(qs):
+    """Prefer an active (checked-in, not out) shift, else earliest not checked out, else any."""
+    active = qs.filter(checked_in_at__isnull=False, checked_out_at__isnull=True).first()
+    if active:
+        return active
+    pending = qs.filter(checked_out_at__isnull=True).first()
+    if pending:
+        return pending
+    return qs.first()
+
+
+def _roll_month_shift_for_new_day(shift: ShiftAssignment, today: date) -> ShiftAssignment:
+    """
+    Month-level assignments are stored once (typically on the 1st). Reuse that row
+    for daily check-in by clearing yesterday's check-in/out when a new day starts.
+    """
+    if shift.date == today:
+        return shift
+    if not shift.checked_in_at and not shift.checked_out_at:
+        return shift
+    cin_day = timezone.localtime(shift.checked_in_at).date() if shift.checked_in_at else None
+    cout_day = timezone.localtime(shift.checked_out_at).date() if shift.checked_out_at else None
+    last_day = cout_day or cin_day
+    if last_day is None or last_day >= today:
+        return shift
+    shift.checked_in_at = None
+    shift.checked_out_at = None
+    shift.check_in_lat = None
+    shift.check_in_lng = None
+    shift.check_in_accuracy_m = None
+    shift.early_leave_reason = ''
+    shift.save(
+        update_fields=[
+            'checked_in_at',
+            'checked_out_at',
+            'check_in_lat',
+            'check_in_lng',
+            'check_in_accuracy_m',
+            'early_leave_reason',
+            'updated_at',
+        ]
+    )
+    return shift
+
+
+def _today_shift_for(ambassador: Ambassador) -> ShiftAssignment | None:
+    today = date.today()
+    exact = (
+        ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            date=today,
+            status__in=(
+                ShiftAssignment.Status.SCHEDULED,
+                ShiftAssignment.Status.CONFLICT,
+            ),
+        )
+        .select_related('store', 'ambassador')
+        .order_by('shift_label', 'id')
+    )
+    found = _pick_from_qs(exact)
+    if found:
+        return found
+
+    # Month-level assignment: one row for the whole month (usually date = 1st).
+    month_qs = (
+        ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            date__year=today.year,
+            date__month=today.month,
+            status__in=(
+                ShiftAssignment.Status.SCHEDULED,
+                ShiftAssignment.Status.CONFLICT,
+            ),
+        )
+        .select_related('store', 'ambassador')
+        .order_by('date', 'shift_label', 'id')
+    )
+    month_shift = _pick_from_qs(month_qs)
+    if month_shift:
+        return _roll_month_shift_for_new_day(month_shift, today)
+    return None
+
+
+def _ensure_today_shift(ambassador: Ambassador) -> ShiftAssignment | None:
+    """
+    Return today's shift if scheduled, or create a default shift only when the BA
+    already has a home store. Never invent a store for unassigned BAs.
+    """
+    existing = _today_shift_for(ambassador)
+    if existing:
+        return existing
+
+    store = ambassador.store
+    if store is None:
+        return None
+
+    from .shifts import day_key_for
+
+    today = date.today()
+    return ShiftAssignment.objects.create(
+        store=store,
+        ambassador=ambassador,
+        date=today,
+        day_key=day_key_for(today),
+        shift_label='08:00 AM – 08:00 PM',
+        status=ShiftAssignment.Status.SCHEDULED,
+    )
+
+
+def _upcoming_rows(ambassador: Ambassador) -> list[dict]:
+    today = date.today()
+    from django.db.models import Q
+
+    upcoming = (
+        ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            status__in=(
+                ShiftAssignment.Status.SCHEDULED,
+                ShiftAssignment.Status.CONFLICT,
+            ),
+        )
+        .filter(
+            Q(date__gte=today)
+            | Q(date__year=today.year, date__month=today.month)
+        )
+        .select_related('store')
+        .order_by('date', 'shift_label', 'id')[:14]
+    )
+    return [
+        {
+            'id': str(s.id),
+            'date': (
+                s.date.strftime('%b %Y')
+                if s.date.day == 1 and s.date != today
+                else s.date.strftime('%d %b')
+            ),
+            'dateIso': s.date.isoformat(),
+            'day': s.day_key,
+            'shift': s.shift_label,
+            'storeId': s.store_id,
+            'storeName': s.store.name,
+            'city': s.store.city,
+            'storeLabel': f'#{s.store_id} {s.store.name}',
+            'checkedIn': bool(s.checked_in_at),
+            'checkedOut': bool(s.checked_out_at),
+            'isToday': s.date == today or (s.date.year == today.year and s.date.month == today.month),
+        }
+        for s in upcoming
+    ]
+
+
+def _store_coords(store: Store | None) -> tuple:
+    if not store:
+        return None, None
+    try:
+        lat = float(store.latitude) if store.latitude is not None else None
+    except (TypeError, ValueError):
+        lat = None
+    try:
+        lng = float(store.longitude) if store.longitude is not None else None
+    except (TypeError, ValueError):
+        lng = None
+    return lat, lng
+
+
+def serialize_ba_shift(shift: ShiftAssignment | None, ambassador: Ambassador) -> dict:
+    initials = ''.join(p[0] for p in (ambassador.name or 'BA').split() if p)[:2].upper() or 'BA'
+    upcoming_rows = _upcoming_rows(ambassador)
+    if not shift:
+        store = ambassador.store
+        store_lat, store_lng = _store_coords(store)
+        if not store:
+            message = 'Not assigned to a store yet. Location appears after Head Office assigns you.'
+        elif not upcoming_rows:
+            message = 'No shift scheduled for today.'
+        else:
+            message = 'No shift today — see upcoming shifts below.'
+        return {
+            'shift': None,
+            'has_shift': False,
+            'message': message,
+            'ambassador': {
+                'id': ambassador.id,
+                'name': ambassador.name,
+                'initials': initials,
+                'status': ambassador.status,
+                'store_id': store.id if store else None,
+                'store_name': store.name if store else None,
+                'city': store.city if store else (ambassador.city or None),
+                'storeLat': store_lat,
+                'storeLng': store_lng,
+            },
+            'upcoming': upcoming_rows,
+        }
+
+    store = shift.store
+    store_lat, store_lng = _store_coords(store)
+    return {
+        'has_shift': True,
+        'message': None,
+        'ambassador': {
+            'id': ambassador.id,
+            'name': ambassador.name,
+            'initials': initials,
+            'status': ambassador.status,
+            'store_id': store.id,
+            'store_name': store.name,
+            'city': store.city,
+            'storeLat': store_lat,
+            'storeLng': store_lng,
+        },
+        'shift': {
+            'id': str(shift.id),
+            'date': shift.date.isoformat(),
+            'day': shift.day_key,
+            'shift': shift.shift_label,
+            'storeId': store.id,
+            'storeName': store.name,
+            'city': store.city,
+            'storeLabel': f'#{store.id} {store.name}, {store.city}'.strip(', '),
+            'peakRecommended': shift.peak_recommended,
+            'status': shift.status,
+            'checkedIn': bool(shift.checked_in_at),
+            'checkedOut': bool(shift.checked_out_at),
+            'isLive': shift.is_checked_in,
+            'checkedInAt': shift.checked_in_at.isoformat() if shift.checked_in_at else None,
+            'checkedOutAt': shift.checked_out_at.isoformat() if shift.checked_out_at else None,
+            'earlyLeaveReason': shift.early_leave_reason or None,
+            'isEarlyCheckout': bool(shift.early_leave_reason),
+            'checkInLat': shift.check_in_lat,
+            'checkInLng': shift.check_in_lng,
+            'storeLat': store_lat,
+            'storeLng': store_lng,
+        },
+        'upcoming': upcoming_rows,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ba_today_shift(request):
+    """GET /api/ba/today-shift/?token=…"""
+    ambassador = _ambassador_from_token(request.query_params.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+    shift = _ensure_today_shift(ambassador)
+    # Reload in case ensure updated ambassador.store / status
+    ambassador.refresh_from_db()
+    return Response(serialize_ba_shift(shift, ambassador))
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def ba_submit_complaint(request):
+    """
+    Submit a customer / BA / insights report using the BA's invite token.
+
+    Body (JSON or multipart):
+      token, store_id, kind (customer|ba|insights),
+      details|complaint, subject?, category?,
+      product_category?, brand?, sku?,
+      customer_name?, customer_phone?, image?
+    """
+    ambassador = _ambassador_from_token(request.data.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+
+    kind = str(request.data.get('kind') or AmbassadorComplaint.Kind.BA).strip().lower()
+    if kind not in {c.value for c in AmbassadorComplaint.Kind}:
+        return Response({'detail': 'kind must be customer, ba, or insights.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        store_id = int(request.data.get('store_id'))
+    except (TypeError, ValueError):
+        # Insights may omit store — fall back to assigned home store.
+        if kind == AmbassadorComplaint.Kind.INSIGHTS and ambassador.store_id:
+            store_id = ambassador.store_id
+        else:
+            return Response({'detail': 'A store is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    details = str(
+        request.data.get('details')
+        or request.data.get('complaint')
+        or ''
+    ).strip()
+    if not details:
+        return Response({'detail': 'Please describe the complaint or insight.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(details) > 2000:
+        return Response({'detail': 'Details must be 2,000 characters or fewer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    assigned_store_ids = set(
+        ShiftAssignment.objects.filter(ambassador=ambassador).values_list('store_id', flat=True)
+    )
+    if ambassador.store_id:
+        assigned_store_ids.add(ambassador.store_id)
+    if store_id not in assigned_store_ids:
+        return Response(
+            {'detail': 'You can submit complaints only for your assigned stores.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    store = Store.objects.filter(pk=store_id).first()
+    if not store:
+        return Response({'detail': 'Store not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    subject = str(request.data.get('subject') or '').strip()[:255]
+    category = str(request.data.get('category') or '').strip()[:80]
+    if kind == AmbassadorComplaint.Kind.CUSTOMER and not category:
+        category = 'Product stock'
+    if kind == AmbassadorComplaint.Kind.INSIGHTS and not category:
+        category = 'Other'
+
+    image = request.FILES.get('image')
+
+    complaint_row = AmbassadorComplaint.objects.create(
+        kind=kind,
+        ambassador=ambassador,
+        store=store,
+        category=category,
+        subject=subject,
+        complaint=details,
+        product_category=str(request.data.get('product_category') or request.data.get('productCategory') or '').strip()[:80],
+        brand=str(request.data.get('brand') or '').strip()[:80],
+        sku=str(request.data.get('sku') or '').strip()[:80],
+        customer_name=str(request.data.get('customer_name') or request.data.get('customerName') or '').strip()[:120],
+        customer_phone=str(request.data.get('customer_phone') or request.data.get('customerPhone') or '').strip()[:30],
+        image=image if image else None,
+    )
+    from .serializers import AmbassadorComplaintSerializer
+
+    return Response(
+        AmbassadorComplaintSerializer(complaint_row, context={'request': request}).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def ba_check_in(request):
+    """
+    POST /api/ba/check-in/
+    Body: { token, latitude?, longitude?, accuracy? }
+    """
+    ambassador = _ambassador_from_token(request.data.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+
+    shift = _ensure_today_shift(ambassador)
+    if not shift:
+        return Response(
+            {'detail': 'No shift scheduled for today.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if shift.checked_out_at:
+        return Response(
+            {'detail': 'This shift was already ended.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if shift.checked_in_at:
+        return Response(serialize_ba_shift(shift, ambassador))
+
+    lat = request.data.get('latitude')
+    lng = request.data.get('longitude')
+    accuracy = request.data.get('accuracy')
+
+    def _f(v):
+        if v is None or v == '':
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    shift.checked_in_at = timezone.now()
+    shift.check_in_lat = _f(lat)
+    shift.check_in_lng = _f(lng)
+    shift.check_in_accuracy_m = _f(accuracy)
+    shift.save(
+        update_fields=[
+            'checked_in_at',
+            'check_in_lat',
+            'check_in_lng',
+            'check_in_accuracy_m',
+            'updated_at',
+        ]
+    )
+    return Response(serialize_ba_shift(shift, ambassador))
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def ba_check_out(request):
+    """POST /api/ba/check-out/  Body: { token, early_leave_reason? }"""
+    ambassador = _ambassador_from_token(request.data.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+
+    shift = _today_shift_for(ambassador)
+    if not shift:
+        return Response({'detail': 'No shift scheduled for today.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not shift.checked_in_at:
+        return Response({'detail': 'Check in before ending the shift.'}, status=status.HTTP_400_BAD_REQUEST)
+    if shift.checked_out_at:
+        return Response(serialize_ba_shift(shift, ambassador))
+
+    reason = str(
+        request.data.get('early_leave_reason')
+        or request.data.get('earlyLeaveReason')
+        or ''
+    ).strip()
+    if len(reason) > 2000:
+        return Response(
+            {'detail': 'Early leave reason must be 2,000 characters or fewer.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    shift.checked_out_at = timezone.now()
+    update_fields = ['checked_out_at', 'updated_at']
+    if reason:
+        shift.early_leave_reason = reason
+        update_fields.append('early_leave_reason')
+    shift.save(update_fields=update_fields)
+    return Response(serialize_ba_shift(shift, ambassador))
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def ba_submit_daily_report(request):
+    """
+    POST /api/ba/daily-report/
+    Body: {
+      token,
+      stock?: object,
+      sales?: object,
+      other_brands?: list,
+      source?: 'excel'|'manual',
+      file_name?: string,
+      store_id?: number,
+    }
+    Links to today's shift when present.
+    """
+    ambassador = _ambassador_from_token(request.data.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+
+    stock = request.data.get('stock') or {}
+    sales = request.data.get('sales') or {}
+    other_brands = request.data.get('other_brands') or request.data.get('otherBrands') or []
+    if not isinstance(stock, dict):
+        stock = {}
+    if not isinstance(sales, dict):
+        sales = {}
+    if not isinstance(other_brands, list):
+        other_brands = []
+
+    if not stock and not sales and not other_brands:
+        return Response(
+            {'detail': 'Report must include stock, sales, or other brand data.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    source = str(request.data.get('source') or BaDailyReport.Source.MANUAL).strip().lower()
+    if source not in {c.value for c in BaDailyReport.Source}:
+        source = BaDailyReport.Source.MANUAL
+    file_name = str(request.data.get('file_name') or request.data.get('fileName') or '').strip()[:255]
+
+    shift = _today_shift_for(ambassador)
+    store = None
+    store_id_raw = request.data.get('store_id') or request.data.get('storeId')
+    if store_id_raw is not None and store_id_raw != '':
+        try:
+            store = Store.objects.filter(pk=int(store_id_raw)).first()
+        except (TypeError, ValueError):
+            store = None
+    if not store and shift:
+        store = shift.store
+    if not store and ambassador.store_id:
+        store = ambassador.store
+
+    report_date = shift.date if shift else date.today()
+
+    # Upsert one field report per BA + date (+ shift when known)
+    existing = None
+    if shift:
+        existing = BaDailyReport.objects.filter(ambassador=ambassador, shift=shift).first()
+    if not existing:
+        existing = (
+            BaDailyReport.objects.filter(
+                ambassador=ambassador,
+                date=report_date,
+                shift__isnull=True,
+            ).first()
+            if not shift
+            else None
+        )
+
+    if existing:
+        existing.store = store
+        existing.shift = shift or existing.shift
+        existing.stock_json = stock
+        existing.sales_json = sales
+        existing.other_brands_json = other_brands
+        existing.source = source
+        if file_name:
+            existing.file_name = file_name
+        existing.save()
+        report = existing
+    else:
+        report = BaDailyReport.objects.create(
+            ambassador=ambassador,
+            store=store,
+            shift=shift,
+            date=report_date,
+            stock_json=stock,
+            sales_json=sales,
+            other_brands_json=other_brands,
+            source=source,
+            file_name=file_name,
+        )
+
+    return Response(
+        {
+            'id': report.id,
+            'date': report.date.isoformat(),
+            'source': report.source,
+            'fileName': report.file_name or None,
+            'shiftId': str(report.shift_id) if report.shift_id else None,
+            'storeId': report.store_id,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+def _serialize_daily_activity(shift: ShiftAssignment | None, field: BaDailyReport | None) -> dict:
+    """One combined daily activity row for HO Daily Reports."""
+    date_val = None
+    day = ''
+    shift_label = ''
+    store_id = None
+    store_name = ''
+    city = ''
+    checked_in = None
+    checked_out = None
+    early_reason = ''
+    row_id = ''
+
+    if shift:
+        date_val = shift.date
+        day = shift.day_key
+        shift_label = shift.shift_label
+        store_id = shift.store_id
+        store_name = shift.store.name if shift.store_id else ''
+        city = shift.store.city if shift.store_id else ''
+        checked_in = shift.checked_in_at.isoformat() if shift.checked_in_at else None
+        checked_out = shift.checked_out_at.isoformat() if shift.checked_out_at else None
+        early_reason = shift.early_leave_reason or ''
+        row_id = f'shift-{shift.id}'
+    if field:
+        if not date_val:
+            date_val = field.date
+        if not store_id and field.store_id:
+            store_id = field.store_id
+            store_name = field.store.name if field.store_id else store_name
+            city = field.store.city if field.store_id else city
+        if not row_id:
+            row_id = f'field-{field.id}'
+        else:
+            row_id = f'combined-{shift.id if shift else field.id}'
+
+    return {
+        'id': row_id,
+        'date': date_val.isoformat() if date_val else None,
+        'day': day,
+        'shift': shift_label,
+        'storeId': store_id,
+        'storeName': store_name,
+        'city': city,
+        'checkedInAt': checked_in,
+        'checkedOutAt': checked_out,
+        'earlyLeaveReason': early_reason or None,
+        'isEarlyCheckout': bool(early_reason),
+        'hasFieldReport': field is not None,
+        'fieldReportId': field.id if field else None,
+        'source': field.source if field else None,
+        'fileName': field.file_name or None if field else None,
+        'stock': field.stock_json if field else None,
+        'sales': field.sales_json if field else None,
+        'otherBrands': field.other_brands_json if field else None,
+        'submittedAt': (
+            (field.updated_at if field else None) or (shift.checked_out_at if shift else None)
+        ),
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def daily_reports(request):
+    """
+    GET /api/daily-reports/
+    All BA check-outs + end-of-day field reports, grouped by ambassador.
+    Optional ?early=1 to only include early check-outs.
+    """
+    early_only = str(request.query_params.get('early', '')).lower() in ('1', 'true', 'yes')
+    ambassador_id = request.query_params.get('ambassador')
+    return Response(_build_daily_reports_payload(early_only=early_only, ambassador_id=ambassador_id))
+
+
+def _build_daily_reports_payload(*, early_only: bool = False, ambassador_id: str | None = None) -> dict:
+    shifts_qs = (
+        ShiftAssignment.objects.filter(
+            checked_out_at__isnull=False,
+            ambassador_id__isnull=False,
+        )
+        .select_related('ambassador', 'store')
+        .order_by('-checked_out_at', '-date')
+    )
+    if early_only:
+        shifts_qs = shifts_qs.filter(early_leave_reason__gt='')
+    if ambassador_id:
+        shifts_qs = shifts_qs.filter(ambassador_id=ambassador_id)
+
+    fields_qs = BaDailyReport.objects.select_related('ambassador', 'store', 'shift').order_by(
+        '-date', '-updated_at'
+    )
+    if ambassador_id:
+        fields_qs = fields_qs.filter(ambassador_id=ambassador_id)
+
+    field_by_shift: dict[int, BaDailyReport] = {}
+    field_by_ba_date: dict[tuple[int, date], BaDailyReport] = {}
+    for fr in fields_qs:
+        if fr.shift_id:
+            field_by_shift[fr.shift_id] = fr
+        key = (fr.ambassador_id, fr.date)
+        if key not in field_by_ba_date:
+            field_by_ba_date[key] = fr
+
+    used_field_ids: set[int] = set()
+    by_ba: dict[int, dict] = {}
+
+    def ensure_ba(ba: Ambassador, fallback_city: str = '') -> dict:
+        entry = by_ba.get(ba.id)
+        if not entry:
+            entry = {
+                'baId': str(ba.id),
+                'baName': ba.name,
+                'baCode': ba.code or '',
+                'city': ba.city or fallback_city,
+                'reportCount': 0,
+                'earlyCount': 0,
+                'fieldReportCount': 0,
+                'latestAt': None,
+                'reports': [],
+            }
+            by_ba[ba.id] = entry
+        return entry
+
+    for shift in shifts_qs:
+        ba = shift.ambassador
+        if not ba:
+            continue
+        field = field_by_shift.get(shift.id)
+        if not field:
+            field = field_by_ba_date.get((ba.id, shift.date))
+            if field and field.shift_id and field.shift_id != shift.id:
+                field = None
+        if field:
+            used_field_ids.add(field.id)
+
+        row = _serialize_daily_activity(shift, field)
+        submitted = row['submittedAt']
+        if hasattr(submitted, 'isoformat'):
+            row['submittedAt'] = submitted.isoformat()
+
+        entry = ensure_ba(ba, row.get('city') or '')
+        entry['reports'].append(row)
+        entry['reportCount'] += 1
+        if row['isEarlyCheckout']:
+            entry['earlyCount'] += 1
+        if row['hasFieldReport']:
+            entry['fieldReportCount'] += 1
+        ts = row['checkedOutAt'] or row['submittedAt']
+        if ts and (entry['latestAt'] is None or str(ts) > str(entry['latestAt'])):
+            entry['latestAt'] = ts
+
+    if not early_only:
+        for fr in fields_qs:
+            if fr.id in used_field_ids:
+                continue
+            ba = fr.ambassador
+            if not ba:
+                continue
+            row = _serialize_daily_activity(None, fr)
+            submitted = row['submittedAt']
+            if hasattr(submitted, 'isoformat'):
+                row['submittedAt'] = submitted.isoformat()
+            entry = ensure_ba(ba, row.get('city') or '')
+            entry['reports'].append(row)
+            entry['reportCount'] += 1
+            entry['fieldReportCount'] += 1
+            ts = row['submittedAt']
+            if ts and (entry['latestAt'] is None or str(ts) > str(entry['latestAt'])):
+                entry['latestAt'] = ts
+
+    for entry in by_ba.values():
+        entry['reports'].sort(
+            key=lambda r: r.get('checkedOutAt') or r.get('submittedAt') or r.get('date') or '',
+            reverse=True,
+        )
+
+    results = sorted(by_ba.values(), key=lambda r: r['latestAt'] or '', reverse=True)
+    return {'count': len(results), 'results': results}
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def early_checkout_reports(request):
+    """GET /api/early-checkouts/ — early-only view of daily reports."""
+    ambassador_id = request.query_params.get('ambassador')
+    return Response(_build_daily_reports_payload(early_only=True, ambassador_id=ambassador_id))
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ba_leaderboard(request):
+    """GET /api/ba/leaderboard/?token=… — invite-token BA view of rankings."""
+    from .intelligence import build_ba_leaderboard
+
+    ambassador = _ambassador_from_token(request.query_params.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+    data = build_ba_leaderboard()
+    data['me_id'] = ambassador.id
+    return Response(data)
