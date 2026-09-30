@@ -233,7 +233,7 @@ export function IncentivesPage() {
                 <th className="px-4 py-3">Rank</th>
                 <th className="px-4 py-3">Ambassador</th>
                 <th className="px-4 py-3">BA salary</th>
-                <th className="px-4 py-3">Target Ach</th>
+                <th className="px-4 py-3">Target Achievement</th>
                 <th className="px-4 py-3">Discipline</th>
                 <th className="px-4 py-3">Travelling</th>
                 <th className="px-4 py-3">Grooming</th>
@@ -392,11 +392,11 @@ function BreakdownBody({
       </div>
 
       <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        BA package from Set KPIs · Target Ach slabs 90% / 100% / 110%.
+        BA package from Set KPIs · Target Achievement slabs 90% / 100% / 110%.
       </div>
 
       <Row label="BA salary" value={selected.salary ?? selected.base} />
-      <Row label="Target Ach" value={selected.targetAchPay ?? selected.conversionPay} />
+      <Row label="Target Achievement" value={selected.targetAchPay ?? selected.conversionPay} />
       <Row label="Discipline" value={selected.disciplinePay ?? 0} />
       <Row
         label={`Travelling Allowance ${selected.baTravelPerDay ?? kpiConfig.baTravelPerDay}/-PKR per day`}

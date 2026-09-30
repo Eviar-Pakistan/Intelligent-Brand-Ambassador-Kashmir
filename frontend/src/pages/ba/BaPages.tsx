@@ -1141,7 +1141,7 @@ export function BaPerformancePage() {
         <div className="text-sm font-bold text-slate-900">PKR breakdown</div>
         <div className="mt-3 space-y-2.5">
           <BaPayRow label="BA salary" value={basePay} />
-          <BaPayRow label="Target Ach" value={targetAchPay} />
+          <BaPayRow label="Target Achievement" value={targetAchPay} />
           <BaPayRow label="Discipline" value={disciplinePay} />
           <BaPayRow
             label={`Travelling Allowance ${travelPerDay}/-PKR per day`}

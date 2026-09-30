@@ -28,9 +28,9 @@ const FIELDS: { key: keyof KpiConfig; label: string }[] = [
   { key: 'baTravelCap', label: 'BA travelling monthly cap' },
   { key: 'baGrooming', label: 'BA grooming' },
   { key: 'baMobile', label: 'BA mobile / data' },
-  { key: 'baTargetSlab90', label: 'Target Ach at 90%' },
-  { key: 'baTargetSlab100', label: 'Target Ach at 100%' },
-  { key: 'baTargetSlab110', label: 'Target Ach at 110%' },
+  { key: 'baTargetSlab90', label: 'Target Achievement at 90%' },
+  { key: 'baTargetSlab100', label: 'Target Achievement at 100%' },
+  { key: 'baTargetSlab110', label: 'Target Achievement at 110%' },
   { key: 'baDisciplineMinDays', label: 'Min days for discipline' },
   { key: 'supSalary', label: 'Supervisor salary' },
   { key: 'supFuelDa', label: 'Supervisor fuel / DA' },
@@ -167,7 +167,7 @@ export function KpiSettingsModal({ open, onClose }: { open: boolean; onClose: ()
         </div>
 
         <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-          Target Ach slabs
+          Target Achievement slabs
         </div>
         <div className="grid grid-cols-3 gap-3">
           <NumberInput label="≥ 90%" value={draft.baTargetSlab90} onChange={set('baTargetSlab90')} suffix="Rs" />
