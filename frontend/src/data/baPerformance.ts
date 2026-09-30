@@ -84,6 +84,11 @@ export function getSkusForCategory(category: ProductCategory | null): string[] {
   return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
 }
 
+/** Full LMT catalog (14 packs) for SKU pickers. */
+export function getAllSkus(): string[] {
+  return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
+}
+
 /** Placeholder chart series until live target data is loaded (Top 10 style). */
 export const DEMO_CATEGORY_SALES = [
   { name: 'Kashmir Cooking Oil', value: 11804 },
@@ -232,7 +237,7 @@ export function demoTopStoresForFilters(opts: {
   return scored.slice(0, 10)
 }
 
-/** Top 10 SKU targets for the active category/sku (+ town scales values). */
+/** Top 5 SKU targets for the active category/sku (+ town scales values). */
 export function demoTopSkusForFilters(opts: {
   category: ProductCategory | null
   sku: string | null
@@ -249,7 +254,7 @@ export function demoTopSkusForFilters(opts: {
     sales: demoValue(`${scope}|${name}`, 1200, 13000),
   }))
   scored.sort((a, b) => b.sales - a.sales)
-  return scored.slice(0, 10)
+  return scored.slice(0, 5)
 }
 
 /** Target vs sales bars for the active filter scope. Sales stays 0 until live data exists. */
@@ -510,7 +515,7 @@ export function aggregateBaPerformance(
   const topSkus = [...skuMap.entries()]
     .map(([sku, sales]) => ({ sku, sales: Math.round(sales * 10) / 10 }))
     .sort((a, b) => b.sales - a.sales)
-    .slice(0, 10)
+    .slice(0, 5)
 
   const oilRounded = Math.round(oil * 10) / 10
   const gheeRounded = Math.round(ghee * 10) / 10

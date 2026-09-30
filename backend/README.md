@@ -1,18 +1,20 @@
 # Kashmir Brand Ambassador — Backend
 
 Django + DRF API for the Intelligent Brand Ambassador Kashmir frontend.
-Lives next to the Vite app; **does not modify** the frontend.
+Lives next to the Vite app in `../frontend` (sibling folders under the repo root).
 
 ## Layout
 
 ```
-backend/
-  manage.py
-  requirements.txt
-  config/          # Django settings / urls
-  core/            # Auth user (JWT + Djoser)
-  api/             # Stores, BAs, shifts, shopper, training, …
-  ba_engine/       # In-process NLP for BA assessment
+Intelligent-Brand-Ambassador-Kashmir/
+  frontend/        # Vite + React
+  backend/
+    manage.py
+    requirements.txt
+    config/          # Django settings / urls
+    core/            # Auth user (JWT + Djoser)
+    api/             # Stores, BAs, shifts, shopper, training, …
+    ba_engine/       # In-process NLP for BA assessment
 ```
 
 ## Business codes
@@ -41,7 +43,7 @@ python manage.py createsuperuser
 python manage.py runserver 8000
 ```
 
-Frontend (unchanged): `npm run dev` on port 5173.
+Frontend: from repo root, `cd frontend && npm run dev` (port 5173).
 
 ## Main routes
 

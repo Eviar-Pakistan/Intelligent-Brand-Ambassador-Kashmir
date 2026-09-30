@@ -1,24 +1,47 @@
-# Intelligent Brand Ambassador Ecosystem — Frontend Showcase
+# Intelligent Brand Ambassador — Kashmir
 
-Mock-data clickable prototype. Each role has its **own route + layout**.
+Monorepo layout:
 
-## Run
+```
+Intelligent-Brand-Ambassador-Kashmir/
+  frontend/     # Vite + React UI
+  backend/      # Django + DRF API
+```
+
+## Frontend
 
 ```bash
+cd frontend
 npm install
 npm run dev
 ```
 
-## Role routes
+Runs on http://localhost:5173  
+Copy `frontend/.env.example` → `frontend/.env` and set `VITE_API_URL` (default `http://localhost:8000`).
 
-| Role | URL | Layout |
-|------|-----|--------|
-| Head Office | `/ho/dashboard` | Desktop sidebar dashboard |
-| Administrator | `/admin/settings` | Desktop admin |
-| Store Manager | `/manager` | Desktop operations |
-| Brand Ambassador | `/ba/home` | Full-screen BA app (bottom tabs) |
-| Shopper | `/shopper` | Full-screen mobile web |
+## Backend
 
-Login at `/login` · experience portal at `/portal`
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+copy .env.example .env
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver 8000
+```
 
-BA and Shopper are **not** phone mockups inside the dashboard — they are separate full-screen apps.
+See `backend/README.md` for API routes.
+
+## Role routes (frontend)
+
+| Role | URL |
+|------|-----|
+| Head Office | `/ho/...` |
+| Administrator | `/admin/...` |
+| Store Manager | `/manager` |
+| Brand Ambassador | `/ba/...` |
+| Shopper | `/shopper/...` |
+
+Login at `/login`.

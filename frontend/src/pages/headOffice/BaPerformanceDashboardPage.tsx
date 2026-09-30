@@ -10,6 +10,7 @@ import {
   demoTargetVsSalesForFilters,
   demoTopSkusForFilters,
   demoTopStoresForFilters,
+  getAllSkus,
   getSkusForCategory,
   type ProductCategory,
   type SalesPeriodMode,
@@ -104,7 +105,7 @@ function FilterPanel({
       <div
         className={cn(
           'overflow-y-auto overscroll-contain',
-          fill ? 'max-h-52 sm:max-h-60 lg:max-h-72' : 'max-h-36',
+          fill ? 'max-h-80 sm:max-h-96 lg:max-h-none lg:flex-1' : 'max-h-36',
         )}
       >
         {allowAll && (
@@ -393,7 +394,10 @@ export function BaPerformanceDashboardPage() {
     return Object.values(storesByTown).flat()
   }, [town, storesByTown])
 
-  const skuOptions = useMemo(() => getSkusForCategory(category), [category])
+  const skuOptions = useMemo(() => {
+    // Always offer the full 14-SKU catalog; category/brand still filter charts.
+    return getAllSkus()
+  }, [])
 
   const data = useMemo(() => {
     const liveStores = (dash?.topStores ?? []).filter((s) => s.sales > 0)
@@ -435,7 +439,7 @@ export function BaPerformanceDashboardPage() {
           ? []
           : demoTopStoresForFilters({ town, store, storeOptions, category }),
       topSkus: liveSkus.length
-        ? liveSkus.slice(0, 10)
+        ? liveSkus.slice(0, 5)
         : hasLiveSales
           ? []
           : demoTopSkusForFilters({ category, sku, town }),
@@ -958,7 +962,7 @@ export function BaPerformanceDashboardPage() {
             <Bar data={topStoresChart} options={horizontalBarOptions} />
           </ChartCard>
 
-          <ChartCard title="Top 10 SKU targets" chartHeight={TOP10_CHART_HEIGHT}>
+          <ChartCard title="Top 5 SKU targets" chartHeight={TOP10_CHART_HEIGHT}>
             <Bar data={topSkusChart} options={horizontalBarOptions} />
           </ChartCard>
         </div>
