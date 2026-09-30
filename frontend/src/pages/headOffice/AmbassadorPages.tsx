@@ -46,8 +46,8 @@ import { findCreatedStore, syncStoresFromApi, useCreatedStores } from '../../lib
 import { isApiAuthenticated } from '../../lib/api'
 import {
   monthInputValue,
-  upsertBaTarget,
   upsertBaTargets,
+  useBaTargetsSync,
 } from '../../lib/baTargets'
 import { baCodeForId, resolveBaByCode, resolveBaByName } from '../../lib/baCodes'
 import {
@@ -55,11 +55,11 @@ import {
   parseSalesBulkFile,
   type SalesParseResult,
 } from '../../lib/salesBulkUpload'
-import { getSkusForCategory, baPerformanceCategories, type ProductCategory } from '../../data/baPerformance'
+import { baPerformanceCategories } from '../../data/baPerformance'
 
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
-/** Set monthly target for one BA at a time. */
+/** Set monthly targets for one BA — all three product categories (no category/SKU picker). */
 function SetTargetSalesModal({
   open,
   onClose,
@@ -80,28 +80,27 @@ function SetTargetSalesModal({
   )
   const [baId, setBaId] = useState('')
   const [month, setMonth] = useState(() => monthInputValue())
-  const [category, setCategory] = useState<ProductCategory>('Kashmir Cooking Oil')
-  const [sku, setSku] = useState('')
-  const [targetKg, setTargetKg] = useState('120')
-
+  const [targetsByCat, setTargetsByCat] = useState<Record<string, string>>(() =>
+    Object.fromEntries(baPerformanceCategories.map((c) => [c, ''])),
+  )
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-
-  const skuOptions = useMemo(() => getSkusForCategory(category), [category])
 
   useEffect(() => {
     if (!open) return
     setBaId((prev) => (prev && baOptions.some((b) => b.id === prev) ? prev : baOptions[0]?.id ?? ''))
+    setMonth(monthInputValue())
+    setTargetsByCat(Object.fromEntries(baPerformanceCategories.map((c) => [c, ''])))
     setSaveError(null)
   }, [open, baOptions])
 
-  useEffect(() => {
-    setSku((prev) => (prev && skuOptions.includes(prev) ? prev : skuOptions[0] ?? ''))
-  }, [skuOptions])
+  const totalPreview = baPerformanceCategories.reduce((s, c) => {
+    const n = Number(targetsByCat[c])
+    return s + (Number.isFinite(n) && n > 0 ? n : 0)
+  }, 0)
 
   async function save() {
     const ba = baOptions.find((b) => b.id === baId)
-    const target = Number(targetKg)
     if (!ba) {
       setSaveError('Select an ambassador.')
       return
@@ -110,26 +109,27 @@ function SetTargetSalesModal({
       setSaveError('Month is required.')
       return
     }
-    if (!sku.trim()) {
-      setSaveError('SKU is required.')
-      return
-    }
-    if (!Number.isFinite(target) || target < 0) {
-      setSaveError('Enter a valid target (0 or more).')
-      return
-    }
-    setSaving(true)
-    setSaveError(null)
-    try {
-      await upsertBaTarget({
+    const rows: Parameters<typeof upsertBaTargets>[0] = []
+    for (const cat of baPerformanceCategories) {
+      const n = Number(targetsByCat[cat])
+      if (!Number.isFinite(n) || n <= 0) {
+        setSaveError(`Enter a target greater than 0 for ${cat}.`)
+        return
+      }
+      rows.push({
         baId: ba.id,
         baName: ba.name,
         baCode: ba.code,
         month,
-        sku: sku.trim(),
-        targetKg: target,
+        sku: cat,
+        targetKg: n,
         salesKg: null,
       })
+    }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await upsertBaTargets(rows)
       onSaved(ba.name)
       onClose()
     } catch (err) {
@@ -150,6 +150,9 @@ function SetTargetSalesModal({
         {saveError && (
           <p className="rounded-xl bg-rose-50 px-3 py-2 text-rose-800">{saveError}</p>
         )}
+        <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          Sets targets for all three categories. The Ambassadors table shows their sum.
+        </p>
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">Ambassador</span>
           <Select
@@ -176,47 +179,32 @@ function SetTargetSalesModal({
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
           />
         </label>
-        <label className="block">
-          <span className="mb-1 block font-medium text-slate-700">Category</span>
-          <Select
-            className="w-full"
-            value={category}
-            onChange={(e) => setCategory(e.target.value as ProductCategory)}
-          >
-            {baPerformanceCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="block">
-          <span className="mb-1 block font-medium text-slate-700">SKU</span>
-          <Select className="w-full" value={sku} onChange={(e) => setSku(e.target.value)} required>
-            {skuOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="block">
-          <span className="mb-1 block font-medium text-slate-700">Target (Kg)</span>
-          <input
-            type="number"
-            min={0}
-            step={0.1}
-            required
-            value={targetKg}
-            onChange={(e) => setTargetKg(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-          />
-        </label>
+        {baPerformanceCategories.map((cat) => (
+          <label key={cat} className="block">
+            <span className="mb-1 block font-medium text-slate-700">{cat} — Target (Kg)</span>
+            <input
+              type="number"
+              min={0.1}
+              step={0.1}
+              required
+              value={targetsByCat[cat] ?? ''}
+              onChange={(e) =>
+                setTargetsByCat((prev) => ({ ...prev, [cat]: e.target.value }))
+              }
+              placeholder="Enter target"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+            />
+          </label>
+        ))}
+        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-[#faf6ee] px-3 py-2.5">
+          <span className="font-medium text-slate-700">Total target</span>
+          <span className="font-bold text-slate-900">{totalPreview || '—'}</span>
+        </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={() => void save()} disabled={!baOptions.length || !sku || saving}>
+          <Button onClick={() => void save()} disabled={!baOptions.length || saving}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </div>
@@ -811,6 +799,8 @@ export function AmbassadorsPage() {
   const [tab, setTab] = useState('All')
   const [q, setQ] = useState('')
   const accounts = useBaAccounts()
+  const targetRows = useBaTargetsSync()
+  const targetMonth = monthInputValue()
 
   const [createOpen, setCreateOpen] = useState(false)
   const [linkPrompt, setLinkPrompt] = useState<{ account: BaAccount; title: string } | null>(null)
@@ -849,6 +839,15 @@ export function AmbassadorsPage() {
       (a.email || '').toLowerCase().includes(qLower)
     return matchTab && matchQ
   })
+
+  const targetTotalByBa = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const r of targetRows) {
+      if (r.month !== targetMonth) continue
+      map.set(r.baId, (map.get(r.baId) ?? 0) + (Number(r.targetKg) || 0))
+    }
+    return map
+  }, [targetRows, targetMonth])
 
   return (
     <div>
@@ -899,7 +898,7 @@ export function AmbassadorsPage() {
         <Tabs tabs={['All', 'Certified', 'Training', 'Deployed', 'Pending']} value={tab} onChange={setTab} />
       </div>
       <Card padding={false}>
-        <TableScroll minWidth={980}>
+        <TableScroll minWidth={1080}>
           <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
             <tr>
@@ -909,6 +908,7 @@ export function AmbassadorsPage() {
               <th className="px-4 py-3">Score</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Store</th>
+              <th className="px-4 py-3">Target</th>
               <th className="px-4 py-3">Check-in</th>
               <th className="px-4 py-3">Check-out</th>
               <th className="px-4 py-3">Data filled</th>
@@ -918,12 +918,13 @@ export function AmbassadorsPage() {
           <tbody>
             {filteredAccounts.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">
                   No ambassadors match this filter.
                 </td>
               </tr>
             )}
             {filteredAccounts.map((a) => {
+              const totalTarget = targetTotalByBa.get(a.id) ?? 0
               return (
               <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                 <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700">
@@ -949,6 +950,9 @@ export function AmbassadorsPage() {
                       ? `Store #${a.storeId} — ${a.storeName}`
                       : a.storeName
                     : '—'}
+                </td>
+                <td className="px-4 py-3 tabular-nums font-semibold text-slate-800">
+                  {totalTarget > 0 ? Math.round(totalTarget * 10) / 10 : '—'}
                 </td>
                 <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkIn || '—'}</td>
                 <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkOut || '—'}</td>
