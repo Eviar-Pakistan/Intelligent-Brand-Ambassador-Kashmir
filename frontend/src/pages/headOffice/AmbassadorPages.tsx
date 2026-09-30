@@ -795,13 +795,15 @@ function UploadTargetsModal({
             {result.errors.length > 0 && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800">
                 <div className="font-semibold">
-                  {result.rows.length > 0
-                    ? `${result.errors.length} ${result.errors.length === 1 ? 'row' : 'rows'} will be skipped:`
-                    : 'Nothing can be imported yet:'}
+                  {result.errors.some((e) => e.startsWith('Import failed'))
+                    ? 'Import failed:'
+                    : result.rows.length > 0
+                      ? `${result.errors.length} ${result.errors.length === 1 ? 'row' : 'rows'} will be skipped:`
+                      : 'Nothing can be imported yet:'}
                 </div>
                 <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
                   {result.errors.slice(0, 8).map((err) => (
-                    <li key={err}>{err}</li>
+                    <li key={err}>{err.replace(/^Import failed:\s*/, '')}</li>
                   ))}
                 </ul>
                 {result.errors.length > 8 && (
