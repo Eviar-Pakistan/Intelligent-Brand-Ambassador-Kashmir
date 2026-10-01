@@ -26,7 +26,7 @@ export function LoginPage() {
   const { brand } = useBrand()
   const [mode, setMode] = useState<LoginMode>('headOffice')
   const [email, setEmail] = useState(brand.loginEmail)
-  const [password, setPassword] = useState(brand.loginPassword)
+  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [supervisorOptions, setSupervisorOptions] = useState<SupervisorLoginOption[]>([])
