@@ -45,8 +45,16 @@ export type IncentiveBreakdown = {
 }
 
 /**
- * Monthly BA package from KPI settings (sheet amounts for Target Ach / Discipline / Travel).
+ * Monthly BA package from KPI settings.
+ * Target Ach uses achievement % slabs (90 → 2400, 100 → 3000, 110+ → 3600, else 0).
  */
+export function targetAchIncentive(achievementPct: number, config: KpiConfig = getKpiConfig()): number {
+  if (achievementPct >= 110) return config.baTargetSlab110
+  if (achievementPct >= 100) return config.baTargetSlab100
+  if (achievementPct >= 90) return config.baTargetSlab90
+  return 0
+}
+
 export function calculateIncentive(
   input: {
     baId: string
@@ -63,7 +71,7 @@ export function calculateIncentive(
   const achievementPct = input.achievementPct ?? 0
   const daysWorked = input.daysWorked ?? 0
   const salary = config.baSalary
-  const targetAchPay = config.baTargetSlab100
+  const targetAchPay = targetAchIncentive(achievementPct, config)
   const disciplinePay = config.baDiscipline
   const travelPay = config.baTravelCap
   const groomingPay = config.baGrooming

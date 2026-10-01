@@ -10,6 +10,7 @@ from .ba_attendance_views import (
     ba_today_shift,
     daily_reports,
     early_checkout_reports,
+    stock_matrix,
 )
 from .ba_training_views import (
     AmbassadorViewSet,
@@ -113,6 +114,7 @@ urlpatterns = [
     path('ba-targets/bulk/', ba_targets_bulk, name='ba-targets-bulk'),
     path('early-checkouts/', early_checkout_reports, name='early-checkouts'),
     path('daily-reports/', daily_reports, name='daily-reports'),
+    path('stock-matrix/', stock_matrix, name='stock-matrix'),
     path('ba/training/video/', ba_training_video, name='ba-training-video'),
     path('ba/sessions/', ba_create_session, name='ba-create-session'),
     path('ba/sessions/<uuid:session_id>/', ba_get_session, name='ba-get-session'),

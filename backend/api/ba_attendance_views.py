@@ -964,3 +964,157 @@ def ba_leaderboard(request):
     data = build_ba_leaderboard()
     data['me_id'] = ambassador.id
     return Response(data)
+
+
+# Known stock SKU keys from BA checkout forms (label used when key has no override).
+_STOCK_SKU_CATALOG: list[tuple[str, str]] = [
+    ('stockKpgoCan10', 'KPGO 10 LTR CAN Cons. RED'),
+    ('stockKpgoBtl3', 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED'),
+    ('stockKpgoBtl45', 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED'),
+    ('stockKpgoTin5', 'KPGO 5 LTR TIN Cons. RED'),
+    ('stockKpgoPouch1x5', 'KPGO POUCH (1LTR x 5) Cons. RED'),
+    ('stockKpgoSup1x5', 'KPGO Stand Up Pouch (1LTR x 5)'),
+    ('stockKbpBkt10', 'KBP GOLD 10 KG BKT'),
+    ('stockKbpBkt25', 'KBP GOLD 2.5 KG BKT'),
+    ('stockKbpBkt5', 'KBP GOLD 5 KG BKT'),
+    ('stockKbpTin5', 'KBP GOLD 5 KG TIN'),
+    ('stockKbpPouch1x5', 'KBP GOLD POUCH (1KG X 5)'),
+    ('stockWbpBkt5', 'WBP 5 KG BKT'),
+    ('stockWbpPouch1x5', 'WBP POUCH (1KG X 5)'),
+    ('stockWbpBkt25', 'WBP 2.5 KG BKT'),
+]
+
+
+def _normalize_stock_status(raw: object) -> str | None:
+    """Map BA checkout labels → in_stock | near_out | out_of_stock."""
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    if not text:
+        return None
+    if 'near' in text:
+        return 'near_out'
+    if 'out' in text:
+        return 'out_of_stock'
+    if 'in stock' in text or text == 'in':
+        return 'in_stock'
+    return None
+
+
+def _report_stock_sort_key(report: BaDailyReport):
+    shift = report.shift
+    checkout = shift.checked_out_at if shift and shift.checked_out_at else None
+    return (
+        checkout or report.updated_at or report.created_at,
+        report.updated_at or report.created_at,
+        report.id,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def stock_matrix(request):
+    """
+    GET /api/stock-matrix/
+    SKU × store grid from the latest submitted stock report per store
+    (last BA who checked out and submitted stock for that store).
+    """
+    reports = list(
+        BaDailyReport.objects.filter(store_id__isnull=False)
+        .exclude(stock_json={})
+        .select_related('store', 'shift', 'ambassador')
+        .order_by('-updated_at', '-id')
+    )
+
+    latest_by_store: dict[int, BaDailyReport] = {}
+    for report in reports:
+        stock = report.stock_json if isinstance(report.stock_json, dict) else {}
+        if not any(str(v).strip() for v in stock.values()):
+            continue
+        sid = report.store_id
+        if sid is None:
+            continue
+        prev = latest_by_store.get(sid)
+        if prev is None or _report_stock_sort_key(report) > _report_stock_sort_key(prev):
+            latest_by_store[sid] = report
+
+    label_by_key = {k: label for k, label in _STOCK_SKU_CATALOG}
+    seen_keys: set[str] = set()
+    for report in latest_by_store.values():
+        stock = report.stock_json if isinstance(report.stock_json, dict) else {}
+        for key, val in stock.items():
+            if str(val).strip():
+                seen_keys.add(str(key))
+
+    sku_keys: list[str] = []
+    for key, _label in _STOCK_SKU_CATALOG:
+        sku_keys.append(key)
+        seen_keys.discard(key)
+    for key in sorted(seen_keys):
+        sku_keys.append(key)
+
+    # All stores as columns; cells filled from latest stock report per store.
+    all_stores = list(Store.objects.all().order_by('city', 'name', 'id'))
+    store_cols = []
+    cells: dict[str, dict[str, dict]] = {k: {} for k in sku_keys}
+
+    for store in all_stores:
+        report = latest_by_store.get(store.id)
+        ba = report.ambassador if report else None
+        checkout = (
+            report.shift.checked_out_at.isoformat()
+            if report and report.shift_id and report.shift and report.shift.checked_out_at
+            else None
+        )
+        store_cols.append(
+            {
+                'storeId': store.id,
+                'storeName': store.name,
+                'storeCode': store.code or '',
+                'city': store.city or '',
+                'baId': ba.id if ba else None,
+                'baName': ba.name if ba else '',
+                'baCode': ba.code if ba else '',
+                'reportId': report.id if report else None,
+                'reportDate': report.date.isoformat() if report else None,
+                'checkedOutAt': checkout,
+                'submittedAt': report.updated_at.isoformat() if report and report.updated_at else None,
+            }
+        )
+        if not report:
+            continue
+        stock = report.stock_json if isinstance(report.stock_json, dict) else {}
+        store_id = str(store.id)
+        for key in sku_keys:
+            raw = stock.get(key)
+            status_key = _normalize_stock_status(raw)
+            if status_key is None and raw is not None and str(raw).strip():
+                cells[key][store_id] = {
+                    'status': None,
+                    'label': str(raw).strip(),
+                }
+            elif status_key:
+                display = {
+                    'in_stock': 'In Stock',
+                    'near_out': 'Near Out of Stock',
+                    'out_of_stock': 'Out of Stock',
+                }[status_key]
+                cells[key][store_id] = {
+                    'status': status_key,
+                    'label': display,
+                }
+
+    skus = [{'key': k, 'label': label_by_key.get(k, k)} for k in sku_keys]
+
+    return Response(
+        {
+            'skus': skus,
+            'stores': store_cols,
+            'cells': cells,
+            'legend': [
+                {'status': 'in_stock', 'label': 'In Stock'},
+                {'status': 'near_out', 'label': 'Near Out of Stock'},
+                {'status': 'out_of_stock', 'label': 'Out of Stock'},
+            ],
+        }
+    )

@@ -151,8 +151,8 @@ def calculate_ba_incentive(
     status: str = BaIncentivePayout.Status.PENDING,
 ) -> dict:
     """
-    Monthly BA package line items from KPI settings (sheet amounts).
-    Target Ach / Discipline / Travelling use the configured package values.
+    Monthly BA package line items from KPI settings.
+    Target Ach uses achievement % slabs (90/100/110); other lines use package amounts.
     """
     cfg = config or get_kpi_config()
     today = timezone.localdate()
@@ -164,8 +164,8 @@ def calculate_ba_incentive(
         days_worked = ba_days_worked(int(ba_id), month_start, today)
 
     salary = int(cfg.get('baSalary') or 0)
-    # Package amounts from Set KPIs (BA Package/Month sheet)
-    target_pay = int(cfg.get('baTargetSlab100') or 0)
+    # Target Ach only — slab from live achievement % (<90 → 0)
+    target_pay = target_ach_incentive(float(achievement_pct or 0), cfg)
     discipline = int(cfg.get('baDiscipline') or 0)
     travel = int(cfg.get('baTravelCap') or 0)
     grooming = int(cfg.get('baGrooming') or 0)

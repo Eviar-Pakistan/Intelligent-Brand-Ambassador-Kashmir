@@ -22,6 +22,7 @@ import {
   Menu,
   X,
   MessageSquareWarning,
+  Package,
   type LucideIcon,
 } from 'lucide-react'
 import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
@@ -42,6 +43,7 @@ type NavItem = {
 const headOfficeNav: NavItem[] = [
   { to: '/ho/ba-performance', label: 'Dashboard', icon: BarChart3, end: true, section: 'Command' },
   { to: '/ho/daily-reports', label: 'Daily Reports', icon: FileClock, section: 'Command' },
+  { to: '/ho/stocks', label: 'Stocks', icon: Package, section: 'Command' },
   { to: '/ho/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
   { to: '/ho/stores', label: 'Stores', icon: Store, section: 'Operations' },
   { to: '/ho/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
@@ -114,6 +116,7 @@ const titles: Record<string, string> = {
   '/ho/dashboard': 'Campaign Metrics',
   '/ho/ba-performance': 'Dashboard',
   '/ho/daily-reports': 'Daily Reports',
+  '/ho/stocks': 'Stocks',
   '/ho/ambassadors': 'Ambassadors',
   '/ho/ambassadors/training': 'Training Content',
   '/ho/stores': 'Store Management',

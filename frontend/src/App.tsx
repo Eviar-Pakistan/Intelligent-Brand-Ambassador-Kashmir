@@ -11,6 +11,7 @@ import { LoginPage } from './pages/LoginPage'
 import { CommandCenterPage, OptimizationPage } from './pages/headOffice/CommandCenterPage'
 import { BaPerformanceDashboardPage } from './pages/headOffice/BaPerformanceDashboardPage'
 import { DailyReportsPage } from './pages/headOffice/DailyReportsPage'
+import { StocksPage } from './pages/headOffice/StocksPage'
 import { CampaignOverviewPage, CampaignsPage } from './pages/headOffice/CampaignPages'
 import { AmbassadorProfilePage, AmbassadorsPage } from './pages/headOffice/AmbassadorPages'
 import { TrainingManagerPage } from './pages/headOffice/TrainingManagerPage'
@@ -67,6 +68,7 @@ const hoPages = (
     <Route path="dashboard" element={<CommandCenterPage />} />
     <Route path="ba-performance" element={<BaPerformanceDashboardPage />} />
     <Route path="daily-reports" element={<DailyReportsPage />} />
+    <Route path="stocks" element={<StocksPage />} />
     <Route path="ambassadors" element={<AmbassadorsPage />} />
     <Route path="ambassadors/training" element={<TrainingManagerPage />} />
     <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
