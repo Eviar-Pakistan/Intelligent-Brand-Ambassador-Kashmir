@@ -34,6 +34,7 @@ export type BaStatusCity = {
 
 export type BaStatusPayload = {
   days: number
+  total: number
   active: number
   break: number
   offline: number

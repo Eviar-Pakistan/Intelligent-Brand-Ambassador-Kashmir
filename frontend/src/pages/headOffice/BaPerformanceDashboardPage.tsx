@@ -895,7 +895,17 @@ export function BaPerformanceDashboardPage() {
         )}
       </Card>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiCard
+          label="Total BAs"
+          value={
+            cityStatus?.total ??
+            (cityStatus
+              ? cityStatus.active + cityStatus.offline + cityStatus.break
+              : '—')
+          }
+          hint={baStatusHint}
+        />
         <KpiCard label="Active BAs" value={cityStatus?.active ?? '—'} hint={baStatusHint} />
         <KpiCard label="Offline BAs" value={cityStatus?.offline ?? '—'} hint={baStatusHint} />
         <KpiCard label="On Break BAs" value={cityStatus?.break ?? '—'} hint={baStatusHint} />

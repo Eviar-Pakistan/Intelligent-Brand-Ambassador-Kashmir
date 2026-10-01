@@ -64,7 +64,7 @@ export function LoginPage() {
     setError(null)
     if (next === 'headOffice') {
       setEmail(brand.loginEmail)
-      setPassword(brand.loginPassword)
+      setPassword('')
     } else if (supervisorOptions.length) {
       setEmail(supervisorOptions[0].email)
       setPassword('')

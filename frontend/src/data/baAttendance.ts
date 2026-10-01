@@ -76,12 +76,16 @@ export function baStatusByCity(range: DateRange, filters: AttendanceFilters = {}
     return { city, stores: c.stores, active, break: onBreak, offline, total: active + onBreak + offline }
   })
 
+  const active = cities.reduce((s, c) => s + c.active, 0)
+  const onBreak = cities.reduce((s, c) => s + c.break, 0)
+  const offline = cities.reduce((s, c) => s + c.offline, 0)
   return {
     days: days.length,
     cities,
-    active: cities.reduce((s, c) => s + c.active, 0),
-    break: cities.reduce((s, c) => s + c.break, 0),
-    offline: cities.reduce((s, c) => s + c.offline, 0),
+    total: active + onBreak + offline,
+    active,
+    break: onBreak,
+    offline,
   }
 }
 

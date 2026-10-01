@@ -757,11 +757,15 @@ def _attendance_block(
             }
         )
 
+    active_n = sum(c['active'] for c in city_rows)
+    break_n = sum(c['break'] for c in city_rows)
+    offline_n = sum(c['offline'] for c in city_rows)
     ba_status = {
         'days': 1,  # live snapshot (not averaged over the filter range)
-        'active': sum(c['active'] for c in city_rows),
-        'break': sum(c['break'] for c in city_rows),
-        'offline': sum(c['offline'] for c in city_rows),
+        'total': active_n + break_n + offline_n,
+        'active': active_n,
+        'break': break_n,
+        'offline': offline_n,
         'cities': city_rows,
         'asOf': 'live',
     }
