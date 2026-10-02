@@ -254,7 +254,7 @@ export function BaDailySalesPage() {
   }
 
   return (
-    <form onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
+    <form noValidate onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Daily Sales"
         subtitle={`${city} · enter today's interceptions & SKU sales by category`}
@@ -483,7 +483,7 @@ export function BaOtherBrandsPage() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
+    <form noValidate onSubmit={handleSubmit} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Other Brands"
         subtitle="Enter selling price for each competitor brand / pack"
