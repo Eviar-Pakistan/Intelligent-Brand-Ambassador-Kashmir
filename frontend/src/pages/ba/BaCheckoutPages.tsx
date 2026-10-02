@@ -413,16 +413,13 @@ export function BaOtherBrandsPage() {
     )
   }
 
-  const canSubmit = rows.some((r) => r.name.trim() && r.price.trim() && Number(r.price) > 0)
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (busy) return
-    if (!canSubmit) {
-      setError('Enter at least one brand price greater than 0.')
-      return
-    }
-    const payload = rows.filter((r) => r.name.trim() || r.price.trim())
+    // Empty Other Brands is allowed — stock/sales from earlier steps are enough.
+    const payload = rows.filter(
+      (r) => r.name.trim() && r.price.trim() && Number(r.price) > 0,
+    )
     sessionStorage.setItem(SESSION_KEYS.otherBrands, JSON.stringify(payload))
 
     let stock: Record<string, string> = {}
@@ -539,7 +536,7 @@ export function BaOtherBrandsPage() {
 
       <button
         type="submit"
-        disabled={!canSubmit || busy}
+        disabled={busy}
         className="w-full rounded-2xl bg-navy-900 py-3.5 text-base font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"
       >
         {busy ? 'Submitting…' : 'Submit'}
