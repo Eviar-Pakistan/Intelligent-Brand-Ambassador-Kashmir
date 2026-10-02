@@ -4,6 +4,7 @@ import { Card, PageHeader } from '../../components/ui'
 import { signOut, useSupervisorSession } from '../../lib/supervisors'
 import {
   SupervisorBaTable,
+  SupervisorDownloadReport,
   SupervisorIncentiveCard,
   SupervisorStoreCards,
   SupervisorSummary,
@@ -53,6 +54,7 @@ export function SupervisorHomePage() {
       {supervisor && (
         <>
           <SupervisorSummary supervisor={supervisor} mode={overviewMode} />
+          <SupervisorDownloadReport supervisor={supervisor} mode={overviewMode} />
           <SupervisorIncentiveCard supervisor={supervisor} />
         </>
       )}

@@ -90,13 +90,13 @@ export const DEFAULT_OTHER_BRANDS: OtherBrandRow[] = [
 ]
 
 /** Sections in the same order as the checkout flow: Stock → Daily Sales → Other Brands. */
-const stockSections: ReportSection[] = [
+export const stockSections: ReportSection[] = [
   { title: 'Kashmir Cooking Oil', fields: stockOilFields },
   { title: 'Kashmir Banaspati', fields: stockGheeFields },
   { title: 'Waadi Banaspati', fields: stockWaadiFields },
 ]
 
-const salesSections: ReportSection[] = [
+export const salesSections: ReportSection[] = [
   { title: 'Interceptions', fields: interceptionFields },
   { title: 'Competitive User', fields: competitiveFields },
   { title: 'Why Not Kashmir', fields: whyNotFields },

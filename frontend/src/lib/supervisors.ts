@@ -530,3 +530,182 @@ export async function fetchMySupervisorOverview(): Promise<SupervisorOverview | 
   const data = await apiRequest<Record<string, unknown>>('/api/supervisor/me/overview/')
   return mapOverview(data)
 }
+
+export type SupervisorBaDailyReport = {
+  baId: string
+  baCode: string
+  baName: string
+  storeName: string
+  city: string
+  /** False when this BA is under the supervisor but did not submit for the date. */
+  submitted: boolean
+  source: string
+  stock: Record<string, string>
+  sales: Record<string, string | number>
+  otherBrands: { id?: string; name?: string; price?: string }[]
+}
+
+export async function fetchSupervisorReportDates(
+  mode: 'ho' | 'me',
+  supervisorId: string,
+): Promise<string[]> {
+  if (!isApiAuthenticated()) return []
+  const path =
+    mode === 'me'
+      ? '/api/supervisor/me/report-dates/'
+      : `/api/supervisors/${supervisorId}/report-dates/`
+  const data = await apiRequest<{ dates?: string[] }>(path)
+  return Array.isArray(data.dates) ? data.dates.map(String) : []
+}
+
+export async function fetchSupervisorReportsForDate(
+  mode: 'ho' | 'me',
+  supervisorId: string,
+  date: string,
+): Promise<{ date: string; reports: SupervisorBaDailyReport[] }> {
+  if (!isApiAuthenticated()) return { date, reports: [] }
+  const path =
+    mode === 'me'
+      ? `/api/supervisor/me/reports/?date=${encodeURIComponent(date)}`
+      : `/api/supervisors/${supervisorId}/reports/?date=${encodeURIComponent(date)}`
+  const data = await apiRequest<{ date?: string; reports?: unknown[] }>(path)
+  const reports: SupervisorBaDailyReport[] = (Array.isArray(data.reports) ? data.reports : []).map(
+    (raw) => {
+      const row = raw as Record<string, unknown>
+      const stock =
+        row.stock && typeof row.stock === 'object' && !Array.isArray(row.stock)
+          ? (row.stock as Record<string, string>)
+          : {}
+      const sales =
+        row.sales && typeof row.sales === 'object' && !Array.isArray(row.sales)
+          ? (row.sales as Record<string, string | number>)
+          : {}
+      const otherBrands = Array.isArray(row.otherBrands)
+        ? (row.otherBrands as SupervisorBaDailyReport['otherBrands'])
+        : []
+      const submitted =
+        typeof row.submitted === 'boolean'
+          ? row.submitted
+          : Object.keys(stock).length > 0 ||
+            Object.keys(sales).length > 0 ||
+            otherBrands.length > 0
+      return {
+        baId: String(row.baId ?? ''),
+        baCode: String(row.baCode ?? ''),
+        baName: String(row.baName ?? ''),
+        storeName: String(row.storeName ?? ''),
+        city: String(row.city ?? ''),
+        submitted,
+        source: String(row.source ?? ''),
+        stock,
+        sales,
+        otherBrands,
+      }
+    },
+  )
+  return { date: String(data.date ?? date), reports }
+}
+
+function excelSheetName(baCode: string, baName: string, used: Set<string>): string {
+  const base = `${baCode || 'BA'} ${baName}`.replace(/[\\/?*[\]:]/g, ' ').trim() || 'BA'
+  let name = base.slice(0, 31)
+  let n = 2
+  while (used.has(name.toLowerCase())) {
+    const suffix = ` (${n})`
+    name = `${base.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`
+    n += 1
+  }
+  used.add(name.toLowerCase())
+  return name
+}
+
+/** Build multi-sheet workbook: one sheet per BA for the selected date. */
+export async function downloadSupervisorBaReportsExcel(
+  date: string,
+  reports: SupervisorBaDailyReport[],
+  supervisorName: string,
+) {
+  const { stockSections, salesSections } = await import('./baReport')
+  const XLSX = await import('xlsx')
+  const wb = XLSX.utils.book_new()
+  const usedNames = new Set<string>()
+
+  if (!reports.length) {
+    const empty = XLSX.utils.aoa_to_sheet([
+      ['No ambassadors under this supervisor.'],
+      ['Date', date],
+      ['Supervisor', supervisorName],
+    ])
+    XLSX.utils.book_append_sheet(wb, empty, 'No BAs')
+  } else {
+    for (const report of reports) {
+      const displayName = report.baName || report.baCode || 'This BA'
+      let rows: (string | number)[][]
+
+      if (!report.submitted) {
+        rows = [
+          ['BA Code', report.baCode],
+          ['BA Name', report.baName],
+          ['Store', report.storeName],
+          ['City', report.city],
+          ['Date', date],
+          [],
+          [
+            `${displayName} did not submit a daily report for this date.`,
+          ],
+          ['No checkout / stock / sales data is available for this BA.'],
+        ]
+      } else {
+        rows = [
+          ['BA Code', report.baCode],
+          ['BA Name', report.baName],
+          ['Store', report.storeName],
+          ['City', report.city],
+          ['Date', date],
+          ['Source', report.source],
+          [],
+          ['Section', 'Item', 'Value'],
+        ]
+
+        for (const section of stockSections) {
+          for (const field of section.fields) {
+            rows.push([`Stock – ${section.title}`, field.label, report.stock[field.key] ?? ''])
+          }
+        }
+        for (const section of salesSections) {
+          for (const field of section.fields) {
+            const val = report.sales[field.key]
+            rows.push([
+              `Daily Sales – ${section.title}`,
+              field.label,
+              val == null || val === '' ? '' : val,
+            ])
+          }
+        }
+        const brands =
+          report.otherBrands.length > 0 ? report.otherBrands : [{ name: '', price: '' }]
+        for (const brand of brands) {
+          rows.push(['Other Brands', String(brand.name ?? ''), String(brand.price ?? '')])
+        }
+      }
+
+      const sheet = XLSX.utils.aoa_to_sheet(rows)
+      sheet['!cols'] = [{ wch: 28 }, { wch: 42 }, { wch: 22 }]
+      XLSX.utils.book_append_sheet(
+        wb,
+        sheet,
+        excelSheetName(report.baCode, report.baName, usedNames),
+      )
+    }
+  }
+
+  const safeSup =
+    supervisorName
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 60) || 'Supervisor'
+  XLSX.writeFile(wb, `${safeSup}_BA_Daily_Reports_${date}.xlsx`)
+}

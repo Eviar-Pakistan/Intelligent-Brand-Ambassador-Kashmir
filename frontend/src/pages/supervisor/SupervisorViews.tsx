@@ -1,11 +1,26 @@
 import { useEffect, useState } from 'react'
-import { Avatar, Card, CardHeader, KpiCard, ProgressBar, StatusBadge, TableScroll } from '../../components/ui'
+import { Download, FileSpreadsheet } from 'lucide-react'
+import {
+  Avatar,
+  Button,
+  Card,
+  CardHeader,
+  KpiCard,
+  Modal,
+  ProgressBar,
+  Select,
+  StatusBadge,
+  TableScroll,
+} from '../../components/ui'
 import { calculateSupervisorIncentive, formatPkr } from '../../lib/incentives'
 import { useKpiConfigSync } from '../../lib/kpiConfig'
 import { findCreatedStore, useCreatedStores } from '../../lib/storeRegistry'
 import {
+  downloadSupervisorBaReportsExcel,
   fetchMySupervisorOverview,
   fetchSupervisorOverview,
+  fetchSupervisorReportDates,
+  fetchSupervisorReportsForDate,
   supervisorOverview,
   type Supervisor,
   type SupervisorOverview,
@@ -34,6 +49,134 @@ function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
   }, [supervisor.id, mode, supervisor.storeIds.join(',')])
 
   return live ?? fallback
+}
+
+function formatReportDateLabel(iso: string) {
+  const d = new Date(`${iso}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+/** Date picker + Excel download (one sheet per BA) for that supervisor's team. */
+export function SupervisorDownloadReport({
+  supervisor,
+  mode = 'ho',
+}: {
+  supervisor: Supervisor
+  mode?: 'ho' | 'me'
+}) {
+  const [open, setOpen] = useState(false)
+  const [dates, setDates] = useState<string[]>([])
+  const [selected, setSelected] = useState('')
+  const [loadingDates, setLoadingDates] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setLoadingDates(true)
+    setError(null)
+    void fetchSupervisorReportDates(mode, supervisor.id)
+      .then((list) => {
+        if (cancelled) return
+        setDates(list)
+        setSelected(list[0] ?? '')
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setDates([])
+        setSelected('')
+        setError(err instanceof Error ? err.message : 'Could not load report dates.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDates(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, mode, supervisor.id])
+
+  async function onDownload() {
+    if (!selected) return
+    setDownloading(true)
+    setError(null)
+    try {
+      const { date, reports } = await fetchSupervisorReportsForDate(mode, supervisor.id, selected)
+      await downloadSupervisorBaReportsExcel(date, reports, supervisor.name)
+      setOpen(false)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Download failed.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <>
+      <Card>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="font-semibold text-slate-900">BA daily reports</div>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Download checkout reports for all ambassadors under this supervisor (one Excel sheet per
+              BA). BAs who did not submit still get a sheet with a note.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => setOpen(true)}>
+            <Download size={15} /> Download report
+          </Button>
+        </div>
+      </Card>
+
+      <Modal open={open} onClose={() => !downloading && setOpen(false)} title="Download BA reports">
+        <div className="space-y-4 text-sm">
+          <p className="text-slate-600">
+            Choose a date that has submitted reports, then download an Excel file with one sheet per BA.
+          </p>
+
+          {loadingDates ? (
+            <p className="text-slate-500">Loading available dates…</p>
+          ) : dates.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-slate-500">
+              No daily reports yet for ambassadors under {supervisor.name}.
+            </p>
+          ) : (
+            <label className="block space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Report date</span>
+              <Select value={selected} onChange={(e) => setSelected(e.target.value)} className="w-full">
+                {dates.map((d) => (
+                  <option key={d} value={d}>
+                    {formatReportDateLabel(d)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button
+              onClick={() => void onDownload()}
+              disabled={!selected || downloading || loadingDates || dates.length === 0}
+            >
+              <FileSpreadsheet size={15} />
+              {downloading ? 'Preparing…' : 'Download Excel'}
+            </Button>
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={downloading}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
 }
 
 export function SupervisorSummary({

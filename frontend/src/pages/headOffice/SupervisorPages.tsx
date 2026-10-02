@@ -23,6 +23,7 @@ import {
 } from '../../lib/supervisors'
 import {
   SupervisorBaTable,
+  SupervisorDownloadReport,
   SupervisorIncentiveCard,
   SupervisorStoreCards,
   SupervisorSummary,
@@ -565,6 +566,7 @@ export function SupervisorDetailPage() {
       />
 
       <SupervisorSummary supervisor={supervisor} />
+      <SupervisorDownloadReport supervisor={supervisor} mode="ho" />
       <SupervisorIncentiveCard supervisor={supervisor} />
       <SupervisorStoreCards supervisor={supervisor} />
       <SupervisorBaTable supervisor={supervisor} />

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -15,9 +16,35 @@ from core.models import UserType
 
 from .models import Store, Supervisor
 from .serializers import SupervisorSerializer
-from .supervisor_ops import build_supervisor_overview
+from .supervisor_ops import (
+    build_supervisor_overview,
+    supervisor_report_dates,
+    supervisor_reports_for_date,
+)
 
 User = get_user_model()
+
+
+def _parse_report_date(raw: str | None) -> date | None:
+    text = str(raw or '').strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        try:
+            return datetime.strptime(text[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+
+def _supervisor_profile_or_error(request):
+    if getattr(request.user, 'user_type', None) != UserType.SUPERVISOR:
+        return None, Response({'detail': 'Not a supervisor account.'}, status=status.HTTP_403_FORBIDDEN)
+    profile = getattr(request.user, 'supervisor_profile', None)
+    if not profile:
+        return None, Response({'detail': 'Supervisor profile missing.'}, status=status.HTTP_404_NOT_FOUND)
+    return profile, None
 
 SUPERVISOR_EMAIL_DOMAIN = 'kashmir.pk'
 
@@ -208,6 +235,27 @@ class SupervisorViewSet(viewsets.ModelViewSet):
         supervisor = self.get_object()
         return Response(build_supervisor_overview(supervisor))
 
+    @action(detail=True, methods=['get'], url_path='report-dates')
+    def report_dates(self, request, pk=None):
+        supervisor = self.get_object()
+        return Response({'dates': supervisor_report_dates(supervisor)})
+
+    @action(detail=True, methods=['get'], url_path='reports')
+    def reports(self, request, pk=None):
+        supervisor = self.get_object()
+        report_date = _parse_report_date(request.query_params.get('date'))
+        if not report_date:
+            return Response(
+                {'detail': 'Query param date=YYYY-MM-DD is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {
+                'date': report_date.isoformat(),
+                'reports': supervisor_reports_for_date(supervisor, report_date),
+            }
+        )
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -235,11 +283,9 @@ def supervisor_login_directory(request):
 @permission_classes([IsAuthenticated])
 def supervisor_me(request):
     """GET /api/supervisor/me/ — profile for the signed-in supervisor user."""
-    if getattr(request.user, 'user_type', None) != UserType.SUPERVISOR:
-        return Response({'detail': 'Not a supervisor account.'}, status=status.HTTP_403_FORBIDDEN)
-    profile = getattr(request.user, 'supervisor_profile', None)
-    if not profile:
-        return Response({'detail': 'Supervisor profile missing.'}, status=status.HTTP_404_NOT_FOUND)
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
     return Response(SupervisorSerializer(profile).data)
 
 
@@ -247,9 +293,38 @@ def supervisor_me(request):
 @permission_classes([IsAuthenticated])
 def supervisor_me_overview(request):
     """GET /api/supervisor/me/overview/ — live stores + BAs for signed-in supervisor."""
-    if getattr(request.user, 'user_type', None) != UserType.SUPERVISOR:
-        return Response({'detail': 'Not a supervisor account.'}, status=status.HTTP_403_FORBIDDEN)
-    profile = getattr(request.user, 'supervisor_profile', None)
-    if not profile:
-        return Response({'detail': 'Supervisor profile missing.'}, status=status.HTTP_404_NOT_FOUND)
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
     return Response(build_supervisor_overview(profile))
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supervisor_me_report_dates(request):
+    """GET /api/supervisor/me/report-dates/ — dates with BA daily reports."""
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
+    return Response({'dates': supervisor_report_dates(profile)})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supervisor_me_reports(request):
+    """GET /api/supervisor/me/reports/?date=YYYY-MM-DD — BA daily reports for a date."""
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
+    report_date = _parse_report_date(request.query_params.get('date'))
+    if not report_date:
+        return Response(
+            {'detail': 'Query param date=YYYY-MM-DD is required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return Response(
+        {
+            'date': report_date.isoformat(),
+            'reports': supervisor_reports_for_date(profile, report_date),
+        }
+    )

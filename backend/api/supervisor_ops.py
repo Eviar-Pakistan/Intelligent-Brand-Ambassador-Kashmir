@@ -3,12 +3,113 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db.models import Count
 from django.utils import timezone
 
-from .models import Ambassador, Consumer, ShiftAssignment, Store, Supervisor, SurveyQuestion
+from .models import Ambassador, BaDailyReport, Consumer, ShiftAssignment, Store, Supervisor, SurveyQuestion
+
+
+def supervisor_ambassador_ids(supervisor: Supervisor) -> set[int]:
+    """
+    BA ids under a supervisor: home-store on assigned stores, plus anyone
+    scheduled on those stores (same roster idea as the overview).
+    """
+    store_ids = list(supervisor.stores.values_list('id', flat=True))
+    if not store_ids:
+        return set()
+    home = set(
+        Ambassador.objects.filter(
+            store_id__in=store_ids,
+            status__in=(Ambassador.Status.CERTIFIED, Ambassador.Status.DEPLOYED),
+        ).values_list('id', flat=True)
+    )
+    shift = set(
+        ShiftAssignment.objects.filter(
+            store_id__in=store_ids,
+            ambassador_id__isnull=False,
+            status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+        ).values_list('ambassador_id', flat=True)
+    )
+    return home | {ba_id for ba_id in shift if ba_id}
+
+
+def supervisor_report_dates(supervisor: Supervisor) -> list[str]:
+    """Distinct YYYY-MM-DD dates that have daily reports for this supervisor's BAs."""
+    ba_ids = supervisor_ambassador_ids(supervisor)
+    if not ba_ids:
+        return []
+    dates = BaDailyReport.objects.filter(ambassador_id__in=ba_ids).values_list('date', flat=True).distinct()
+    return sorted({d.isoformat() for d in dates}, reverse=True)
+
+
+def supervisor_reports_for_date(supervisor: Supervisor, report_date: date) -> list[dict]:
+    """
+    One row per BA under this supervisor for the given date.
+    BAs who did not submit still appear with submitted=False so Excel can
+    include a sheet explaining the missing report.
+    """
+    ba_ids = supervisor_ambassador_ids(supervisor)
+    if not ba_ids:
+        return []
+
+    ambassadors = {
+        ba.id: ba
+        for ba in Ambassador.objects.filter(id__in=ba_ids).select_related('store')
+    }
+
+    qs = (
+        BaDailyReport.objects.filter(ambassador_id__in=ba_ids, date=report_date)
+        .select_related('ambassador', 'store')
+        .order_by('ambassador_id', '-updated_at', '-id')
+    )
+    latest: dict[int, BaDailyReport] = {}
+    for report in qs:
+        if report.ambassador_id not in latest:
+            latest[report.ambassador_id] = report
+
+    rows: list[dict] = []
+    for ba_id in sorted(
+        ambassadors.keys(),
+        key=lambda i: (ambassadors[i].code or '', ambassadors[i].name.lower()),
+    ):
+        ba = ambassadors[ba_id]
+        report = latest.get(ba_id)
+        if report:
+            store = report.store or ba.store
+            other = report.other_brands_json if isinstance(report.other_brands_json, list) else []
+            rows.append(
+                {
+                    'baId': str(ba.id),
+                    'baCode': ba.code or '',
+                    'baName': ba.name,
+                    'storeName': store.name if store else '',
+                    'city': (store.city if store else '') or ba.city or '',
+                    'submitted': True,
+                    'source': report.source,
+                    'stock': report.stock_json if isinstance(report.stock_json, dict) else {},
+                    'sales': report.sales_json if isinstance(report.sales_json, dict) else {},
+                    'otherBrands': other,
+                }
+            )
+        else:
+            store = ba.store
+            rows.append(
+                {
+                    'baId': str(ba.id),
+                    'baCode': ba.code or '',
+                    'baName': ba.name,
+                    'storeName': store.name if store else '',
+                    'city': (store.city if store else '') or ba.city or '',
+                    'submitted': False,
+                    'source': '',
+                    'stock': {},
+                    'sales': {},
+                    'otherBrands': [],
+                }
+            )
+    return rows
 
 
 def _pct(part: int, whole: int) -> float:
