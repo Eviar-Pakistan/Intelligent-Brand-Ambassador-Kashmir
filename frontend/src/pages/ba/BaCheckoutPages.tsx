@@ -27,6 +27,15 @@ import {
   type OtherBrandRow,
 } from '../../lib/baReport'
 
+/** Jump to top when a checkout step mounts (stock → sales → other brands). */
+function useScrollToTopOnMount() {
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [])
+}
+
 function emptyNumeric(fields: FieldDef[]) {
   return Object.fromEntries(fields.map((f) => [f.key, ''])) as Record<string, string>
 }
@@ -197,6 +206,7 @@ function showCategory(active: Set<ProductCategory> | null, cat: ProductCategory)
 }
 
 export function BaDailySalesPage() {
+  useScrollToTopOnMount()
   const navigate = useNavigate()
   const { city } = useBaShift()
   const { account } = useBaSession()
@@ -291,6 +301,7 @@ export function BaDailySalesPage() {
 }
 
 export function BaStockReportPage() {
+  useScrollToTopOnMount()
   const navigate = useNavigate()
   const { checkOut } = useBaShift()
   const { account } = useBaSession()
@@ -394,6 +405,7 @@ export function BaStockReportPage() {
 }
 
 export function BaOtherBrandsPage() {
+  useScrollToTopOnMount()
   const navigate = useNavigate()
   const { account } = useBaSession()
   const { markReportSubmitted } = useBaShift()
