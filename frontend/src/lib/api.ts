@@ -1,6 +1,11 @@
 /** Thin fetch helper for the Kashmir Django API. */
 
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || 'http://localhost:8000'
+const API_BASE = (() => {
+  const raw = import.meta.env.VITE_API_URL as string | undefined
+  // Empty string = same-origin (Vite proxy). Unset = local Django default.
+  if (raw === undefined) return 'http://127.0.0.1:8000'
+  return String(raw).replace(/\/$/, '')
+})()
 
 export class ApiError extends Error {
   status: number

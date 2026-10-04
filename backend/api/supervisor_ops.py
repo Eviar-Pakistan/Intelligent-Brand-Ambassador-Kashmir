@@ -37,14 +37,16 @@ def supervisor_ambassador_ids(supervisor: Supervisor) -> set[int]:
 
 def _report_when_date(report: BaDailyReport) -> date:
     """
-    Calendar day shown as WHEN on Daily Reports:
-    checkout local date, else report updated_at local date, else BaDailyReport.date.
+    Stable calendar day for a field report (download dropdown / Daily Reports WHEN).
+
+    Prefer created_at — shift.checked_out_at on month-level shifts is often reused on
+    later days and would collapse older reports onto the latest checkout day.
     """
+    if report.created_at:
+        return timezone.localtime(report.created_at).date()
     shift = getattr(report, 'shift', None)
     if shift is not None and shift.checked_out_at:
         return timezone.localtime(shift.checked_out_at).date()
-    if report.updated_at:
-        return timezone.localtime(report.updated_at).date()
     return report.date
 
 
@@ -73,12 +75,11 @@ def supervisor_reports_for_date(supervisor: Supervisor, report_date: date) -> li
         for ba in Ambassador.objects.filter(id__in=ba_ids).select_related('store')
     }
 
-    # Load recent reports for these BAs; match by WHEN day (not only BaDailyReport.date).
-    # Window: report.date near the day, or updated/checkout around that day.
+    # Match by WHEN day (checkout / created_at), not only BaDailyReport.date.
     qs = (
         BaDailyReport.objects.filter(ambassador_id__in=ba_ids)
         .select_related('ambassador', 'store', 'shift')
-        .order_by('ambassador_id', '-updated_at', '-id')
+        .order_by('ambassador_id', '-created_at', '-id')
     )
     latest: dict[int, BaDailyReport] = {}
     for report in qs:

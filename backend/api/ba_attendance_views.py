@@ -47,13 +47,18 @@ def _attendance_status_for_day(
     now: datetime,
     checked_in,
     shift_label: str,
+    has_report: bool = False,
 ) -> str:
     """
-    Present = checked in.
-    Scheduled = today, before shift start, no check-in yet.
-    Absent = past day with no check-in, or today after shift start with no check-in.
+    Present (from today onward) = BA submitted the daily report after checkout.
+    Legacy (days before today): keep prior Present-on-check-in so existing data stays unchanged.
+    Scheduled = future day, or today before shift start with no Present yet.
+    Absent = no Present after the applicable window.
     """
-    if checked_in:
+    if has_report:
+        return 'Present'
+    # Preserve historical attendance display (check-in counted as Present).
+    if day < today and checked_in:
         return 'Present'
     if day > today:
         return 'Scheduled'
@@ -121,6 +126,14 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
             date__lte=today,
         ).select_related('store')
     }
+
+    report_dates = set(
+        BaDailyReport.objects.filter(
+            ambassador=ambassador,
+            date__gte=start,
+            date__lte=today,
+        ).values_list('date', flat=True)
+    )
 
     # Cover month-level rows whose date is the 1st (may be before `start`).
     month_start = date(start.year, start.month, 1)
@@ -194,6 +207,7 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
             now=now,
             checked_in=checked_in,
             shift_label=shift_label,
+            has_report=d in report_dates,
         )
         if day_status == 'Present':
             present_count += 1
@@ -240,133 +254,42 @@ def _pick_from_qs(qs):
     return qs.first()
 
 
-def _roll_month_shift_for_new_day(shift: ShiftAssignment, today: date) -> ShiftAssignment:
-    """
-    Month-level assignments are stored once (typically on the 1st). Reuse that row
-    for daily check-in by clearing yesterday's check-in/out when a new day starts.
-    Snapshot clocks to BaAttendanceDay first so history is not lost.
-    """
-    if shift.date == today:
-        return shift
-    if not shift.checked_in_at and not shift.checked_out_at:
-        return shift
-    cin_day = timezone.localtime(shift.checked_in_at).date() if shift.checked_in_at else None
-    cout_day = timezone.localtime(shift.checked_out_at).date() if shift.checked_out_at else None
-    last_day = cout_day or cin_day
-    if last_day is None or last_day >= today:
-        return shift
-    upsert_attendance_from_shift(shift)
-    shift.checked_in_at = None
-    shift.checked_out_at = None
-    shift.check_in_lat = None
-    shift.check_in_lng = None
-    shift.check_in_accuracy_m = None
-    shift.early_leave_reason = ''
-    shift.save(
-        update_fields=[
-            'checked_in_at',
-            'checked_out_at',
-            'check_in_lat',
-            'check_in_lng',
-            'check_in_accuracy_m',
-            'early_leave_reason',
-            'updated_at',
-        ]
-    )
-    return shift
-
-
 def _today_shift_for(ambassador: Ambassador) -> ShiftAssignment | None:
-    today = date.today()
-    exact = (
-        ShiftAssignment.objects.filter(
-            ambassador=ambassador,
-            date=today,
-            status__in=(
-                ShiftAssignment.Status.SCHEDULED,
-                ShiftAssignment.Status.CONFLICT,
-            ),
-        )
-        .select_related('store', 'ambassador')
-        .order_by('shift_label', 'id')
-    )
-    found = _pick_from_qs(exact)
-    if found:
-        return found
+    """Resolve today's shift without mutating older rows (clone if needed)."""
+    from .shifts import ensure_shift_for_day
 
-    # Month-level assignment: one row for the whole month (usually date = 1st).
-    month_qs = (
-        ShiftAssignment.objects.filter(
-            ambassador=ambassador,
-            date__year=today.year,
-            date__month=today.month,
-            status__in=(
-                ShiftAssignment.Status.SCHEDULED,
-                ShiftAssignment.Status.CONFLICT,
-            ),
-        )
-        .select_related('store', 'ambassador')
-        .order_by('date', 'shift_label', 'id')
-    )
-    month_shift = _pick_from_qs(month_qs)
-    if month_shift:
-        return _roll_month_shift_for_new_day(month_shift, today)
-    return None
+    return ensure_shift_for_day(ambassador, timezone.localdate())
 
 
 def _ensure_today_shift(ambassador: Ambassador) -> ShiftAssignment | None:
     """
-    Return today's shift if scheduled, or create a default shift only when the BA
-    already has a home store. Never invent a store for unassigned BAs.
+    Ensure today + tomorrow shifts exist so the BA can see the next day in advance.
+    Never deletes or clears clocks on older shifts.
     """
-    existing = _today_shift_for(ambassador)
-    if existing:
-        return existing
+    from .shifts import ensure_today_and_tomorrow
 
-    store = ambassador.store
-    if store is None:
-        return None
-
-    from .shifts import day_key_for
-
-    today = date.today()
-    return ShiftAssignment.objects.create(
-        store=store,
-        ambassador=ambassador,
-        date=today,
-        day_key=day_key_for(today),
-        shift_label='08:00 AM – 08:00 PM',
-        status=ShiftAssignment.Status.SCHEDULED,
-    )
+    return ensure_today_and_tomorrow(ambassador)
 
 
 def _upcoming_rows(ambassador: Ambassador) -> list[dict]:
-    today = date.today()
-    from django.db.models import Q
-
+    """Only the next calendar day after today (no past days, not today)."""
+    today = timezone.localdate()
     upcoming = (
         ShiftAssignment.objects.filter(
             ambassador=ambassador,
+            date__gt=today,
             status__in=(
                 ShiftAssignment.Status.SCHEDULED,
                 ShiftAssignment.Status.CONFLICT,
             ),
         )
-        .filter(
-            Q(date__gte=today)
-            | Q(date__year=today.year, date__month=today.month)
-        )
         .select_related('store')
-        .order_by('date', 'shift_label', 'id')[:14]
+        .order_by('date', 'shift_label', 'id')[:1]
     )
     return [
         {
             'id': str(s.id),
-            'date': (
-                s.date.strftime('%b %Y')
-                if s.date.day == 1 and s.date != today
-                else s.date.strftime('%d %b')
-            ),
+            'date': s.date.strftime('%d %b'),
             'dateIso': s.date.isoformat(),
             'day': s.day_key,
             'shift': s.shift_label,
@@ -376,7 +299,7 @@ def _upcoming_rows(ambassador: Ambassador) -> list[dict]:
             'storeLabel': f'#{s.store_id} {s.store.name}',
             'checkedIn': bool(s.checked_in_at),
             'checkedOut': bool(s.checked_out_at),
-            'isToday': s.date == today or (s.date.year == today.year and s.date.month == today.month),
+            'isToday': False,
         }
         for s in upcoming
     ]
@@ -472,7 +395,7 @@ def serialize_ba_shift(shift: ShiftAssignment | None, ambassador: Ambassador) ->
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def ba_today_shift(request):
-    """GET /api/ba/today-shift/?token=…"""
+    """GET /api/ba/today-shift/?token=… — also pre-creates tomorrow's shift."""
     ambassador = _ambassador_from_token(request.query_params.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
@@ -627,7 +550,19 @@ def ba_check_out(request):
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
 
-    shift = _today_shift_for(ambassador)
+    # Prefer an open check-in (may still be yesterday's row if they crossed midnight).
+    shift = (
+        ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            checked_in_at__isnull=False,
+            checked_out_at__isnull=True,
+        )
+        .select_related('store', 'ambassador')
+        .order_by('-checked_in_at', '-id')
+        .first()
+    )
+    if not shift:
+        shift = _ensure_today_shift(ambassador)
     if not shift:
         return Response({'detail': 'No shift scheduled for today.'}, status=status.HTTP_400_BAD_REQUEST)
     if not shift.checked_in_at:
@@ -697,7 +632,32 @@ def ba_submit_daily_report(request):
         source = BaDailyReport.Source.MANUAL
     file_name = str(request.data.get('file_name') or request.data.get('fileName') or '').strip()[:255]
 
-    shift = _today_shift_for(ambassador)
+    # Prefer the open/checked-out shift for today (report is after checkout).
+    shift = (
+        ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            checked_in_at__isnull=False,
+            checked_out_at__isnull=False,
+        )
+        .select_related('store')
+        .order_by('-checked_out_at', '-id')
+        .first()
+    )
+    if not shift:
+        shift = _ensure_today_shift(ambassador)
+    if not shift:
+        return Response({'detail': 'No shift scheduled for today.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not shift.checked_in_at:
+        return Response(
+            {'detail': 'Check in and check out before submitting the daily report.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not shift.checked_out_at:
+        return Response(
+            {'detail': 'Check out before submitting the daily report.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     store = None
     store_id_raw = request.data.get('store_id') or request.data.get('storeId')
     if store_id_raw is not None and store_id_raw != '':
@@ -710,26 +670,23 @@ def ba_submit_daily_report(request):
     if not store and ambassador.store_id:
         store = ambassador.store
 
-    report_date = shift.date if shift else date.today()
+    # Use the calendar day of checkout so Present lands on the worked day.
+    report_date = timezone.localtime(shift.checked_out_at).date()
 
-    # Upsert one field report per BA + date (+ shift when known)
+    # Upsert one field report per BA + today's shift (or BA + calendar date).
     existing = None
     if shift:
         existing = BaDailyReport.objects.filter(ambassador=ambassador, shift=shift).first()
     if not existing:
-        existing = (
-            BaDailyReport.objects.filter(
-                ambassador=ambassador,
-                date=report_date,
-                shift__isnull=True,
-            ).first()
-            if not shift
-            else None
-        )
+        existing = BaDailyReport.objects.filter(
+            ambassador=ambassador,
+            date=report_date,
+        ).first()
 
     if existing:
         existing.store = store
         existing.shift = shift or existing.shift
+        existing.date = report_date
         existing.stock_json = stock
         existing.sales_json = sales
         existing.other_brands_json = other_brands
@@ -750,6 +707,9 @@ def ba_submit_daily_report(request):
             source=source,
             file_name=file_name,
         )
+
+    # Report after checkout is what marks Present (clocks already on the shift).
+    upsert_attendance_from_shift(shift)
 
     return Response(
         {
@@ -820,7 +780,7 @@ def _serialize_daily_activity(shift: ShiftAssignment | None, field: BaDailyRepor
         'sales': field.sales_json if field else None,
         'otherBrands': field.other_brands_json if field else None,
         'submittedAt': (
-            (field.updated_at if field else None) or (shift.checked_out_at if shift else None)
+            (field.created_at if field else None) or (shift.checked_out_at if shift else None)
         ),
     }
 

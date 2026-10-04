@@ -218,7 +218,12 @@ function CheckoutReportCard({
   expanded: boolean
   onToggle: () => void
 }) {
-  const when = formatReportWhen(report.checkedOutAt || report.submittedAt)
+  // Field reports: prefer submittedAt (created_at). Checkout on month shifts is often reused later.
+  const when = formatReportWhen(
+    report.hasFieldReport
+      ? report.submittedAt || report.checkedOutAt
+      : report.checkedOutAt || report.submittedAt,
+  )
   const source =
     report.source === 'excel'
       ? 'Excel'

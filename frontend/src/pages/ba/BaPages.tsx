@@ -348,7 +348,7 @@ export function BaHomePage() {
                   Upcoming
                 </div>
                 <ul className="mt-2 space-y-1.5">
-                  {upcoming.slice(0, 5).map((s) => (
+                  {upcoming.slice(0, 1).map((s) => (
                     <li key={s.id} className="flex justify-between gap-2 text-sm text-slate-700">
                       <span className="truncate">
                         {s.date} · {s.storeName}
