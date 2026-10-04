@@ -18,11 +18,11 @@ import {
 import { Check, Copy, Download, ExternalLink, FileSpreadsheet, Target, Upload, UserPlus } from 'lucide-react'
 import {
   baAccessUrl,
-  baEmailInUse,
   createBaAccountAsync,
   createBaAccountsAsync,
   downloadAmbassadorTemplate,
   downloadBaLinks,
+  generateBaEmail,
   getBaAccounts,
   isDemoBa,
   isPlaceholderBaName,
@@ -57,8 +57,6 @@ import {
   type SalesParseResult,
 } from '../../lib/salesBulkUpload'
 import { baPerformanceCategories, getSkusForCategory } from '../../data/baPerformance'
-
-const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
 /** Set monthly targets for one BA — all three product categories (no category/SKU picker). */
 function SetTargetSalesModal({
@@ -396,7 +394,7 @@ function CreateAmbassadorModal({
   onClose: () => void
   onCreated: (account: BaAccount) => void
 }) {
-  const fresh = () => ({ name: '', city: '', email: '', phone: '' })
+  const fresh = () => ({ name: '', city: '', phone: '' })
   const [form, setForm] = useState(fresh)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -411,12 +409,16 @@ function CreateAmbassadorModal({
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return setError('Name is required.')
-    if (!validEmail(form.email)) return setError('Enter a valid email.')
-    if (baEmailInUse(form.email)) return setError('Another ambassador already uses this email.')
+    if (!form.city.trim()) return setError('City is required.')
     setBusy(true)
     setError(null)
     try {
-      const account = await createBaAccountAsync(form)
+      const account = await createBaAccountAsync({
+        name: form.name.trim(),
+        city: form.city.trim(),
+        phone: form.phone.trim(),
+        email: generateBaEmail(form.name),
+      })
       onCreated(account)
       setForm(fresh())
       onClose()
@@ -427,7 +429,7 @@ function CreateAmbassadorModal({
     }
   }
 
-  const set = (key: 'name' | 'city' | 'email' | 'phone') => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const set = (key: 'name' | 'city' | 'phone') => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [key]: e.target.value })
     setError(null)
   }
@@ -440,15 +442,11 @@ function CreateAmbassadorModal({
           <input value={form.name} onChange={set('name')} className={modalFieldClass} autoFocus required />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">City</span>
-          <input value={form.city} onChange={set('city')} className={modalFieldClass} />
+          <span className="mb-1 block font-medium text-slate-700">City *</span>
+          <input value={form.city} onChange={set('city')} className={modalFieldClass} required />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Email *</span>
-          <input type="email" value={form.email} onChange={set('email')} className={modalFieldClass} required />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Phone</span>
+          <span className="mb-1 block font-medium text-slate-700">Phone (optional)</span>
           <input type="tel" value={form.phone} onChange={set('phone')} className={modalFieldClass} />
         </label>
         <p className="text-xs text-slate-500">
