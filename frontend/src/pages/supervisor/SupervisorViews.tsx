@@ -137,7 +137,8 @@ export function SupervisorDownloadReport({
       <Modal open={open} onClose={() => !downloading && setOpen(false)} title="Download BA reports">
         <div className="space-y-4 text-sm">
           <p className="text-slate-600">
-            Choose a date that has submitted reports, then download an Excel file with one sheet per BA.
+            Choose a date that matches Daily Reports (WHEN). Download includes one Excel sheet per BA
+            under this supervisor.
           </p>
 
           {loadingDates ? (

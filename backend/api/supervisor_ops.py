@@ -35,20 +35,34 @@ def supervisor_ambassador_ids(supervisor: Supervisor) -> set[int]:
     return home | {ba_id for ba_id in shift if ba_id}
 
 
+def _report_when_date(report: BaDailyReport) -> date:
+    """
+    Calendar day shown as WHEN on Daily Reports:
+    checkout local date, else report updated_at local date, else BaDailyReport.date.
+    """
+    shift = getattr(report, 'shift', None)
+    if shift is not None and shift.checked_out_at:
+        return timezone.localtime(shift.checked_out_at).date()
+    if report.updated_at:
+        return timezone.localtime(report.updated_at).date()
+    return report.date
+
+
 def supervisor_report_dates(supervisor: Supervisor) -> list[str]:
-    """Distinct YYYY-MM-DD dates that have daily reports for this supervisor's BAs."""
+    """
+    Distinct WHEN-days (same as Daily Reports) for field reports under this supervisor.
+    """
     ba_ids = supervisor_ambassador_ids(supervisor)
     if not ba_ids:
         return []
-    dates = BaDailyReport.objects.filter(ambassador_id__in=ba_ids).values_list('date', flat=True).distinct()
-    return sorted({d.isoformat() for d in dates}, reverse=True)
+    qs = BaDailyReport.objects.filter(ambassador_id__in=ba_ids).select_related('shift')
+    return sorted({_report_when_date(r).isoformat() for r in qs}, reverse=True)
 
 
 def supervisor_reports_for_date(supervisor: Supervisor, report_date: date) -> list[dict]:
     """
-    One row per BA under this supervisor for the given date.
-    BAs who did not submit still appear with submitted=False so Excel can
-    include a sheet explaining the missing report.
+    One row per BA under this supervisor for the given WHEN-day (Daily Reports date).
+    BAs who did not submit that day still appear with submitted=False.
     """
     ba_ids = supervisor_ambassador_ids(supervisor)
     if not ba_ids:
@@ -59,13 +73,17 @@ def supervisor_reports_for_date(supervisor: Supervisor, report_date: date) -> li
         for ba in Ambassador.objects.filter(id__in=ba_ids).select_related('store')
     }
 
+    # Load recent reports for these BAs; match by WHEN day (not only BaDailyReport.date).
+    # Window: report.date near the day, or updated/checkout around that day.
     qs = (
-        BaDailyReport.objects.filter(ambassador_id__in=ba_ids, date=report_date)
-        .select_related('ambassador', 'store')
+        BaDailyReport.objects.filter(ambassador_id__in=ba_ids)
+        .select_related('ambassador', 'store', 'shift')
         .order_by('ambassador_id', '-updated_at', '-id')
     )
     latest: dict[int, BaDailyReport] = {}
     for report in qs:
+        if _report_when_date(report) != report_date:
+            continue
         if report.ambassador_id not in latest:
             latest[report.ambassador_id] = report
 

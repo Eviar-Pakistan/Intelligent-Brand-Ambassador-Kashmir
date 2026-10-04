@@ -17,6 +17,7 @@ Pillow>=10.0
 qrcode>=7.4
 requests>=2.31
 python-dotenv>=1.0
+PyMySQL>=1.1
 
 # BA Linguistic NLP (vendored package: ba_engine/)
 numpy
