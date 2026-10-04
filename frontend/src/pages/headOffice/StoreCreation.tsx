@@ -39,7 +39,6 @@ const emptyForm = {
   name: '',
   city: CITIES[0],
   footfall: 'Medium' as Footfall,
-  address: '',
   latitude: '',
   longitude: '',
   peakHours: DEFAULT_PEAK_HOURS,
@@ -88,7 +87,7 @@ export function CreateStorePage() {
           name,
           city: form.city,
           footfall: form.footfall,
-          address: form.address.trim(),
+          address: form.city,
           latitude,
           longitude,
           peakHours: form.peakHours.trim() || DEFAULT_PEAK_HOURS,
@@ -159,26 +158,16 @@ export function CreateStorePage() {
             </Field>
           </div>
 
-          <Field label="Address">
-            <textarea
-              className={fieldClass}
-              rows={3}
-              value={form.address}
-              onChange={set('address')}
-              placeholder="Street, area, landmark"
-            />
-          </Field>
-
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Latitude">
+            <Field label="Latitude (optional)">
               <input className={fieldClass} value={form.latitude} onChange={set('latitude')} placeholder="e.g. 24.8607" inputMode="decimal" />
             </Field>
-            <Field label="Longitude">
+            <Field label="Longitude (optional)">
               <input className={fieldClass} value={form.longitude} onChange={set('longitude')} placeholder="e.g. 67.0011" inputMode="decimal" />
             </Field>
           </div>
           <p className="-mt-2 text-xs text-slate-500">
-            Used for the Head Office live map. Example Karachi center: 24.8607, 67.0011
+            Optional — used for the Head Office live map. Example Karachi center: 24.8607, 67.0011
           </p>
 
           <Field label="Peak hours">
