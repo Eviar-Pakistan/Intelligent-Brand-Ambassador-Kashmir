@@ -15,12 +15,66 @@ import {
   type BaUpcomingShift,
 } from '../lib/baAttendanceApi'
 
-const SHIFT_START_HOUR = 8
-const SHIFT_END_HOUR = 20
-const SHIFT_END_MINUTE = 0
+const DEFAULT_SHIFT_START_MINUTES = 8 * 60
+const DEFAULT_SHIFT_END_MINUTES = 20 * 60
+const DEFAULT_SHIFT_END_LABEL = '08:00 PM'
+const DEFAULT_SHIFT_START_LABEL = '08:00 AM'
+const SHIFT_TIME_RE = /(\d{1,2}):(\d{2})\s*(AM|PM)/gi
 /** Check Out becomes available this many ms after check-in */
 const CHECKOUT_UNLOCK_AFTER_MS = 10_000
 const FALLBACK_CITY = 'Lahore'
+
+type ShiftBounds = {
+  startMinutes: number
+  endMinutes: number
+  startLabel: string
+  endLabel: string
+}
+
+function parseClockToken(hour: string, minute: string, ampm: string): number {
+  let h = Number.parseInt(hour, 10) % 12
+  if (ampm.toUpperCase() === 'PM') h += 12
+  return h * 60 + Number.parseInt(minute, 10)
+}
+
+function formatClockLabel(hour: string, minute: string, ampm: string): string {
+  const h = Number.parseInt(hour, 10)
+  return `${String(h).padStart(2, '0')}:${minute} ${ampm.toUpperCase()}`
+}
+
+function parseShiftBounds(label: string): ShiftBounds | null {
+  const parts = [...(label || '').matchAll(SHIFT_TIME_RE)]
+  if (parts.length === 0) return null
+
+  const startMinutes = parseClockToken(parts[0][1], parts[0][2], parts[0][3])
+  const endMinutes =
+    parts.length >= 2
+      ? parseClockToken(parts[1][1], parts[1][2], parts[1][3])
+      : DEFAULT_SHIFT_END_MINUTES
+
+  return {
+    startMinutes,
+    endMinutes,
+    startLabel: formatClockLabel(parts[0][1], parts[0][2], parts[0][3]),
+    endLabel:
+      parts.length >= 2
+        ? formatClockLabel(parts[1][1], parts[1][2], parts[1][3])
+        : DEFAULT_SHIFT_END_LABEL,
+  }
+}
+
+function defaultShiftBounds(): ShiftBounds {
+  return {
+    startMinutes: DEFAULT_SHIFT_START_MINUTES,
+    endMinutes: DEFAULT_SHIFT_END_MINUTES,
+    startLabel: DEFAULT_SHIFT_START_LABEL,
+    endLabel: DEFAULT_SHIFT_END_LABEL,
+  }
+}
+
+function resolveShiftBounds(shiftLabel: string): ShiftBounds {
+  return parseShiftBounds(shiftLabel) ?? defaultShiftBounds()
+}
 
 export type BaShiftState = {
   city: string
@@ -51,9 +105,16 @@ export type BaShiftState = {
 
 const BaShiftContext = createContext<BaShiftState | null>(null)
 
-export function isAtOrPastShiftEnd(now: Date) {
-  const minutes = now.getHours() * 60 + now.getMinutes()
-  return minutes >= SHIFT_END_HOUR * 60 + SHIFT_END_MINUTE
+export function isAtOrPastShiftEnd(now: Date, shiftLabel = '') {
+  const { startMinutes, endMinutes } = resolveShiftBounds(shiftLabel)
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+
+  // Overnight shift (e.g. 10:00 PM – 06:00 AM): past end when between end and start.
+  if (endMinutes < startMinutes) {
+    return nowMinutes >= endMinutes && nowMinutes < startMinutes
+  }
+
+  return nowMinutes >= endMinutes
 }
 
 function numOrNull(v: unknown): number | null {
@@ -196,7 +257,8 @@ export function BaShiftProvider({
     void refresh()
   }, [refresh])
 
-  const atShiftEnd = isAtOrPastShiftEnd(now)
+  const shiftBounds = useMemo(() => resolveShiftBounds(shiftLabel), [shiftLabel])
+  const atShiftEnd = isAtOrPastShiftEnd(now, shiftLabel)
   const isEarlyCheckout = checkedIn && !checkedOut && !atShiftEnd
   const canCheckOut =
     checkedIn &&
@@ -247,11 +309,9 @@ export function BaShiftProvider({
     setReportSubmitted(true)
   }, [])
 
-  const shiftEndLabel = `${String(SHIFT_END_HOUR % 12 || 12).padStart(2, '0')}:${String(
-    SHIFT_END_MINUTE,
-  ).padStart(2, '0')} PM`
+  const shiftEndLabel = shiftBounds.endLabel
   const displayShiftLabel =
-    shiftLabel || `${String(SHIFT_START_HOUR).padStart(2, '0')}:00 AM – ${shiftEndLabel}`
+    shiftLabel || `${shiftBounds.startLabel} – ${shiftBounds.endLabel}`
 
   const value = useMemo(
     () => ({
