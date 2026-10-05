@@ -34,17 +34,38 @@ function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
 
   useEffect(() => {
     let cancelled = false
-    const load =
-      mode === 'me' ? fetchMySupervisorOverview() : fetchSupervisorOverview(supervisor.id)
-    void load
-      .then((data) => {
-        if (!cancelled) setLive(data)
-      })
-      .catch(() => {
-        if (!cancelled) setLive(null)
-      })
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const load = () => {
+      const req =
+        mode === 'me' ? fetchMySupervisorOverview() : fetchSupervisorOverview(supervisor.id)
+      void req
+        .then((data) => {
+          if (cancelled) return
+          if (data) {
+            setLive(data)
+            return
+          }
+          // Auth/token not ready yet — retry briefly instead of sticking on nameless fallback.
+          if (attempts < 6) {
+            attempts += 1
+            timer = setTimeout(load, 150 * attempts)
+          }
+        })
+        .catch(() => {
+          if (cancelled) return
+          if (attempts < 6) {
+            attempts += 1
+            timer = setTimeout(load, 150 * attempts)
+          }
+        })
+    }
+
+    load()
     return () => {
       cancelled = true
+      if (timer) clearTimeout(timer)
     }
   }, [supervisor.id, mode, supervisor.storeIds.join(',')])
 
@@ -255,7 +276,13 @@ export function SupervisorStoreCards({
               <Row label="Peak hours" value={s.peak.join(' · ') || '—'} />
               <Row
                 label="Ambassadors"
-                value={s.assigned.length ? s.assigned.map((a) => a.name).join(', ') : 'None assigned'}
+                value={
+                  s.assigned.length
+                    ? s.assigned
+                        .map((a) => (a.code ? `${a.code} · ${a.name}` : a.name))
+                        .join(', ')
+                    : 'None assigned'
+                }
               />
               {details && <Row label="Address" value={details.address} />}
             </dl>
@@ -314,7 +341,14 @@ export function SupervisorBaTable({
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Avatar name={b.name} size="sm" />
-                    <span className="font-medium">{b.name}</span>
+                    <div className="min-w-0">
+                      {b.code ? (
+                        <span className="font-mono text-xs font-semibold text-slate-500">
+                          {b.code}
+                        </span>
+                      ) : null}
+                      <span className={`font-medium ${b.code ? 'ml-1.5' : ''}`}>{b.name}</span>
+                    </div>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{b.store || '—'}</td>

@@ -278,6 +278,7 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
             {
                 'id': str(ba.id),
                 'name': ba.name,
+                'code': ba.code or '',
                 'state': _ba_state(ba.id, today),
             }
             for ba in store_bas.get(store.id, [])
@@ -346,6 +347,7 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
             {
                 'id': str(ba.id),
                 'name': ba.name,
+                'code': ba.code or '',
                 'storeId': sid,
                 'store': store.name if store else '',
                 'state': _ba_state(ba.id, today),

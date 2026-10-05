@@ -161,12 +161,12 @@ class StoreSerializer(serializers.ModelSerializer):
         by_id: dict[int, Ambassador] = {}
         for ba in obj.ambassadors.filter(
             status__in=(Ambassador.Status.CERTIFIED, Ambassador.Status.DEPLOYED)
-        ).only('id', 'name'):
+        ).only('id', 'name', 'code'):
             by_id[ba.id] = ba
 
         missing = shift_map.get(obj.id, set()) - set(by_id)
         if missing:
-            for ba in Ambassador.objects.filter(id__in=missing).only('id', 'name'):
+            for ba in Ambassador.objects.filter(id__in=missing).only('id', 'name', 'code'):
                 by_id[ba.id] = ba
 
         rows = []
@@ -182,7 +182,14 @@ class StoreSerializer(serializers.ModelSerializer):
                     state_cache[ba.id] = 'Offline'
                 else:
                     state_cache[ba.id] = 'Active'
-            rows.append({'id': str(ba.id), 'name': ba.name, 'state': state_cache[ba.id]})
+            rows.append(
+                {
+                    'id': str(ba.id),
+                    'name': ba.name,
+                    'code': ba.code or '',
+                    'state': state_cache[ba.id],
+                }
+            )
 
         roster_cache[obj.id] = rows
         return rows

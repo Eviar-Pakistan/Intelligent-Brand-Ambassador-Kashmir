@@ -7,7 +7,15 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { ambassadors, baRanking, stores, type Store } from '../data/mock'
 import { apiRequest, isApiAuthenticated } from './api'
 import { loginWithEmail, logoutApi, type AuthUser } from './auth'
+import { getBaAccounts } from './baAccounts'
 import { sha256Hex } from './sha256'
+
+function baCodeForRow(id: string, code?: string | null): string {
+  const direct = (code || '').trim()
+  if (direct) return direct
+  const fromAccount = getBaAccounts().find((a) => a.id === String(id))?.code
+  return (fromAccount || '').trim()
+}
 
 export type Supervisor = {
   id: string
@@ -405,6 +413,7 @@ export function useSupervisorSession() {
 export type SupervisorBa = {
   id: string
   name: string
+  code?: string
   storeId: number
   store: string
   state: 'Active' | 'Break' | 'Offline'
@@ -438,9 +447,11 @@ export function supervisorOverview(supervisor: Supervisor): SupervisorOverview {
     store.assigned.map((a) => {
       const ranked = baRanking.find((b) => b.id === a.id)
       const profile = ambassadors.find((p) => p.id === a.id)
+      const code = baCodeForRow(a.id, a.code)
       return {
         id: a.id,
         name: a.name,
+        ...(code ? { code } : {}),
         storeId: store.id,
         store: store.name,
         state: a.state,
@@ -483,7 +494,19 @@ function mapOverview(data: Record<string, unknown>): SupervisorOverview {
       conversion: Number(row.conversion ?? 0),
       peak: Array.isArray(row.peak) ? (row.peak as string[]) : [],
       assigned: Array.isArray(row.assigned)
-        ? (row.assigned as { id: string; name: string; state: 'Active' | 'Break' | 'Offline' }[])
+        ? (row.assigned as Store['assigned']).map((a) => {
+            const id = String(a.id)
+            const code = baCodeForRow(id, a.code)
+            return {
+              id,
+              name: String(a.name),
+              ...(code ? { code } : {}),
+              state:
+                a.state === 'Active' || a.state === 'Break'
+                  ? a.state
+                  : ('Offline' as const),
+            }
+          })
         : [],
       qrCode: String(row.qrCode ?? ''),
     }
@@ -491,9 +514,12 @@ function mapOverview(data: Record<string, unknown>): SupervisorOverview {
   const bas: SupervisorBa[] = basRaw.map((b) => {
     const row = b as Record<string, unknown>
     const state = String(row.state ?? 'Offline')
+    const id = String(row.id ?? '')
+    const code = baCodeForRow(id, row.code == null ? '' : String(row.code))
     return {
-      id: String(row.id ?? ''),
+      id,
       name: String(row.name ?? ''),
+      ...(code ? { code } : {}),
       storeId: Number(row.storeId ?? 0),
       store: String(row.store ?? ''),
       state: state === 'Active' || state === 'Break' ? state : 'Offline',

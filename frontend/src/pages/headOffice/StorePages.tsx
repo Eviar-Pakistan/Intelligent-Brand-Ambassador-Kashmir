@@ -183,30 +183,46 @@ export function StoreDetailPage() {
     ]).catch(() => {})
   }, [id, refreshSchedule])
 
-  const assignedFromAccounts = accounts
+  type AssignedRow = { id: string; name: string; code?: string; state: 'Active' | 'Break' | 'Offline' }
+
+  const assignedFromAccounts: AssignedRow[] = accounts
     .filter((a) => a.storeId === store.id && (a.status === 'Deployed' || a.status === 'Certified'))
     .map((a) => {
       const state: 'Active' | 'Break' | 'Offline' =
         a.checkIn && !a.checkOut ? 'Active' : 'Offline'
-      return { id: a.id, name: a.name, state }
+      return { id: a.id, name: a.name, ...(a.code ? { code: a.code } : {}), state }
     })
 
-  const assignedFromShifts = schedule
+  const assignedFromShifts: AssignedRow[] = schedule
     .filter((s) => s.storeId === store.id && s.baId && s.baName)
-    .map((s) => ({
-      id: String(s.baId),
-      name: s.baName as string,
-      state: 'Offline' as const,
-    }))
+    .map((s) => {
+      const ba = accounts.find((a) => a.id === String(s.baId))
+      return {
+        id: String(s.baId),
+        name: s.baName as string,
+        ...(ba?.code ? { code: ba.code } : {}),
+        state: 'Offline' as const,
+      }
+    })
 
-  const assignedById = new Map<string, { id: string; name: string; state: 'Active' | 'Break' | 'Offline' }>()
+  const assignedById = new Map<string, AssignedRow>()
   for (const a of store.assigned) assignedById.set(a.id, a)
   for (const a of assignedFromShifts) {
     if (!assignedById.has(a.id)) assignedById.set(a.id, a)
   }
   for (const a of assignedFromAccounts) {
     const prev = assignedById.get(a.id)
-    assignedById.set(a.id, prev ? { ...prev, name: a.name || prev.name, state: a.state } : a)
+    assignedById.set(
+      a.id,
+      prev
+        ? {
+            ...prev,
+            name: a.name || prev.name,
+            code: a.code || prev.code,
+            state: a.state,
+          }
+        : a,
+    )
   }
   const assigned = [...assignedById.values()]
 
@@ -276,7 +292,16 @@ export function StoreDetailPage() {
                 >
                   <div className="flex items-center gap-2">
                     <Avatar name={a.name} size="sm" />
-                    <span className="text-sm font-medium">{a.name}</span>
+                    <div className="min-w-0">
+                      {a.code ? (
+                        <span className="font-mono text-xs font-semibold text-slate-500">
+                          {a.code}
+                        </span>
+                      ) : null}
+                      <span className={`text-sm font-medium ${a.code ? 'ml-1.5' : ''}`}>
+                        {a.name}
+                      </span>
+                    </div>
                   </div>
                   <StatusBadge status={a.state} />
                 </Link>

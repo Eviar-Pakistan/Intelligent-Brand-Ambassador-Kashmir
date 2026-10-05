@@ -493,7 +493,7 @@ export type Store = {
   engagement: number
   conversion: number
   peak: string[]
-  assigned: { id: string; name: string; state: 'Active' | 'Break' | 'Offline' }[]
+  assigned: { id: string; name: string; code?: string; state: 'Active' | 'Break' | 'Offline' }[]
   qrCode: string
 }
 

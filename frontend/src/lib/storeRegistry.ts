@@ -157,7 +157,12 @@ export function createStores(inputs: StoreInput[]): CreatedStore[] {
 
 // ─── Backend API (Django) ────────────────────────────────────────────────────
 
-type ApiAssignedBa = { id: string; name: string; state?: 'Active' | 'Break' | 'Offline' | string }
+type ApiAssignedBa = {
+  id: string
+  name: string
+  code?: string
+  state?: 'Active' | 'Break' | 'Offline' | string
+}
 
 type ApiStore = {
   id: number
@@ -189,7 +194,8 @@ function mapAssigned(list?: ApiAssignedBa[]): Store['assigned'] {
     .filter((a) => a && a.id && a.name)
     .map((a) => {
       const state = a.state === 'Active' || a.state === 'Break' ? a.state : 'Offline'
-      return { id: String(a.id), name: String(a.name), state }
+      const code = a.code ? String(a.code).trim() : ''
+      return { id: String(a.id), name: String(a.name), ...(code ? { code } : {}), state }
     })
 }
 
