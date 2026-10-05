@@ -23,6 +23,7 @@ OIL_SKU_KEYS = (
     'kpgoTin5',
     'kpgoPouch1x5',
     'kpgoSup1x5',
+    'kpgoBkt16',
     'salesOil',
 )
 GHEE_SKU_KEYS = (
@@ -31,12 +32,14 @@ GHEE_SKU_KEYS = (
     'kbpBkt5',
     'kbpTin5',
     'kbpPouch1x5',
+    'kbpBkt16',
     'salesGhee',
 )
 WAADI_SKU_KEYS = (
     'wbpBkt5',
     'wbpPouch1x5',
     'wbpBkt25',
+    'wbpBkt16',
     'salesWaadi',
 )
 
@@ -47,16 +50,19 @@ SKU_LABELS = {
     'kpgoTin5': 'KPGO 5 LTR TIN Cons. RED',
     'kpgoPouch1x5': 'KPGO POUCH (1LTR x 5) Cons. RED',
     'kpgoSup1x5': 'KPGO Stand Up Pouch (1LTR x 5)',
+    'kpgoBkt16': 'KPGO 16 LTR BKT',
     'salesOil': 'Sales-Oil (LTR)',
     'kbpBkt10': 'KBP GOLD 10 KG BKT',
     'kbpBkt25': 'KBP GOLD 2.5 KG BKT',
     'kbpBkt5': 'KBP GOLD 5 KG BKT',
     'kbpTin5': 'KBP GOLD 5 KG TIN',
     'kbpPouch1x5': 'KBP GOLD POUCH (1KG X 5)',
+    'kbpBkt16': 'KBP 16 KG BKT',
     'salesGhee': 'Sales-Ghee (KG)',
     'wbpBkt5': 'WBP 5 KG BKT',
     'wbpPouch1x5': 'WBP POUCH (1KG X 5)',
     'wbpBkt25': 'WBP 2.5 KG BKT',
+    'wbpBkt16': 'WBP 16 KG BKT',
     'salesWaadi': 'Sales-Waadi (KG)',
 }
 

@@ -934,14 +934,17 @@ _STOCK_SKU_CATALOG: list[tuple[str, str]] = [
     ('stockKpgoTin5', 'KPGO 5 LTR TIN Cons. RED'),
     ('stockKpgoPouch1x5', 'KPGO POUCH (1LTR x 5) Cons. RED'),
     ('stockKpgoSup1x5', 'KPGO Stand Up Pouch (1LTR x 5)'),
+    ('stockKpgoBkt16', 'KPGO 16 LTR BKT'),
     ('stockKbpBkt10', 'KBP GOLD 10 KG BKT'),
     ('stockKbpBkt25', 'KBP GOLD 2.5 KG BKT'),
     ('stockKbpBkt5', 'KBP GOLD 5 KG BKT'),
     ('stockKbpTin5', 'KBP GOLD 5 KG TIN'),
     ('stockKbpPouch1x5', 'KBP GOLD POUCH (1KG X 5)'),
+    ('stockKbpBkt16', 'KBP 16 KG BKT'),
     ('stockWbpBkt5', 'WBP 5 KG BKT'),
     ('stockWbpPouch1x5', 'WBP POUCH (1KG X 5)'),
     ('stockWbpBkt25', 'WBP 2.5 KG BKT'),
+    ('stockWbpBkt16', 'WBP 16 KG BKT'),
 ]
 
 

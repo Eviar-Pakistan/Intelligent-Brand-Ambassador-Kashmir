@@ -96,6 +96,7 @@ def _checkout_sales_total(sales) -> float:
         'kpgoTin5',
         'kpgoPouch1x5',
         'kpgoSup1x5',
+        'kpgoBkt16',
         'salesOil',
     )
     ghee_keys = (
@@ -104,12 +105,14 @@ def _checkout_sales_total(sales) -> float:
         'kbpBkt5',
         'kbpTin5',
         'kbpPouch1x5',
+        'kbpBkt16',
         'salesGhee',
     )
     waadi_keys = (
         'wbpBkt5',
         'wbpPouch1x5',
         'wbpBkt25',
+        'wbpBkt16',
         'salesWaadi',
     )
     oil = sum(_f(sales.get(k)) for k in oil_keys)

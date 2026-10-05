@@ -47,7 +47,7 @@ export const baPerformanceCategories: ProductCategory[] = [
 ]
 export const baPerformanceBrands = ['Kashmir', 'Waadi'] as const
 
-/** LMT SKUs — 14 packs across KCO / KBP / WBP. */
+/** LMT SKUs — 17 packs across KCO / KBP / WBP. */
 const OIL_SKUS = [
   'KPGO 10 LTR CAN Cons. RED',
   'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED',
@@ -55,6 +55,7 @@ const OIL_SKUS = [
   'KPGO 5 LTR TIN Cons. RED',
   'KPGO POUCH (1LTR x 5) Cons. RED',
   'KPGO Stand Up Pouch (1LTR x 5)',
+  'KPGO 16 LTR BKT',
 ] as const
 
 const GHEE_SKUS = [
@@ -63,12 +64,14 @@ const GHEE_SKUS = [
   'KBP GOLD 5 KG BKT',
   'KBP GOLD 5 KG TIN',
   'KBP GOLD POUCH (1KG X 5)',
+  'KBP 16 KG BKT',
 ] as const
 
 const WAADI_SKUS = [
   'WBP 5 KG BKT',
   'WBP POUCH (1KG X 5)',
   'WBP 2.5 KG BKT',
+  'WBP 16 KG BKT',
 ] as const
 
 export type ProductFilters = {
@@ -84,7 +87,7 @@ export function getSkusForCategory(category: ProductCategory | null): string[] {
   return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
 }
 
-/** Full LMT catalog (14 packs) for SKU pickers. */
+/** Full LMT catalog (17 packs) for SKU pickers. */
 export function getAllSkus(): string[] {
   return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
 }

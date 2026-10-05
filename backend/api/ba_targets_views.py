@@ -70,6 +70,7 @@ CATEGORY_SKU_KEYS = {
         'kpgoTin5',
         'kpgoPouch1x5',
         'kpgoSup1x5',
+        'kpgoBkt16',
         'salesOil',
     ),
     'Kashmir Banaspati': (
@@ -78,12 +79,14 @@ CATEGORY_SKU_KEYS = {
         'kbpBkt5',
         'kbpTin5',
         'kbpPouch1x5',
+        'kbpBkt16',
         'salesGhee',
     ),
     'Waadi Banaspati': (
         'wbpBkt5',
         'wbpPouch1x5',
         'wbpBkt25',
+        'wbpBkt16',
         'salesWaadi',
     ),
 }
@@ -97,6 +100,7 @@ CATEGORY_PACK_LABELS = {
         'KPGO 5 LTR TIN Cons. RED',
         'KPGO POUCH (1LTR x 5) Cons. RED',
         'KPGO Stand Up Pouch (1LTR x 5)',
+        'KPGO 16 LTR BKT',
     ],
     'Kashmir Banaspati': [
         'KBP GOLD 10 KG BKT',
@@ -104,11 +108,13 @@ CATEGORY_PACK_LABELS = {
         'KBP GOLD 5 KG BKT',
         'KBP GOLD 5 KG TIN',
         'KBP GOLD POUCH (1KG X 5)',
+        'KBP 16 KG BKT',
     ],
     'Waadi Banaspati': [
         'WBP 5 KG BKT',
         'WBP POUCH (1KG X 5)',
         'WBP 2.5 KG BKT',
+        'WBP 16 KG BKT',
     ],
 }
 
@@ -376,6 +382,16 @@ def ba_my_targets(request):
             elif r.sku:
                 skus = [r.sku]
         for s in skus:
+            if s and s not in seen_sku:
+                seen_sku.add(s)
+                assigned.append(s)
+
+    # Ensure current catalog packs appear for every category that already has a target
+    # (covers newly added SKUs without requiring HO to re-save targets).
+    for cat in CATEGORY_NAMES:
+        if target_by_cat.get(cat, 0) <= 0:
+            continue
+        for s in CATEGORY_PACK_LABELS.get(cat, []):
             if s and s not in seen_sku:
                 seen_sku.add(s)
                 assigned.append(s)

@@ -36,6 +36,7 @@ export const oilSalesFields: FieldDef[] = [
   { key: 'kpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
   { key: 'kpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
   { key: 'kpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
+  { key: 'kpgoBkt16', label: 'KPGO 16 LTR BKT' },
   { key: 'salesOil', label: 'Sales-Oil (LTR)' },
 ]
 
@@ -45,6 +46,7 @@ export const gheeSalesFields: FieldDef[] = [
   { key: 'kbpBkt5', label: 'KBP GOLD 5 KG BKT' },
   { key: 'kbpTin5', label: 'KBP GOLD 5 KG TIN' },
   { key: 'kbpPouch1x5', label: 'KBP GOLD POUCH (1KG X 5)' },
+  { key: 'kbpBkt16', label: 'KBP 16 KG BKT' },
   { key: 'salesGhee', label: 'Sales-Ghee (KG)' },
 ]
 
@@ -52,6 +54,7 @@ export const waadiSalesFields: FieldDef[] = [
   { key: 'wbpBkt5', label: 'WBP 5 KG BKT' },
   { key: 'wbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
   { key: 'wbpBkt25', label: 'WBP 2.5 KG BKT' },
+  { key: 'wbpBkt16', label: 'WBP 16 KG BKT' },
   { key: 'salesWaadi', label: 'Sales-Waadi (KG)' },
 ]
 
@@ -62,6 +65,7 @@ export const stockOilFields: FieldDef[] = [
   { key: 'stockKpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
   { key: 'stockKpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
   { key: 'stockKpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
+  { key: 'stockKpgoBkt16', label: 'KPGO 16 LTR BKT' },
 ]
 
 export const stockGheeFields: FieldDef[] = [
@@ -70,12 +74,14 @@ export const stockGheeFields: FieldDef[] = [
   { key: 'stockKbpBkt5', label: 'KBP GOLD 5 KG BKT' },
   { key: 'stockKbpTin5', label: 'KBP GOLD 5 KG TIN' },
   { key: 'stockKbpPouch1x5', label: 'KBP GOLD POUCH (1KG X 5)' },
+  { key: 'stockKbpBkt16', label: 'KBP 16 KG BKT' },
 ]
 
 export const stockWaadiFields: FieldDef[] = [
   { key: 'stockWbpBkt5', label: 'WBP 5 KG BKT' },
   { key: 'stockWbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
   { key: 'stockWbpBkt25', label: 'WBP 2.5 KG BKT' },
+  { key: 'stockWbpBkt16', label: 'WBP 16 KG BKT' },
 ]
 
 export const STOCK_OPTIONS = ['In Stock', 'Out of Stock', 'Near Out of Stock'] as const
