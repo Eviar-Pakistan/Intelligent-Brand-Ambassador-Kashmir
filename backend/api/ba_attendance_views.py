@@ -604,8 +604,10 @@ def ba_submit_daily_report(request):
       source?: 'excel'|'manual',
       file_name?: string,
       store_id?: number,
+      early_leave_reason?: string,
     }
-    Links to today's shift when present.
+    Stamps checked_out_at on the open check-in when the final report is submitted,
+    then saves stock / sales / other brands and marks Present.
     """
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
@@ -631,32 +633,63 @@ def ba_submit_daily_report(request):
     if source not in {c.value for c in BaDailyReport.Source}:
         source = BaDailyReport.Source.MANUAL
     file_name = str(request.data.get('file_name') or request.data.get('fileName') or '').strip()[:255]
+    early_reason = str(
+        request.data.get('early_leave_reason')
+        or request.data.get('earlyLeaveReason')
+        or ''
+    ).strip()
+    if len(early_reason) > 2000:
+        return Response(
+            {'detail': 'Early leave reason must be 2,000 characters or fewer.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    # Prefer the open/checked-out shift for today (report is after checkout).
+    # Prefer an open check-in — final report submit stamps checkout time.
     shift = (
         ShiftAssignment.objects.filter(
             ambassador=ambassador,
             checked_in_at__isnull=False,
-            checked_out_at__isnull=False,
+            checked_out_at__isnull=True,
         )
         .select_related('store')
-        .order_by('-checked_out_at', '-id')
+        .order_by('-checked_in_at', '-id')
         .first()
     )
+    if not shift:
+        # Re-submit / already checked out on a prior attempt.
+        shift = (
+            ShiftAssignment.objects.filter(
+                ambassador=ambassador,
+                checked_in_at__isnull=False,
+                checked_out_at__isnull=False,
+            )
+            .select_related('store')
+            .order_by('-checked_out_at', '-id')
+            .first()
+        )
     if not shift:
         shift = _ensure_today_shift(ambassador)
     if not shift:
         return Response({'detail': 'No shift scheduled for today.'}, status=status.HTTP_400_BAD_REQUEST)
     if not shift.checked_in_at:
         return Response(
-            {'detail': 'Check in and check out before submitting the daily report.'},
+            {'detail': 'Check in before submitting the daily report.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    # Checkout clock is set when the BA submits the last report (not at stock step).
     if not shift.checked_out_at:
-        return Response(
-            {'detail': 'Check out before submitting the daily report.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        shift.checked_out_at = timezone.now()
+        update_fields = ['checked_out_at', 'updated_at']
+        if early_reason:
+            shift.early_leave_reason = early_reason
+            update_fields.append('early_leave_reason')
+        shift.save(update_fields=update_fields)
+        upsert_attendance_from_shift(shift)
+    elif early_reason and not (shift.early_leave_reason or '').strip():
+        shift.early_leave_reason = early_reason
+        shift.save(update_fields=['early_leave_reason', 'updated_at'])
+        upsert_attendance_from_shift(shift)
 
     store = None
     store_id_raw = request.data.get('store_id') or request.data.get('storeId')
@@ -708,7 +741,7 @@ def ba_submit_daily_report(request):
             file_name=file_name,
         )
 
-    # Report after checkout is what marks Present (clocks already on the shift).
+    # Report + checkout clocks mark Present for the day.
     upsert_attendance_from_shift(shift)
 
     return Response(

@@ -75,6 +75,8 @@ export async function submitBaDailyReportApi(input: {
   source?: 'excel' | 'manual'
   fileName?: string
   storeId?: number
+  /** Applied when checkout is stamped on final report submit. */
+  earlyLeaveReason?: string
 }) {
   return apiRequest('/api/ba/daily-report/', {
     method: 'POST',
@@ -87,6 +89,9 @@ export async function submitBaDailyReportApi(input: {
       source: input.source ?? 'manual',
       file_name: input.fileName ?? '',
       ...(input.storeId != null ? { store_id: input.storeId } : {}),
+      ...(input.earlyLeaveReason?.trim()
+        ? { early_leave_reason: input.earlyLeaveReason.trim() }
+        : {}),
     },
   })
 }

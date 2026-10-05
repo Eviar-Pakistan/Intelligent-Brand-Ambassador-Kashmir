@@ -303,7 +303,6 @@ export function BaDailySalesPage() {
 export function BaStockReportPage() {
   useScrollToTopOnMount()
   const navigate = useNavigate()
-  const { checkOut } = useBaShift()
   const { account } = useBaSession()
   const targetCats = useTargetCategories(account?.accessToken)
   const [formError, setFormError] = useState<string | null>(null)
@@ -354,14 +353,8 @@ export function BaStockReportPage() {
       setFormError('Mark stock status for every SKU before continuing.')
       return
     }
-    let reason: string | undefined
-    try {
-      reason = sessionStorage.getItem('ba-early-leave-reason') || undefined
-      sessionStorage.removeItem('ba-early-leave-reason')
-    } catch {
-      reason = undefined
-    }
-    checkOut(reason)
+    // Keep early-leave reason in session until final Other Brands submit
+    // (checkout clock is stamped then, not at this stock step).
     sessionStorage.setItem(SESSION_KEYS.stock, JSON.stringify(stock))
     navigate('/ba/daily-sales')
   }
@@ -408,7 +401,7 @@ export function BaOtherBrandsPage() {
   useScrollToTopOnMount()
   const navigate = useNavigate()
   const { account } = useBaSession()
-  const { markReportSubmitted } = useBaShift()
+  const { checkOut, markReportSubmitted } = useBaShift()
   const [rows, setRows] = useState<OtherBrandRow[]>(DEFAULT_OTHER_BRANDS)
   const [submitted, setSubmitted] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -444,6 +437,14 @@ export function BaOtherBrandsPage() {
       sales = {}
     }
 
+    let earlyReason: string | undefined
+    try {
+      earlyReason = sessionStorage.getItem('ba-early-leave-reason') || undefined
+      sessionStorage.removeItem('ba-early-leave-reason')
+    } catch {
+      earlyReason = undefined
+    }
+
     const token =
       account?.accessToken && !account.accessToken.startsWith('demo-')
         ? account.accessToken
@@ -453,6 +454,7 @@ export function BaOtherBrandsPage() {
       setBusy(true)
       setError(null)
       try {
+        // Backend stamps checked_out_at on this final submit.
         await submitBaDailyReportApi({
           token,
           stock,
@@ -460,13 +462,18 @@ export function BaOtherBrandsPage() {
           otherBrands: payload,
           source: 'manual',
           storeId: account?.storeId ?? undefined,
+          earlyLeaveReason: earlyReason,
         })
+        // Sync local shift UI (API returns already-checked-out shift).
+        checkOut(earlyReason)
       } catch (err) {
         setBusy(false)
         setError(err instanceof Error ? err.message : 'Could not save report.')
         return
       }
       setBusy(false)
+    } else {
+      checkOut(earlyReason)
     }
 
     markReportSubmitted()
