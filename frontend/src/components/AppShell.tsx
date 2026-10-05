@@ -243,12 +243,12 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
         />
 
         {/* Brand lockup */}
-        <div className="relative z-[1] flex items-center justify-between px-4 pt-5 pb-4">
-          <div className="min-w-0 flex-1 rounded-2xl bg-white p-3 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/40 sm:p-3.5">
+        <div className="relative z-[1] flex items-center justify-between px-3 pt-4 pb-3 sm:px-4">
+          <div className="min-w-0 flex-1 py-1">
             <img
               src={brand.logo}
               alt={brand.productName}
-              className="mx-auto h-12 w-auto max-w-full object-contain sm:h-14 lg:h-16"
+              className="mx-auto h-20 w-auto max-w-full object-contain sm:h-24 lg:h-28"
             />
           </div>
           <button

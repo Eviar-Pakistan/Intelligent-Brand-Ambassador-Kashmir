@@ -20,7 +20,7 @@ import {
   type BaPerformanceDashboard,
 } from '../../lib/baPerformanceApi'
 import {
-  categoryColors,
+  colorsForCategories,
   chartGold,
   chartGreen,
   chartGreenLight,
@@ -596,17 +596,20 @@ export function BaPerformanceDashboardPage() {
   const scopeLabel = data.townTargetVsSales.town
 
   const categoryChart = useMemo<ChartData<'doughnut'>>(
-    () => ({
-      labels: data.categorySales.map((c) => c.name),
-      datasets: [
-        {
-          data: data.categorySales.map((c) => c.value),
-          backgroundColor: categoryColors,
-          borderColor: '#fff',
-          borderWidth: 2,
-        },
-      ],
-    }),
+    () => {
+      const labels = data.categorySales.map((c) => c.name)
+      return {
+        labels,
+        datasets: [
+          {
+            data: data.categorySales.map((c) => c.value),
+            backgroundColor: colorsForCategories(labels),
+            borderColor: '#fff',
+            borderWidth: 2,
+          },
+        ],
+      }
+    },
     [data.categorySales],
   )
 

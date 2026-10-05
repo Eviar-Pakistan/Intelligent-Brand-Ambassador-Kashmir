@@ -29,8 +29,27 @@ export const chartGreen = '#0b7a3e'
 export const chartGreenLight = '#7ec99a'
 export const chartGold = '#d4a017'
 export const chartBarCoral = '#7ec99a'
-/** Kashmir Cooking Oil · Kashmir Banaspati · Waadi Banaspati */
-export const categoryColors = ['#0b7a3e', '#7ec99a', '#a8d5b5', '#5a9e6f']
+
+/** Category-wise donut: Oil red · Banaspati yellow · Waadi orange · Total green */
+export const CATEGORY_COLOR_BY_NAME: Record<string, string> = {
+  'Kashmir Cooking Oil': '#dc2626',
+  'Kashmir Banaspati': '#eab308',
+  'Waadi Banaspati': '#f97316',
+  'Total Sales (uncategorized)': '#16a34a',
+}
+
+/** Resolve colors for a list of category labels (order matches chart slices). */
+export function colorsForCategories(names: string[]): string[] {
+  return names.map((name) => CATEGORY_COLOR_BY_NAME[name] ?? chartGreen)
+}
+
+/** @deprecated Prefer colorsForCategories — kept for any index-based callers */
+export const categoryColors = [
+  CATEGORY_COLOR_BY_NAME['Kashmir Cooking Oil'],
+  CATEGORY_COLOR_BY_NAME['Kashmir Banaspati'],
+  CATEGORY_COLOR_BY_NAME['Waadi Banaspati'],
+  CATEGORY_COLOR_BY_NAME['Total Sales (uncategorized)'],
+]
 
 export const defaultChartOptions = {
   responsive: true,
