@@ -613,6 +613,8 @@ def ba_submit_daily_report(request):
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
 
+    from .sales_report import normalize_sales_json
+
     stock = request.data.get('stock') or {}
     sales = request.data.get('sales') or {}
     other_brands = request.data.get('other_brands') or request.data.get('otherBrands') or []
@@ -620,6 +622,8 @@ def ba_submit_daily_report(request):
         stock = {}
     if not isinstance(sales, dict):
         sales = {}
+    else:
+        sales = normalize_sales_json(sales)
     if not isinstance(other_brands, list):
         other_brands = []
 

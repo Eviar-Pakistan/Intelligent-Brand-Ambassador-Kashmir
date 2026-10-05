@@ -9,11 +9,38 @@ export type ReportSection = { title: string; fields: FieldDef[] }
 
 export type OtherBrandRow = { id: string; name: string; price: string }
 
+const UNITS = ' (units)'
+
+export const OIL_PACK_KEYS = [
+  'kpgoCan10',
+  'kpgoBtl3',
+  'kpgoBtl45',
+  'kpgoTin5',
+  'kpgoPouch1x5',
+  'kpgoSup1x5',
+  'kpgoBkt16',
+] as const
+
+export const GHEE_PACK_KEYS = [
+  'kbpBkt10',
+  'kbpBkt25',
+  'kbpBkt5',
+  'kbpTin5',
+  'kbpPouch1x5',
+  'kbpBkt16',
+] as const
+
+export const WAADI_PACK_KEYS = [
+  'wbpBkt5',
+  'wbpPouch1x5',
+  'wbpBkt25',
+  'wbpBkt16',
+] as const
+
 export const interceptionFields: FieldDef[] = [
   { key: 'totalInterceptions', label: 'Total Interceptions' },
   { key: 'productiveCalls', label: 'Productive Calls' },
   { key: 'nonProductiveCalls', label: 'Non-Productive Calls' },
-  { key: 'totalSalesLtrKg', label: 'Total Sales (Ltr/Kg)' },
 ]
 
 export const competitiveFields: FieldDef[] = [
@@ -30,32 +57,29 @@ export const whyNotFields: FieldDef[] = [
 ]
 
 export const oilSalesFields: FieldDef[] = [
-  { key: 'kpgoCan10', label: 'KPGO 10 LTR CAN Cons. RED' },
-  { key: 'kpgoBtl3', label: 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED' },
-  { key: 'kpgoBtl45', label: 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED' },
-  { key: 'kpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
-  { key: 'kpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
-  { key: 'kpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
-  { key: 'kpgoBkt16', label: 'KPGO 16 LTR BKT' },
-  { key: 'salesOil', label: 'Sales-Oil (LTR)' },
+  { key: 'kpgoCan10', label: `KPGO 10 LTR CAN Cons. RED${UNITS}` },
+  { key: 'kpgoBtl3', label: `KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED${UNITS}` },
+  { key: 'kpgoBtl45', label: `KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED${UNITS}` },
+  { key: 'kpgoTin5', label: `KPGO 5 LTR TIN Cons. RED${UNITS}` },
+  { key: 'kpgoPouch1x5', label: `KPGO POUCH (1LTR x 5) Cons. RED${UNITS}` },
+  { key: 'kpgoSup1x5', label: `KPGO Stand Up Pouch (1LTR x 5)${UNITS}` },
+  { key: 'kpgoBkt16', label: `KPGO 16 LTR BKT${UNITS}` },
 ]
 
 export const gheeSalesFields: FieldDef[] = [
-  { key: 'kbpBkt10', label: 'KBP GOLD 10 KG BKT' },
-  { key: 'kbpBkt25', label: 'KBP GOLD 2.5 KG BKT' },
-  { key: 'kbpBkt5', label: 'KBP GOLD 5 KG BKT' },
-  { key: 'kbpTin5', label: 'KBP GOLD 5 KG TIN' },
-  { key: 'kbpPouch1x5', label: 'KBP GOLD POUCH (1KG X 5)' },
-  { key: 'kbpBkt16', label: 'KBP 16 KG BKT' },
-  { key: 'salesGhee', label: 'Sales-Ghee (KG)' },
+  { key: 'kbpBkt10', label: `KBP GOLD 10 KG BKT${UNITS}` },
+  { key: 'kbpBkt25', label: `KBP GOLD 2.5 KG BKT${UNITS}` },
+  { key: 'kbpBkt5', label: `KBP GOLD 5 KG BKT${UNITS}` },
+  { key: 'kbpTin5', label: `KBP GOLD 5 KG TIN${UNITS}` },
+  { key: 'kbpPouch1x5', label: `KBP GOLD POUCH (1KG X 5)${UNITS}` },
+  { key: 'kbpBkt16', label: `KBP 16 KG BKT${UNITS}` },
 ]
 
 export const waadiSalesFields: FieldDef[] = [
-  { key: 'wbpBkt5', label: 'WBP 5 KG BKT' },
-  { key: 'wbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
-  { key: 'wbpBkt25', label: 'WBP 2.5 KG BKT' },
-  { key: 'wbpBkt16', label: 'WBP 16 KG BKT' },
-  { key: 'salesWaadi', label: 'Sales-Waadi (KG)' },
+  { key: 'wbpBkt5', label: `WBP 5 KG BKT${UNITS}` },
+  { key: 'wbpPouch1x5', label: `WBP POUCH (1KG X 5)${UNITS}` },
+  { key: 'wbpBkt25', label: `WBP 2.5 KG BKT${UNITS}` },
+  { key: 'wbpBkt16', label: `WBP 16 KG BKT${UNITS}` },
 ]
 
 export const stockOilFields: FieldDef[] = [
@@ -95,6 +119,36 @@ export const DEFAULT_OTHER_BRANDS: OtherBrandRow[] = [
   { id: '6', name: 'Kisan 5 LTR', price: '' },
 ]
 
+function sumPackUnits(sales: Record<string, string | number>, keys: readonly string[]) {
+  return keys.reduce((total, key) => {
+    const raw = sales[key]
+    if (raw == null || raw === '') return total
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? total + n : total
+  }, 0)
+}
+
+/** Derive category totals from SKU unit fields (matches backend normalize_sales_json). */
+export function normalizeSalesPayload(
+  sales: Record<string, string | number>,
+): Record<string, string | number> {
+  const out = { ...sales }
+  const oil = sumPackUnits(out, OIL_PACK_KEYS)
+  const ghee = sumPackUnits(out, GHEE_PACK_KEYS)
+  const waadi = sumPackUnits(out, WAADI_PACK_KEYS)
+  const skuSum = oil + ghee + waadi
+
+  out.salesOil = oil > 0 ? String(oil) : ''
+  out.salesGhee = ghee > 0 ? String(ghee) : ''
+  out.salesWaadi = waadi > 0 ? String(waadi) : ''
+
+  if (skuSum > 0) {
+    delete out.totalSalesLtrKg
+  }
+
+  return out
+}
+
 /** Sections in the same order as the checkout flow: Stock → Daily Sales → Other Brands. */
 export const stockSections: ReportSection[] = [
   { title: 'Kashmir Cooking Oil', fields: stockOilFields },
@@ -123,7 +177,7 @@ const HEADERS = ['Section', 'Item', 'Value', 'Notes', 'Key'] as const
 const COL = { value: 2, key: 4 } as const
 
 const NOTE_STOCK = `Type one of: ${STOCK_OPTIONS.join(' / ')}`
-const NOTE_NUMBER = 'Number (0 or more) — leave blank if none'
+const NOTE_UNITS = 'Units sold (0 or more) — leave blank if none'
 const NOTE_PRICE = 'Selling price in Rs.'
 
 const brandKey = (row: OtherBrandRow) => `brand-${row.id}`
@@ -137,7 +191,7 @@ export async function downloadBaReportTemplate() {
     for (const f of s.fields) rows.push([`Stock Report – ${s.title}`, f.label, '', NOTE_STOCK, f.key])
   }
   for (const s of salesSections) {
-    for (const f of s.fields) rows.push([`Daily Sales – ${s.title}`, f.label, '', NOTE_NUMBER, f.key])
+    for (const f of s.fields) rows.push([`Daily Sales – ${s.title}`, f.label, '', NOTE_UNITS, f.key])
   }
   for (const b of DEFAULT_OTHER_BRANDS) {
     rows.push(['Other Brands', b.name, '', `${NOTE_PRICE} — at least one required`, brandKey(b)])
@@ -151,7 +205,7 @@ export async function downloadBaReportTemplate() {
     [],
     [`1. Fill only the "Value" column (column C) on the "${TEMPLATE_SHEET}" sheet.`],
     [`2. Stock Report: every item is required. Type: ${STOCK_OPTIONS.join(' / ')}.`],
-    ['3. Daily Sales: numbers only (0 or more). Leave an item blank if it does not apply.'],
+    ['3. Daily Sales: enter units sold per SKU (0 or more). Category totals are calculated automatically.'],
     ['4. Other Brands: enter the selling price in Rs. for at least one pack.'],
     ['5. Do not rename, move or delete rows, and do not edit the "Key" column.'],
     ['6. Save the file, then upload it from the BA app home screen after check-in.'],
@@ -246,13 +300,14 @@ export async function parseBaReportFile(file: File): Promise<ParseResult> {
     return String(n)
   }
 
-  const sales: Record<string, string> = {}
+  const salesRaw: Record<string, string> = {}
   for (const s of salesSections) {
     for (const f of s.fields) {
       const c = at(f.key, `Daily Sales – ${f.label}`)
-      if (c) sales[f.key] = parseNumber(c, `Daily Sales – ${s.title} – ${f.label}`)
+      if (c) salesRaw[f.key] = parseNumber(c, `Daily Sales – ${s.title} – ${f.label}`)
     }
   }
+  const sales = normalizeSalesPayload(salesRaw) as Record<string, string>
 
   const otherBrands = DEFAULT_OTHER_BRANDS.map((b) => {
     const c = at(brandKey(b), `Other Brands – ${b.name}`)

@@ -148,6 +148,7 @@ def _category_sales_from_reports(ambassador_id: int, month: str) -> dict[str, fl
     from datetime import date
 
     from .models import BaDailyReport
+    from .sales_report import category_sales_from_json
 
     totals = {c: 0.0 for c in CATEGORY_NAMES}
     try:
@@ -163,8 +164,8 @@ def _category_sales_from_reports(ambassador_id: int, month: str) -> dict[str, fl
         date__lte=d_to,
     ).only('sales_json'):
         sales = report.sales_json if isinstance(report.sales_json, dict) else {}
-        for cat, keys in CATEGORY_SKU_KEYS.items():
-            totals[cat] += sum(_f(sales.get(k)) for k in keys)
+        for cat, amount in category_sales_from_json(sales).items():
+            totals[cat] += amount
     return {c: round(v, 1) for c, v in totals.items()}
 
 

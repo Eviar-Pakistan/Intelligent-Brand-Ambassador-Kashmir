@@ -21,6 +21,7 @@ import {
   stockGheeFields,
   stockOilFields,
   stockWaadiFields,
+  normalizeSalesPayload,
   waadiSalesFields,
   whyNotFields,
   type FieldDef,
@@ -267,7 +268,7 @@ export function BaDailySalesPage() {
     <form noValidate onSubmit={handleContinue} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
       <PageChrome
         title="Daily Sales"
-        subtitle={`${city} · enter today's interceptions & SKU sales by category`}
+        subtitle={`${city} · interceptions & units sold per SKU (category totals calculated automatically)`}
         onBack={() => navigate('/ba/stock-report')}
       />
 
@@ -450,6 +451,8 @@ export function BaOtherBrandsPage() {
         ? account.accessToken
         : undefined
 
+    const salesPayload = normalizeSalesPayload(sales) as Record<string, string>
+
     if (token) {
       setBusy(true)
       setError(null)
@@ -458,7 +461,7 @@ export function BaOtherBrandsPage() {
         await submitBaDailyReportApi({
           token,
           stock,
-          sales,
+          sales: salesPayload,
           otherBrands: payload,
           source: 'manual',
           storeId: account?.storeId ?? undefined,
