@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useRole, type Role, roleMeta } from '../context/AppContext'
 import { useBrand } from '../context/BrandContext'
 import { Button } from '../components/ui'
@@ -22,6 +22,7 @@ type LoginMode = 'headOffice' | 'supervisor'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { setRole } = useRole()
   const { brand } = useBrand()
   const [mode, setMode] = useState<LoginMode>('headOffice')
@@ -56,6 +57,16 @@ export function LoginPage() {
 
   function enter(role: Role) {
     setRole(role)
+    if (role === 'headOffice') {
+      const from = (location.state as { from?: string } | null)?.from
+      if (
+        typeof from === 'string' &&
+        (from.startsWith('/ho') || from.startsWith('/admin') || from.startsWith('/manager'))
+      ) {
+        navigate(from)
+        return
+      }
+    }
     navigate(roleMeta[role].home)
   }
 

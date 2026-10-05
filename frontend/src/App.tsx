@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import { DemoProvider, RoleProvider } from './context/AppContext'
 import { BrandProvider } from './context/BrandContext'
@@ -87,6 +87,21 @@ const hoPages = (
   </>
 )
 
+/** Block HO / Admin / Manager shells unless a JWT is present. */
+function RequireApiAuth() {
+  const location = useLocation()
+  if (!isApiAuthenticated()) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    )
+  }
+  return <Outlet />
+}
+
 /** When a JWT is already in localStorage, refresh stores/BAs from the API. */
 function ApiBootstrap() {
   useEffect(() => {
@@ -113,36 +128,36 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/portal" element={<ScreenHub />} />
 
-            {/* Head Office — desktop command center */}
-            <Route path="/ho" element={<DesktopShell kind="headOffice" />}>
-              {hoPages}
-            </Route>
+            {/* Office desks — require Head Office JWT */}
+            <Route element={<RequireApiAuth />}>
+              <Route path="/ho" element={<DesktopShell kind="headOffice" />}>
+                {hoPages}
+              </Route>
 
-            {/* Administrator — desktop config */}
-            <Route path="/admin" element={<DesktopShell kind="admin" />}>
-              <Route index element={<Navigate to="settings" replace />} />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="ambassadors" element={<AmbassadorsPage />} />
-              <Route path="ambassadors/training" element={<TrainingManagerPage />} />
-              <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
-              <Route path="stores" element={<StoresPage />} />
-              <Route path="stores/new" element={<CreateStorePage />} />
-              <Route path="stores/:id" element={<StoreDetailPage />} />
-              <Route path="supervisors" element={<SupervisorsPage />} />
-              <Route path="supervisors/:id" element={<SupervisorDetailPage />} />
-              <Route path="campaigns" element={<CampaignsPage />} />
-              <Route path="campaigns/:id" element={<CampaignOverviewPage />} />
-            </Route>
+              <Route path="/admin" element={<DesktopShell kind="admin" />}>
+                <Route index element={<Navigate to="settings" replace />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="ambassadors" element={<AmbassadorsPage />} />
+                <Route path="ambassadors/training" element={<TrainingManagerPage />} />
+                <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
+                <Route path="stores" element={<StoresPage />} />
+                <Route path="stores/new" element={<CreateStorePage />} />
+                <Route path="stores/:id" element={<StoreDetailPage />} />
+                <Route path="supervisors" element={<SupervisorsPage />} />
+                <Route path="supervisors/:id" element={<SupervisorDetailPage />} />
+                <Route path="campaigns" element={<CampaignsPage />} />
+                <Route path="campaigns/:id" element={<CampaignOverviewPage />} />
+              </Route>
 
-            {/* Store Manager — desktop field ops */}
-            <Route path="/manager" element={<DesktopShell kind="storeManager" />}>
-              <Route index element={<ManagerDashboard />} />
-              <Route path="attendance" element={<AttendancePage />} />
-              <Route path="coverage" element={<CoveragePage />} />
-              <Route path="deployment" element={<DeploymentPage />} />
-              <Route path="stores" element={<StoresPage />} />
-              <Route path="stores/new" element={<CreateStorePage />} />
-              <Route path="stores/:id" element={<StoreDetailPage />} />
+              <Route path="/manager" element={<DesktopShell kind="storeManager" />}>
+                <Route index element={<ManagerDashboard />} />
+                <Route path="attendance" element={<AttendancePage />} />
+                <Route path="coverage" element={<CoveragePage />} />
+                <Route path="deployment" element={<DeploymentPage />} />
+                <Route path="stores" element={<StoresPage />} />
+                <Route path="stores/new" element={<CreateStorePage />} />
+                <Route path="stores/:id" element={<StoreDetailPage />} />
+              </Route>
             </Route>
 
             {/* Supervisor — desktop oversight of their assigned stores */}
