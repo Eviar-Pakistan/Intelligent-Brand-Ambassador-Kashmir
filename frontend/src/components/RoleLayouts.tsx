@@ -4,7 +4,6 @@ import {
   GraduationCap,
   Trophy,
   ArrowLeft,
-  LogOut,
   MessageSquareWarning,
 } from 'lucide-react'
 import { useEffect } from 'react'
@@ -12,7 +11,7 @@ import { useRole, type Role } from '../context/AppContext'
 import { cn } from './ui'
 import { useBrand } from '../context/BrandContext'
 import { BaShiftProvider } from '../context/BaShiftContext'
-import { baSignOut, isBaCertified, useBaSession } from '../lib/baAccounts'
+import { isBaCertified, useBaSession } from '../lib/baAccounts'
 
 /** Sync active role from URL prefix so each experience stays isolated. */
 export function RoleSync({ role }: { role: Role }) {
@@ -31,7 +30,6 @@ const baTabs = [
 ]
 
 export function BaShell() {
-  const navigate = useNavigate()
   const { brand } = useBrand()
   const { account } = useBaSession()
 
@@ -42,7 +40,7 @@ export function BaShell() {
       <div className="flex min-h-[100dvh] flex-col bg-slate-50">
         <RoleSync role="ba" />
         <header className="safe-top sticky top-0 z-20 border-b border-slate-200 bg-white">
-          <div className="mx-auto flex h-14 w-full max-w-lg items-center justify-between gap-2 px-4">
+          <div className="mx-auto flex h-14 w-full max-w-lg items-center px-4">
             <div className="min-w-0">
               <div className="text-[10px] font-semibold tracking-[0.16em] text-brand-600 uppercase">
                 {brand.productName} · BA
@@ -56,15 +54,6 @@ export function BaShell() {
                     : account.status}
               </div>
             </div>
-            <button
-              onClick={() => {
-                baSignOut()
-                navigate('/login')
-              }}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              <LogOut size={13} /> Exit
-            </button>
           </div>
         </header>
 
