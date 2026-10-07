@@ -810,6 +810,12 @@ class ShiftAssignment(models.Model):
         default='',
         help_text='Filled when BA checks out before shift end time.',
     )
+    ba_attendance_type = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        help_text="How the BA checked in today: 'store' or 'training' (blank until check-in).",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

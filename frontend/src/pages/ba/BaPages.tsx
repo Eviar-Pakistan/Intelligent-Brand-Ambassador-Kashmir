@@ -79,7 +79,9 @@ export function BaHomePage() {
     canCheckOut,
     reportSubmitted,
     isEarlyCheckout,
+    isTrainingAttendance,
     checkIn,
+    checkOut,
     refresh: refreshShift,
   } = useBaShift()
 
@@ -119,6 +121,11 @@ export function BaHomePage() {
   }, [account?.id, account?.accessToken])
 
   function handleCheckOutClick() {
+    // Training checkout: no stock/sales forms — end shift immediately.
+    if (isTrainingAttendance) {
+      checkOut()
+      return
+    }
     if (isEarlyCheckout) {
       setEarlyReason('')
       setEarlyReasonOpen(true)
@@ -271,22 +278,22 @@ export function BaHomePage() {
                 <button
                   type="button"
                   disabled={shiftBusy}
-                  onClick={checkIn}
+                  onClick={() => checkIn('store')}
                   className="shrink-0 rounded-full bg-navy-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
                 >
                   {shiftBusy ? 'Checking in…' : 'Check In'}
                 </button>
               ) : null}
               {hasShift && checkedIn && !checkedOut ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
                   <CheckCircle2 size={14} />
-                  Checked In
+                  {isTrainingAttendance ? 'Checked in for training' : 'Checked In'}
                 </span>
               ) : null}
               {hasShift && checkedOut ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
                   <CheckCircle2 size={14} />
-                  Done today
+                  Done for today
                 </span>
               ) : null}
             </div>
@@ -313,7 +320,11 @@ export function BaHomePage() {
                   onClick={handleCheckOutClick}
                   className="mt-3 w-full rounded-2xl bg-navy-900 py-3 text-sm font-semibold text-white shadow-md shadow-navy-900/20 transition enabled:hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
                 >
-                  {shiftBusy ? 'Checking out…' : 'Check Out'}
+                  {shiftBusy
+                    ? 'Checking out…'
+                    : isTrainingAttendance
+                      ? 'Check Out of Training'
+                      : 'Check Out'}
                 </button>
                 {!canCheckOut && (
                   <p className="mt-2 text-center text-xs text-slate-500">
@@ -328,14 +339,21 @@ export function BaHomePage() {
               </>
             )}
 
-            {checkedOut && (
+            {checkedOut && isTrainingAttendance && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+                <CheckCircle2 size={16} />
+                Training attendance complete
+              </div>
+            )}
+
+            {checkedOut && !isTrainingAttendance && (
               <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
                 <CheckCircle2 size={16} />
                 Checked out · Check In returns tomorrow
               </div>
             )}
 
-            {reportSubmitted && !checkedOut && (
+            {reportSubmitted && !checkedOut && !isTrainingAttendance && (
               <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
                 <CheckCircle2 size={16} />
                 Today&apos;s report submitted
@@ -472,6 +490,56 @@ export function BaHomePage() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Training attendance — mutually exclusive with store check-in */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-brand-300 text-brand-600">
+            <CheckCircle2 size={16} />
+          </span>
+          <h3 className="text-sm font-bold text-slate-900">Training attendance</h3>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">
+          Use this check-in when you are attending training instead of working at your store.
+        </p>
+        {hasShift && !checkedIn && !checkedOut ? (
+          <button
+            type="button"
+            disabled={shiftBusy}
+            onClick={() => checkIn('training')}
+            className="mt-4 w-full rounded-2xl border border-brand-500 bg-white py-3 text-sm font-semibold text-brand-600 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {shiftBusy ? 'Checking in…' : 'Training Check In'}
+          </button>
+        ) : null}
+        {hasShift && checkedIn && isTrainingAttendance && !checkedOut ? (
+          <button
+            type="button"
+            disabled
+            className="mt-4 w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-[#f7f4ec] py-3 text-sm font-semibold text-slate-400"
+          >
+            Checked In for Training
+          </button>
+        ) : null}
+        {hasShift && checkedIn && !isTrainingAttendance && !checkedOut ? (
+          <button
+            type="button"
+            disabled
+            className="mt-4 w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-[#f7f4ec] py-3 text-sm font-semibold text-slate-400"
+          >
+            Store check-in active
+          </button>
+        ) : null}
+        {hasShift && checkedOut && isTrainingAttendance ? (
+          <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-brand-50 py-3 text-sm font-semibold text-brand-700">
+            <CheckCircle2 size={16} />
+            Training attendance complete
+          </div>
+        ) : null}
+        {!hasShift && !shiftLoading ? (
+          <p className="mt-3 text-xs text-slate-400">Available when you have a shift today.</p>
+        ) : null}
       </div>
     </div>
   )

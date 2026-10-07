@@ -383,6 +383,7 @@ def serialize_ba_shift(shift: ShiftAssignment | None, ambassador: Ambassador) ->
             'checkedOutAt': shift.checked_out_at.isoformat() if shift.checked_out_at else None,
             'earlyLeaveReason': shift.early_leave_reason or None,
             'isEarlyCheckout': bool(shift.early_leave_reason),
+            'baAttendanceType': (shift.ba_attendance_type or '') or None,
             'checkInLat': shift.check_in_lat,
             'checkInLng': shift.check_in_lng,
             'storeLat': store_lat,
@@ -493,11 +494,19 @@ def ba_submit_complaint(request):
 def ba_check_in(request):
     """
     POST /api/ba/check-in/
-    Body: { token, latitude?, longitude?, accuracy? }
+    Body: { token, attendance_type?: 'store'|'training', latitude?, longitude?, accuracy? }
     """
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+
+    raw_type = str(
+        request.data.get('attendance_type')
+        or request.data.get('attendanceType')
+        or request.data.get('ba_attendance_type')
+        or 'store'
+    ).strip().lower()
+    attendance_type = raw_type if raw_type in ('store', 'training') else 'store'
 
     shift = _ensure_today_shift(ambassador)
     if not shift:
@@ -529,16 +538,25 @@ def ba_check_in(request):
     shift.check_in_lat = _f(lat)
     shift.check_in_lng = _f(lng)
     shift.check_in_accuracy_m = _f(accuracy)
+    shift.ba_attendance_type = attendance_type
     shift.save(
         update_fields=[
             'checked_in_at',
             'check_in_lat',
             'check_in_lng',
             'check_in_accuracy_m',
+            'ba_attendance_type',
             'updated_at',
         ]
     )
+
+    # Training day check-in: reflect on HO ambassadors list (temporary until checkout).
+    if attendance_type == 'training' and ambassador.status == Ambassador.Status.DEPLOYED:
+        ambassador.status = Ambassador.Status.TRAINING
+        ambassador.save(update_fields=['status', 'updated_at'])
+
     upsert_attendance_from_shift(shift)
+    ambassador.refresh_from_db()
     return Response(serialize_ba_shift(shift, ambassador))
 
 
@@ -587,7 +605,15 @@ def ba_check_out(request):
         shift.early_leave_reason = reason
         update_fields.append('early_leave_reason')
     shift.save(update_fields=update_fields)
+
+    # Restore Deployed after training-day checkout (HO list).
+    if (shift.ba_attendance_type or '').strip().lower() == 'training':
+        if ambassador.status == Ambassador.Status.TRAINING and ambassador.store_id:
+            ambassador.status = Ambassador.Status.DEPLOYED
+            ambassador.save(update_fields=['status', 'updated_at'])
+
     upsert_attendance_from_shift(shift)
+    ambassador.refresh_from_db()
     return Response(serialize_ba_shift(shift, ambassador))
 
 

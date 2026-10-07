@@ -1,5 +1,7 @@
 import { apiRequest } from './api'
 
+export type BaAttendanceType = 'store' | 'training'
+
 export type BaShiftPayload = {
   id: string
   date: string
@@ -16,6 +18,7 @@ export type BaShiftPayload = {
   isLive?: boolean
   checkedInAt: string | null
   checkedOutAt: string | null
+  baAttendanceType?: BaAttendanceType | string | null
   checkInLat?: number | null
   checkInLng?: number | null
   storeLat?: number | null
@@ -81,12 +84,12 @@ export async function fetchBaTodayShift(token: string) {
   )
 }
 
-export async function baCheckInApi(token: string) {
+export async function baCheckInApi(token: string, attendanceType: BaAttendanceType = 'store') {
   const geo = await readGeo()
   return apiRequest<BaTodayShiftResponse>('/api/ba/check-in/', {
     method: 'POST',
     auth: false,
-    body: { token, ...geo },
+    body: { token, attendance_type: attendanceType, ...geo },
   })
 }
 

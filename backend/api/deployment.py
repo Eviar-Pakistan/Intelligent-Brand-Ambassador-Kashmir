@@ -12,11 +12,23 @@ def reconcile_ambassador_deployments() -> dict:
     Deployed + store only for BAs who currently have a scheduled shift.
     Anyone else still marked Deployed (or holding a store) is cleared → Certified.
     Home store is set from their soonest upcoming scheduled shift (else latest past).
+
+    Exception: open training-day check-in keeps status as Training (not forced Deployed).
     """
     assigned_ids = set(
         ShiftAssignment.objects.filter(
             ambassador_id__isnull=False,
             status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+        ).values_list('ambassador_id', flat=True)
+    )
+
+    # Live training attendance — do not overwrite HO status back to Deployed.
+    training_checkin_ids = set(
+        ShiftAssignment.objects.filter(
+            ambassador_id__isnull=False,
+            ba_attendance_type='training',
+            checked_in_at__isnull=False,
+            checked_out_at__isnull=True,
         ).values_list('ambassador_id', flat=True)
     )
 
@@ -58,7 +70,14 @@ def reconcile_ambassador_deployments() -> dict:
                 ba.store_id = want_store
                 touched_stores.add(want_store)
                 changed = True
-            if ba.status != Ambassador.Status.DEPLOYED:
+
+            in_training_checkin = ba.id in training_checkin_ids
+            if in_training_checkin:
+                # Keep / restore Training while BA is checked in for training today.
+                if ba.status != Ambassador.Status.TRAINING:
+                    ba.status = Ambassador.Status.TRAINING
+                    changed = True
+            elif ba.status != Ambassador.Status.DEPLOYED:
                 ba.status = Ambassador.Status.DEPLOYED
                 if not ba.deployed_at:
                     ba.deployed_at = timezone.now()
@@ -88,4 +107,9 @@ def reconcile_ambassador_deployments() -> dict:
         ).count()
         store.save(update_fields=['bas', 'updated_at'])
 
-    return {'cleared': cleared, 'updated': updated, 'assigned': len(assigned_ids)}
+    return {
+        'cleared': cleared,
+        'updated': updated,
+        'assigned': len(assigned_ids),
+        'training_checkins': len(training_checkin_ids),
+    }

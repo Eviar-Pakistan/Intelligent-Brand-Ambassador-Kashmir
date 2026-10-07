@@ -11,9 +11,12 @@ import {
   baCheckInApi,
   baCheckOutApi,
   fetchBaTodayShift,
+  type BaAttendanceType,
   type BaTodayShiftResponse,
   type BaUpcomingShift,
 } from '../lib/baAttendanceApi'
+
+export type { BaAttendanceType }
 
 const DEFAULT_SHIFT_START_MINUTES = 8 * 60
 const DEFAULT_SHIFT_END_MINUTES = 20 * 60
@@ -98,7 +101,9 @@ export type BaShiftState = {
   canCheckOut: boolean
   reportSubmitted: boolean
   isEarlyCheckout: boolean
-  checkIn: () => void
+  attendanceType: BaAttendanceType | null
+  isTrainingAttendance: boolean
+  checkIn: (type?: BaAttendanceType) => void
   checkOut: (earlyLeaveReason?: string) => void
   markReportSubmitted: () => void
   refresh: () => Promise<void>
@@ -124,6 +129,12 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+function normalizeAttendanceType(raw: unknown): BaAttendanceType | null {
+  const v = String(raw || '').trim().toLowerCase()
+  if (v === 'store' || v === 'training') return v
+  return null
+}
+
 function applyTodayShift(
   data: BaTodayShiftResponse,
   set: {
@@ -141,6 +152,7 @@ function applyTodayShift(
     checkInAt: (v: Date | null) => void
     checkedOut: (v: boolean) => void
     reportSubmitted: (v: boolean) => void
+    attendanceType: (v: BaAttendanceType | null) => void
   },
 ) {
   const shift = data.shift
@@ -165,6 +177,7 @@ function applyTodayShift(
     set.checkedIn(false)
     set.checkInAt(null)
     set.checkedOut(false)
+    set.attendanceType(null)
     return
   }
 
@@ -185,6 +198,7 @@ function applyTodayShift(
   set.checkedIn(!!shift.checkedIn)
   set.checkInAt(shift.checkedInAt ? new Date(shift.checkedInAt) : null)
   set.checkedOut(!!shift.checkedOut)
+  set.attendanceType(normalizeAttendanceType(shift.baAttendanceType))
   if (shift.checkedOut) set.reportSubmitted(true)
 }
 
@@ -217,6 +231,7 @@ export function BaShiftProvider({
   const [checkInAt, setCheckInAt] = useState<Date | null>(null)
   const [checkedOut, setCheckedOut] = useState(false)
   const [reportSubmitted, setReportSubmitted] = useState(false)
+  const [attendanceType, setAttendanceType] = useState<BaAttendanceType | null>(null)
 
   const applySetters = useMemo(
     () => ({
@@ -234,6 +249,7 @@ export function BaShiftProvider({
       checkInAt: setCheckInAt,
       checkedOut: setCheckedOut,
       reportSubmitted: setReportSubmitted,
+      attendanceType: setAttendanceType,
     }),
     [],
   )
@@ -267,6 +283,7 @@ export function BaShiftProvider({
       setCheckedIn(false)
       setCheckInAt(null)
       setCheckedOut(false)
+      setAttendanceType(null)
     } finally {
       setLoading(false)
     }
@@ -276,33 +293,40 @@ export function BaShiftProvider({
     void refresh()
   }, [refresh])
 
+  const isTrainingAttendance = attendanceType === 'training'
   const shiftBounds = useMemo(() => resolveShiftBounds(shiftLabel), [shiftLabel])
   const atShiftEnd = isAtOrPastShiftEnd(now, shiftLabel)
-  const isEarlyCheckout = checkedIn && !checkedOut && !atShiftEnd
+  // Training checkout skips early-leave + report forms.
+  const isEarlyCheckout =
+    checkedIn && !checkedOut && !atShiftEnd && attendanceType !== 'training'
   const canCheckOut =
     checkedIn &&
     !checkedOut &&
-    !reportSubmitted &&
+    (isTrainingAttendance || !reportSubmitted) &&
     !!checkInAt &&
     now.getTime() - checkInAt.getTime() >= CHECKOUT_UNLOCK_AFTER_MS
 
-  const checkIn = useCallback(() => {
-    if (apiMode && inviteToken) {
-      if (!hasShift || checkedIn || checkedOut || busy) return
-      setBusy(true)
-      setError(null)
-      void baCheckInApi(inviteToken)
-        .then((data) => applyTodayShift(data, applySetters))
-        .catch((err) => setError(err instanceof Error ? err.message : 'Check-in failed'))
-        .finally(() => setBusy(false))
-      return
-    }
-    if (checkedOut) return
-    setCheckedIn(true)
-    setCheckInAt(new Date())
-    setCheckedOut(false)
-    setReportSubmitted(false)
-  }, [apiMode, inviteToken, hasShift, checkedIn, checkedOut, busy, applySetters])
+  const checkIn = useCallback(
+    (type: BaAttendanceType = 'store') => {
+      if (apiMode && inviteToken) {
+        if (!hasShift || checkedIn || checkedOut || busy) return
+        setBusy(true)
+        setError(null)
+        void baCheckInApi(inviteToken, type)
+          .then((data) => applyTodayShift(data, applySetters))
+          .catch((err) => setError(err instanceof Error ? err.message : 'Check-in failed'))
+          .finally(() => setBusy(false))
+        return
+      }
+      if (checkedOut) return
+      setCheckedIn(true)
+      setCheckInAt(new Date())
+      setCheckedOut(false)
+      setReportSubmitted(false)
+      setAttendanceType(type)
+    },
+    [apiMode, inviteToken, hasShift, checkedIn, checkedOut, busy, applySetters],
+  )
 
   const checkOut = useCallback(
     (earlyLeaveReason?: string) => {
@@ -354,6 +378,8 @@ export function BaShiftProvider({
       canCheckOut,
       reportSubmitted,
       isEarlyCheckout,
+      attendanceType,
+      isTrainingAttendance,
       checkIn,
       checkOut,
       markReportSubmitted,
@@ -380,6 +406,8 @@ export function BaShiftProvider({
       canCheckOut,
       reportSubmitted,
       isEarlyCheckout,
+      attendanceType,
+      isTrainingAttendance,
       checkIn,
       checkOut,
       markReportSubmitted,
