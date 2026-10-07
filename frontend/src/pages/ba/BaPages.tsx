@@ -8,6 +8,7 @@ import {
   CloudSun,
   MapPin,
   Trophy,
+  Users,
 } from 'lucide-react'
 import { fetchBaOwnIncentive, formatPkr, type IncentiveBreakdown } from '../../lib/incentives'
 import { useBrand } from '../../context/BrandContext'
@@ -464,6 +465,25 @@ export function BaHomePage() {
           </div>
         </div>
       </Modal>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-brand-300 text-brand-600">
+            <Users size={16} />
+          </span>
+          <h3 className="text-sm font-bold text-brand-700">User interception</h3>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">
+          Record a shopper&apos;s name, contact, previous brand and SKU, the SKU they bought, and
+          their feedback.
+        </p>
+        <Link
+          to="/ba/user-interception"
+          className="mt-4 block w-full rounded-full bg-brand-600 py-3 text-center text-sm font-semibold text-white shadow-md shadow-brand-600/25 transition hover:bg-brand-700"
+        >
+          User interception form
+        </Link>
+      </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <h3 className="text-sm font-bold text-slate-900">Today&apos;s Goals</h3>

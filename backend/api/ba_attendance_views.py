@@ -11,7 +11,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Ambassador, AmbassadorComplaint, BaAttendanceDay, BaDailyReport, ShiftAssignment, Store
+from .models import (
+    Ambassador,
+    AmbassadorComplaint,
+    BaAttendanceDay,
+    BaDailyReport,
+    ShiftAssignment,
+    Store,
+    UserInterception,
+)
 from .serializers import AmbassadorComplaintSerializer
 
 
@@ -488,6 +496,110 @@ def ba_submit_complaint(request):
         AmbassadorComplaintSerializer(complaint_row, context={'request': request}).data,
         status=status.HTTP_201_CREATED,
     )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def ba_submit_user_interception(request):
+    """
+    POST /api/ba/user-interceptions/
+    Body: {
+      token,
+      status: 'Productive'|'Trialist'|'Non-productive',
+      name,
+      contact?, city_area?, previous_brand?, previous_sku?, current_sku?, feedback?,
+      store_id?
+    }
+    """
+    ambassador = _ambassador_from_token(request.data.get('token'))
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+
+    status_raw = str(request.data.get('status') or request.data.get('interception_type') or '').strip()
+    allowed = {c.value for c in UserInterception.Status}
+    if status_raw not in allowed:
+        return Response(
+            {'detail': 'status must be Productive, Trialist, or Non-productive.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    name = str(request.data.get('name') or '').strip()[:120]
+    if not name:
+        return Response({'detail': 'Name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    contact = str(request.data.get('contact') or '').strip()[:40]
+    city_area = str(request.data.get('city_area') or request.data.get('cityArea') or '').strip()[:200]
+    previous_brand = str(
+        request.data.get('previous_brand') or request.data.get('previousBrand') or ''
+    ).strip()[:120]
+    previous_sku = str(
+        request.data.get('previous_sku') or request.data.get('previousSku') or ''
+    ).strip()[:120]
+    current_sku = str(
+        request.data.get('current_sku') or request.data.get('currentSku') or ''
+    ).strip()[:120]
+    feedback = str(request.data.get('feedback') or '').strip()
+
+    # All types require shopper fields. Current SKU only for Productive / Trialist.
+    if status_raw == UserInterception.Status.NON_PRODUCTIVE:
+        current_sku = ''
+
+    missing = []
+    if not contact:
+        missing.append('contact')
+    if not city_area:
+        missing.append('city_area')
+    if not previous_brand:
+        missing.append('previous_brand')
+    if not previous_sku:
+        missing.append('previous_sku')
+    if status_raw != UserInterception.Status.NON_PRODUCTIVE and not current_sku:
+        missing.append('current_sku')
+    if not feedback:
+        missing.append('feedback')
+    if missing:
+        return Response(
+            {'detail': f'Required for {status_raw}: {", ".join(missing)}.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    store = None
+    store_id_raw = request.data.get('store_id') or request.data.get('storeId')
+    if store_id_raw is not None and store_id_raw != '':
+        try:
+            store = Store.objects.filter(pk=int(store_id_raw)).first()
+        except (TypeError, ValueError):
+            store = None
+    if not store and ambassador.store_id:
+        store = ambassador.store
+
+    row = UserInterception.objects.create(
+        ambassador=ambassador,
+        store=store,
+        ba_name=ambassador.name or '',
+        store_name=store.name if store else '',
+        status=status_raw,
+        name=name,
+        contact=contact,
+        city_area=city_area,
+        previous_brand=previous_brand,
+        previous_sku=previous_sku,
+        current_sku=current_sku,
+        feedback=feedback,
+    )
+    return Response(
+        {
+            'id': row.id,
+            'status': row.status,
+            'name': row.name,
+            'baName': row.ba_name,
+            'storeName': row.store_name,
+            'storeId': row.store_id,
+            'ambassadorId': row.ambassador_id,
+            'createdAt': row.created_at.isoformat(),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

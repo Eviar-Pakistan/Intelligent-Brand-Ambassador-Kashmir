@@ -19,6 +19,7 @@ from .models import (
     Supervisor,
     SurveyQuestion,
     TrainingVideo,
+    UserInterception,
 )
 
 
@@ -92,6 +93,34 @@ class AmbassadorComplaintAdmin(admin.ModelAdmin):
     search_fields = ('complaint', 'subject', 'ambassador__name', 'store__name', 'sku', 'customer_name')
     list_editable = ('status',)
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(UserInterception)
+class UserInterceptionAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'status',
+        'name',
+        'ba_name',
+        'store_name',
+        'contact',
+        'current_sku',
+        'created_at',
+    )
+    list_filter = ('status', 'created_at', 'store')
+    search_fields = (
+        'name',
+        'contact',
+        'ba_name',
+        'store_name',
+        'previous_brand',
+        'previous_sku',
+        'current_sku',
+        'feedback',
+    )
+    readonly_fields = ('created_at', 'ba_name', 'store_name')
+    raw_id_fields = ('ambassador', 'store')
+
 
 
 @admin.register(PlatformSettings)

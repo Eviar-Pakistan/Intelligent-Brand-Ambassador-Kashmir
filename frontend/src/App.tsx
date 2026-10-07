@@ -45,6 +45,7 @@ import {
 } from './pages/ba/BaPages'
 import { BaDailySalesPage, BaOtherBrandsPage, BaStockReportPage } from './pages/ba/BaCheckoutPages'
 import { BaComplaintPage } from './pages/ba/BaComplaintPage'
+import { BaUserInterceptionPage } from './pages/ba/BaUserInterceptionPage'
 import { BaAccessPage } from './pages/ba/BaAccessPage'
 import { ComplaintsProvider } from './context/ComplaintsContext'
 import { isApiAuthenticated } from './lib/api'
@@ -177,6 +178,7 @@ export default function App() {
               <Route path="training" element={<BaTrainingPage />} />
               <Route path="performance" element={<BaPerformancePage />} />
               <Route path="complaint" element={<BaComplaintPage />} />
+              <Route path="user-interception" element={<BaUserInterceptionPage />} />
               <Route path="daily-sales" element={<BaDailySalesPage />} />
               <Route path="stock-report" element={<BaStockReportPage />} />
               <Route path="other-brands" element={<BaOtherBrandsPage />} />

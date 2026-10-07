@@ -996,3 +996,49 @@ class BaDailyReport(models.Model):
 
     def __str__(self):
         return f'Daily report {self.date} · {self.ambassador_id} · {self.source}'
+
+
+class UserInterception(models.Model):
+    """Shopper interception recorded by a BA during their shift."""
+
+    class Status(models.TextChoices):
+        PRODUCTIVE = 'Productive', 'Productive'
+        TRIALIST = 'Trialist', 'Trialist'
+        NON_PRODUCTIVE = 'Non-productive', 'Non-productive'
+
+    ambassador = models.ForeignKey(
+        Ambassador,
+        on_delete=models.CASCADE,
+        related_name='user_interceptions',
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='user_interceptions',
+    )
+    ba_name = models.CharField(max_length=120, blank=True, default='')
+    store_name = models.CharField(max_length=200, blank=True, default='')
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        db_index=True,
+    )
+    name = models.CharField(max_length=120)
+    contact = models.CharField(max_length=40, blank=True, default='')
+    city_area = models.CharField(max_length=200, blank=True, default='')
+    previous_brand = models.CharField(max_length=120, blank=True, default='')
+    previous_sku = models.CharField(max_length=120, blank=True, default='')
+    current_sku = models.CharField(max_length=120, blank=True, default='')
+    feedback = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ambassador', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.status} · {self.name} · BA {self.ambassador_id}'
