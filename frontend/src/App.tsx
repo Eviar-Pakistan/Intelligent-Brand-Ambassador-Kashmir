@@ -33,6 +33,7 @@ import {
 } from './pages/headOffice/IntelligencePages'
 import { IncentivesPage } from './pages/headOffice/IncentivesPage'
 import { ComplaintsPage } from './pages/headOffice/ComplaintPages'
+import { InterceptionsPage } from './pages/headOffice/InterceptionsPage'
 import {
   AttendancePage,
   CoveragePage,
@@ -84,6 +85,7 @@ const hoPages = (
     <Route path="leaderboard" element={<LeaderboardPage />} />
     <Route path="incentives" element={<IncentivesPage />} />
     <Route path="complaints" element={<ComplaintsPage />} />
+    <Route path="interceptions" element={<InterceptionsPage />} />
     <Route path="reports" element={<ReportPage />} />
   </>
 )

@@ -11,6 +11,7 @@ from .ba_attendance_views import (
     ba_today_shift,
     daily_reports,
     early_checkout_reports,
+    list_user_interceptions,
     stock_matrix,
 )
 from .ba_training_views import (
@@ -113,7 +114,9 @@ urlpatterns = [
     path('ba/check-out/', ba_check_out, name='ba-check-out'),
     path('ba/complaints/', ba_submit_complaint, name='ba-submit-complaint'),
     path('ba/user-interceptions/', ba_submit_user_interception, name='ba-user-interceptions'),
+    path('user-interceptions/', list_user_interceptions, name='user-interceptions'),
     path('ba/daily-report/', ba_submit_daily_report, name='ba-daily-report'),
+
     path('ba/leaderboard/', ba_leaderboard, name='ba-leaderboard'),
     path('ba/targets/', ba_my_targets, name='ba-my-targets'),
     path('ba/incentives/', ba_my_incentive, name='ba-my-incentive'),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, time, timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -598,6 +599,104 @@ def ba_submit_user_interception(request):
             'createdAt': row.created_at.isoformat(),
         },
         status=status.HTTP_201_CREATED,
+    )
+
+
+def _parse_ymd(raw: str | None) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw).strip()[:10])
+    except ValueError:
+        return None
+
+
+def _serialize_user_interception(row: UserInterception) -> dict:
+    switched = row.status == UserInterception.Status.PRODUCTIVE
+    return {
+        'id': row.id,
+        'createdAt': row.created_at.isoformat() if row.created_at else None,
+        'status': row.status,
+        'switched': switched,
+        'baName': row.ba_name or (row.ambassador.name if row.ambassador_id else ''),
+        'ambassadorId': row.ambassador_id,
+        'storeId': row.store_id,
+        'storeName': row.store_name or (row.store.name if row.store_id else ''),
+        'name': row.name,
+        'contact': row.contact or '',
+        'cityArea': row.city_area or '',
+        'previousBrand': row.previous_brand or '',
+        'previousSku': row.previous_sku or '',
+        'currentSku': row.current_sku or '',
+        'feedback': row.feedback or '',
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_user_interceptions(request):
+    """
+    GET /api/user-interceptions/?from=YYYY-MM-DD&to=YYYY-MM-DD&q=&switched=1
+    Head Office inbox for BA shopper interceptions.
+    Summary KPIs use the date range only; results also apply q / switched filters.
+    """
+    today = timezone.localdate()
+    date_from = _parse_ymd(request.query_params.get('from')) or today
+    date_to = _parse_ymd(request.query_params.get('to')) or date_from
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+
+    tz = timezone.get_current_timezone()
+    start_dt = timezone.make_aware(datetime.combine(date_from, time.min), tz)
+    end_dt = timezone.make_aware(datetime.combine(date_to, time.max), tz)
+
+    base_qs = UserInterception.objects.filter(
+        created_at__gte=start_dt,
+        created_at__lte=end_dt,
+    ).select_related('ambassador', 'store')
+
+    total = base_qs.count()
+    switched_count = base_qs.filter(status=UserInterception.Status.PRODUCTIVE).count()
+    conversion = round((switched_count / total) * 100) if total else 0
+
+    qs = base_qs
+    switched_only = str(request.query_params.get('switched', '')).lower() in (
+        '1',
+        'true',
+        'yes',
+    )
+    if switched_only:
+        qs = qs.filter(status=UserInterception.Status.PRODUCTIVE)
+
+    q = str(request.query_params.get('q') or '').strip()
+    if q:
+        qs = qs.filter(
+            Q(ba_name__icontains=q)
+            | Q(store_name__icontains=q)
+            | Q(name__icontains=q)
+            | Q(contact__icontains=q)
+            | Q(city_area__icontains=q)
+            | Q(previous_brand__icontains=q)
+            | Q(previous_sku__icontains=q)
+            | Q(current_sku__icontains=q)
+            | Q(feedback__icontains=q)
+            | Q(ambassador__name__icontains=q)
+            | Q(store__name__icontains=q)
+        )
+
+    rows = [_serialize_user_interception(r) for r in qs.order_by('-created_at')[:2000]]
+    return Response(
+        {
+            'from': date_from.isoformat(),
+            'to': date_to.isoformat(),
+            'summary': {
+                'totalInterceptions': total,
+                'switchedToKashmir': switched_count,
+                'conversionPct': conversion,
+            },
+            'results': rows,
+            'count': len(rows),
+        }
     )
 
 

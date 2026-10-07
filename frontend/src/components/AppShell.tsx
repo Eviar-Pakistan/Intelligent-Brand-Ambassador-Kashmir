@@ -23,6 +23,7 @@ import {
   X,
   MessageSquareWarning,
   Package,
+  UserRoundSearch,
   type LucideIcon,
 } from 'lucide-react'
 import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
@@ -49,6 +50,7 @@ const headOfficeNav: NavItem[] = [
   { to: '/ho/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
   { to: '/ho/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
   { to: '/ho/complaints', label: 'Insights / Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
+  { to: '/ho/interceptions', label: 'Interceptions', icon: UserRoundSearch, section: 'Operations' },
   { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
   { to: '/ho/optimization', label: 'AI Optimization', icon: Brain, section: 'Intelligence' },
   { to: '/ho/leaderboard', label: 'Leaderboard', icon: Trophy, section: 'Intelligence' },
@@ -132,6 +134,7 @@ const titles: Record<string, string> = {
   '/ho/optimization': 'AI Optimization',
   '/ho/leaderboard': 'Ambassador Leaderboard',
   '/ho/incentives': 'BA Performance Incentives',
+  '/ho/interceptions': 'User Interceptions',
   '/ho/reports': 'Executive Intelligence Report',
   '/admin/settings': 'Platform Settings',
   '/admin/ambassadors': 'BA Management',
