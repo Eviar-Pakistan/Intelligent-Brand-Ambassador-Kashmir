@@ -22,7 +22,8 @@ const DEFAULT_SHIFT_START_LABEL = '08:00 AM'
 const SHIFT_TIME_RE = /(\d{1,2}):(\d{2})\s*(AM|PM)/gi
 /** Check Out becomes available this many ms after check-in */
 const CHECKOUT_UNLOCK_AFTER_MS = 10_000
-const FALLBACK_CITY = 'Lahore'
+/** Shown when city/store/shift is unknown (loading failure or no data yet). */
+const PLACEHOLDER = '-'
 
 type ShiftBounds = {
   startMinutes: number
@@ -148,13 +149,13 @@ function applyTodayShift(
   set.upcoming(data.upcoming || [])
 
   if (!shift) {
-    set.city(data.ambassador.city || FALLBACK_CITY)
+    set.city(data.ambassador.city || PLACEHOLDER)
     set.storeLabel(
       data.ambassador.store_name
         ? data.ambassador.store_id
           ? `#${data.ambassador.store_id} ${data.ambassador.store_name}`
           : data.ambassador.store_name
-        : 'No store assigned',
+        : PLACEHOLDER,
     )
     set.shiftLabel('No shift today')
     set.storeLat(numOrNull(data.ambassador.storeLat))
@@ -167,9 +168,16 @@ function applyTodayShift(
     return
   }
 
-  set.city(shift.city || FALLBACK_CITY)
-  set.storeLabel(shift.storeLabel || `${shift.storeName}, ${shift.city}`)
-  set.shiftLabel(shift.shift || 'Shift')
+  set.city(shift.city || PLACEHOLDER)
+  set.storeLabel(
+    shift.storeLabel ||
+      (shift.storeName
+        ? shift.city
+          ? `${shift.storeName}, ${shift.city}`
+          : shift.storeName
+        : PLACEHOLDER),
+  )
+  set.shiftLabel(shift.shift || PLACEHOLDER)
   set.storeLat(numOrNull(shift.storeLat))
   set.storeLng(numOrNull(shift.storeLng))
   set.checkInLat(numOrNull(shift.checkInLat))
@@ -197,9 +205,9 @@ export function BaShiftProvider({
   const [error, setError] = useState<string | null>(null)
   const [hasShift, setHasShift] = useState(!apiMode)
   const [shiftMessage, setShiftMessage] = useState<string | null>(null)
-  const [city, setCity] = useState(FALLBACK_CITY)
-  const [storeLabel, setStoreLabel] = useState(`Store #12, ${FALLBACK_CITY}`)
-  const [shiftLabel, setShiftLabel] = useState('')
+  const [city, setCity] = useState(PLACEHOLDER)
+  const [storeLabel, setStoreLabel] = useState(PLACEHOLDER)
+  const [shiftLabel, setShiftLabel] = useState(PLACEHOLDER)
   const [storeLat, setStoreLat] = useState<number | null>(null)
   const [storeLng, setStoreLng] = useState<number | null>(null)
   const [checkInLat, setCheckInLat] = useState<number | null>(null)
@@ -248,6 +256,17 @@ export function BaShiftProvider({
       setError(err instanceof Error ? err.message : "Could not load today's shift")
       setHasShift(false)
       setShiftMessage('Could not load shift from server.')
+      setCity(PLACEHOLDER)
+      setStoreLabel(PLACEHOLDER)
+      setShiftLabel(PLACEHOLDER)
+      setStoreLat(null)
+      setStoreLng(null)
+      setCheckInLat(null)
+      setCheckInLng(null)
+      setUpcoming([])
+      setCheckedIn(false)
+      setCheckInAt(null)
+      setCheckedOut(false)
     } finally {
       setLoading(false)
     }
