@@ -968,6 +968,7 @@ export function BaPerformancePage() {
     salesKg: number
     achievementPct: number
     skus: string[]
+    skuRows: { sku: string; units: number; kg: number }[]
     categories: {
       category: string
       targetKg: number
@@ -993,6 +994,7 @@ export function BaPerformancePage() {
             salesKg: data.salesKg ?? 0,
             achievementPct: data.achievementPct,
             skus: data.skus,
+            skuRows: data.skuRows,
             categories: data.categories,
           })
         }
@@ -1045,6 +1047,10 @@ export function BaPerformancePage() {
   const assignedSkus = liveTarget?.skus?.length
     ? liveTarget.skus
     : monthTarget?.skus ?? []
+  const skuRows =
+    liveTarget?.skuRows?.length
+      ? liveTarget.skuRows
+      : assignedSkus.map((sku) => ({ sku, units: 0, kg: 0 }))
   const categories = liveTarget?.categories ?? []
   const monthLabel = formatMonthLabel(month)
 
@@ -1105,19 +1111,33 @@ export function BaPerformancePage() {
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <div className="text-sm font-bold text-slate-900">Assigned SKUs</div>
-        {assignedSkus.length === 0 ? (
+        <p className="mt-0.5 text-[11px] text-slate-400">Month-to-date units and kg from checkout forms</p>
+        {skuRows.length === 0 ? (
           <p className="mt-3 text-center text-sm text-slate-400">No SKUs assigned for this month.</p>
         ) : (
-          <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto">
-            {assignedSkus.map((s) => (
-              <li
-                key={s}
-                className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700"
-              >
-                {s}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3 max-h-56 overflow-y-auto">
+            <div className="mb-1.5 grid grid-cols-[minmax(0,1fr)_3.25rem_3.25rem] gap-2 px-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+              <span>SKU</span>
+              <span className="text-right">Units</span>
+              <span className="text-right">Kg</span>
+            </div>
+            <ul className="space-y-1.5">
+              {skuRows.map((row) => (
+                <li
+                  key={row.sku}
+                  className="grid grid-cols-[minmax(0,1fr)_3.25rem_3.25rem] items-center gap-2 rounded-xl bg-slate-50 px-3 py-2"
+                >
+                  <span className="truncate text-xs font-medium text-slate-700">{row.sku}</span>
+                  <span className="text-right text-xs font-semibold tabular-nums text-slate-800">
+                    {Number.isInteger(row.units) ? row.units : row.units.toFixed(1)}
+                  </span>
+                  <span className="text-right text-xs font-semibold tabular-nums text-brand-700">
+                    {Number.isInteger(row.kg) ? row.kg : row.kg.toFixed(1)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 

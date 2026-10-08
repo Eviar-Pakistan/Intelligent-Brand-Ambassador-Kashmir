@@ -13,6 +13,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .models import Ambassador, BaDailyReport, BaTarget, ShiftAssignment, Store
+from .sales_report import category_sales_from_json, kg_for_pack_units
 
 MONTH_NAMES = list(month_name)  # index 1..12
 
@@ -312,15 +313,10 @@ def build_ba_performance_dashboard(
 
         intercepted = _sales_num(sales, 'totalInterceptions')
         productive = _sales_num(sales, 'productiveCalls')
-        oil = _sales_num(sales, 'salesOil') or sum(
-            _f(sales.get(k)) for k in OIL_SKU_KEYS if k != 'salesOil'
-        )
-        ghee = _sales_num(sales, 'salesGhee') or sum(
-            _f(sales.get(k)) for k in GHEE_SKU_KEYS if k != 'salesGhee'
-        )
-        waadi = _sales_num(sales, 'salesWaadi') or sum(
-            _f(sales.get(k)) for k in WAADI_SKU_KEYS if k != 'salesWaadi'
-        )
+        cats = category_sales_from_json(sales)
+        oil = cats['Kashmir Cooking Oil']
+        ghee = cats['Kashmir Banaspati']
+        waadi = cats['Waadi Banaspati']
         total_line = _sales_num(sales, 'totalSalesLtrKg')
         sku_sum = oil + ghee + waadi
 
@@ -335,13 +331,15 @@ def build_ba_performance_dashboard(
             row_sales = sku_sum if sku_sum > 0 else total_line
 
         if sku:
-            # Match by label or key
+            # Match by label or key — convert pack units to kg
             matched = 0.0
             for key, label in SKU_LABELS.items():
+                if key in ('salesOil', 'salesGhee', 'salesWaadi'):
+                    continue
                 if sku.lower() in (key.lower(), label.lower()) or label.lower() == sku.lower():
-                    matched += _f(sales.get(key))
+                    matched += kg_for_pack_units(key, sales.get(key))
             if matched <= 0 and sku in sales:
-                matched = _f(sales.get(sku))
+                matched = kg_for_pack_units(sku, sales.get(sku))
             # Allow filtering "Total Sales (uncategorized)"
             if matched <= 0 and 'total' in sku.lower() and 'uncategor' in sku.lower():
                 matched = total_line if sku_sum <= 0 else 0.0
@@ -364,10 +362,10 @@ def build_ba_performance_dashboard(
 
         sku_vals_added = False
         for key, label in SKU_LABELS.items():
-            val = _f(sales.get(key))
-            if val <= 0:
-                continue
             if key in ('salesOil', 'salesGhee', 'salesWaadi'):
+                continue
+            val = kg_for_pack_units(key, sales.get(key))
+            if val <= 0:
                 continue
             if category == 'Kashmir Cooking Oil' and key not in OIL_SKU_KEYS:
                 continue

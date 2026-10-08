@@ -37,6 +37,27 @@ export const WAADI_PACK_KEYS = [
   'wbpBkt16',
 ] as const
 
+/** kg (or LTR as kg) per form unit — BA still enters units; category totals convert here. */
+export const PACK_KG_PER_UNIT: Record<string, number> = {
+  kpgoCan10: 10,
+  kpgoBtl3: 3,
+  kpgoBtl45: 4.5,
+  kpgoTin5: 5,
+  kpgoPouch1x5: 5,
+  kpgoSup1x5: 5,
+  kpgoBkt16: 16,
+  kbpBkt10: 10,
+  kbpBkt25: 2.5,
+  kbpBkt5: 5,
+  kbpTin5: 5,
+  kbpPouch1x5: 5,
+  kbpBkt16: 16,
+  wbpBkt5: 5,
+  wbpPouch1x5: 5,
+  wbpBkt25: 2.5,
+  wbpBkt16: 16,
+}
+
 export const interceptionFields: FieldDef[] = [
   { key: 'totalInterceptions', label: 'Total Interceptions' },
   { key: 'productiveCalls', label: 'Productive Calls' },
@@ -119,23 +140,26 @@ export const DEFAULT_OTHER_BRANDS: OtherBrandRow[] = [
   { id: '6', name: 'Kisan 5 LTR', price: '' },
 ]
 
-function sumPackUnits(sales: Record<string, string | number>, keys: readonly string[]) {
-  return keys.reduce((total, key) => {
-    const raw = sales[key]
-    if (raw == null || raw === '') return total
-    const n = Number(raw)
-    return Number.isFinite(n) && n > 0 ? total + n : total
-  }, 0)
+function kgForPackUnits(key: string, raw: string | number | undefined | null) {
+  if (raw == null || raw === '') return 0
+  const units = Number(raw)
+  if (!Number.isFinite(units) || units <= 0) return 0
+  const factor = PACK_KG_PER_UNIT[key] ?? 0
+  return units * factor
 }
 
-/** Derive category totals from SKU unit fields (matches backend normalize_sales_json). */
+function sumPackKg(sales: Record<string, string | number>, keys: readonly string[]) {
+  return keys.reduce((total, key) => total + kgForPackUnits(key, sales[key]), 0)
+}
+
+/** Derive category totals in kg from SKU unit fields (matches backend normalize_sales_json). */
 export function normalizeSalesPayload(
   sales: Record<string, string | number>,
 ): Record<string, string | number> {
   const out = { ...sales }
-  const oil = sumPackUnits(out, OIL_PACK_KEYS)
-  const ghee = sumPackUnits(out, GHEE_PACK_KEYS)
-  const waadi = sumPackUnits(out, WAADI_PACK_KEYS)
+  const oil = sumPackKg(out, OIL_PACK_KEYS)
+  const ghee = sumPackKg(out, GHEE_PACK_KEYS)
+  const waadi = sumPackKg(out, WAADI_PACK_KEYS)
   const skuSum = oil + ghee + waadi
 
   out.salesOil = oil > 0 ? String(oil) : ''

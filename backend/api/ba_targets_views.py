@@ -142,20 +142,25 @@ def _f(val) -> float:
         return 0.0
 
 
-def _category_sales_from_reports(ambassador_id: int, month: str) -> dict[str, float]:
-    """Sum checkout form sales by category for a BA in YYYY-MM."""
+def _month_date_range(month: str):
     from calendar import monthrange
     from datetime import date
 
+    try:
+        y, m = map(int, month.split('-')[:2])
+        return date(y, m, 1), date(y, m, monthrange(y, m)[1])
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _category_sales_from_reports(ambassador_id: int, month: str) -> dict[str, float]:
+    """Sum checkout form sales by category for a BA in YYYY-MM."""
     from .models import BaDailyReport
     from .sales_report import category_sales_from_json
 
     totals = {c: 0.0 for c in CATEGORY_NAMES}
-    try:
-        y, m = map(int, month.split('-')[:2])
-        d_from = date(y, m, 1)
-        d_to = date(y, m, monthrange(y, m)[1])
-    except (TypeError, ValueError):
+    d_from, d_to = _month_date_range(month)
+    if not d_from or not d_to:
         return totals
 
     for report in BaDailyReport.objects.filter(
@@ -167,6 +172,27 @@ def _category_sales_from_reports(ambassador_id: int, month: str) -> dict[str, fl
         for cat, amount in category_sales_from_json(sales).items():
             totals[cat] += amount
     return {c: round(v, 1) for c, v in totals.items()}
+
+
+def _sku_units_from_reports(ambassador_id: int, month: str) -> dict[str, float]:
+    """Month-to-date unit totals per pack key from checkout forms."""
+    from .models import BaDailyReport
+    from .sales_report import all_pack_keys, _f
+
+    totals = {k: 0.0 for k in all_pack_keys()}
+    d_from, d_to = _month_date_range(month)
+    if not d_from or not d_to:
+        return totals
+
+    for report in BaDailyReport.objects.filter(
+        ambassador_id=ambassador_id,
+        date__gte=d_from,
+        date__lte=d_to,
+    ).only('sales_json'):
+        sales = report.sales_json if isinstance(report.sales_json, dict) else {}
+        for key in totals:
+            totals[key] += _f(sales.get(key))
+    return totals
 
 
 def serialize_target(obj: BaTarget) -> dict:
@@ -416,6 +442,24 @@ def ba_my_targets(request):
     sales_sum = round(sum(c['salesKg'] for c in categories), 1)
     achievement = round((sales_sum / target_sum) * 100, 1) if target_sum > 0 else 0.0
 
+    from .sales_report import PACK_KG_PER_UNIT, PACK_LABEL_TO_KEY, kg_for_pack_units
+
+    units_by_key = _sku_units_from_reports(ambassador.id, month) if month else {}
+    sku_rows = []
+    for label in assigned:
+        key = PACK_LABEL_TO_KEY.get(label)
+        units = round(units_by_key.get(key, 0.0), 1) if key else 0.0
+        kg = kg_for_pack_units(key, units) if key else 0.0
+        sku_rows.append(
+            {
+                'sku': label,
+                'key': key or '',
+                'units': units,
+                'kg': kg,
+                'kgPerUnit': PACK_KG_PER_UNIT.get(key, 0.0) if key else 0.0,
+            }
+        )
+
     return Response(
         {
             'ambassador_id': ambassador.id,
@@ -425,7 +469,9 @@ def ba_my_targets(request):
             'achievement_pct': achievement,
             'skus': assigned,
             'assignedSkus': assigned,
+            'skuRows': sku_rows,
             'categories': categories,
             'results': BaTargetSerializer(rows, many=True).data,
         }
     )
+

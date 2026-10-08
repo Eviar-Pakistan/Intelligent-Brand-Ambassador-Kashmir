@@ -166,12 +166,21 @@ export async function upsertBaTargets(entries: Omit<BaTargetEntry, 'updatedAt' |
   return { saved: locals.length, errors: [] as string[] }
 }
 
+export type BaAssignedSkuRow = {
+  sku: string
+  key: string
+  units: number
+  kg: number
+  kgPerUnit: number
+}
+
 /** BA invite-token fetch for current month (or all). */
 export async function fetchBaOwnTargets(token: string, month?: string): Promise<{
   targetKg: number
   salesKg: number | null
   achievementPct: number
   skus: string[]
+  skuRows: BaAssignedSkuRow[]
   categories: {
     category: string
     targetKg: number
@@ -188,6 +197,7 @@ export async function fetchBaOwnTargets(token: string, month?: string): Promise<
     achievement_pct?: number
     skus: string[]
     assignedSkus?: string[]
+    skuRows?: BaAssignedSkuRow[]
     categories?: {
       category: string
       targetKg: number
@@ -201,13 +211,24 @@ export async function fetchBaOwnTargets(token: string, month?: string): Promise<
   commit(mergeRows(rows), false)
   const targetKg = Number(data.target_kg ?? 0)
   const salesKg = data.sales_kg == null ? null : Number(data.sales_kg ?? 0)
+  const skus = data.assignedSkus ?? data.skus ?? []
+  const skuRows: BaAssignedSkuRow[] = Array.isArray(data.skuRows)
+    ? data.skuRows.map((r) => ({
+        sku: String(r.sku ?? ''),
+        key: String(r.key ?? ''),
+        units: Number(r.units ?? 0),
+        kg: Number(r.kg ?? 0),
+        kgPerUnit: Number(r.kgPerUnit ?? 0),
+      }))
+    : skus.map((sku) => ({ sku, key: '', units: 0, kg: 0, kgPerUnit: 0 }))
   return {
     targetKg,
     salesKg,
     achievementPct: Number(
       data.achievement_pct ?? (targetKg > 0 && salesKg != null ? (salesKg / targetKg) * 100 : 0),
     ),
-    skus: data.assignedSkus ?? data.skus ?? [],
+    skus,
+    skuRows,
     categories: Array.isArray(data.categories) ? data.categories : [],
     rows,
   }
