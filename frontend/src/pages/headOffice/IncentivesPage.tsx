@@ -247,7 +247,7 @@ export function IncentivesPage() {
               {!loading && filtered.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-4 py-8 text-center text-sm text-slate-500">
-                    No certified / deployed BAs yet — incentives appear once ambassadors are on the
+                    No certified / deployed BA's yet — incentives appear once ambassadors are on the
                     leaderboard.
                   </td>
                 </tr>

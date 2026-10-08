@@ -146,7 +146,7 @@ export function SupervisorDownloadReport({
             <div className="font-semibold text-slate-900">BA daily reports</div>
             <p className="mt-0.5 text-sm text-slate-500">
               Download checkout reports for all ambassadors under this supervisor (one Excel sheet per
-              BA). BAs who did not submit still get a sheet with a note.
+              BA). BA's who did not submit still get a sheet with a note.
             </p>
           </div>
           <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -214,7 +214,7 @@ export function SupervisorSummary({
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <KpiCard label="Stores" value={o.stores.length} />
       <KpiCard label="Ambassadors" value={new Set(o.bas.map((b) => b.id)).size} />
-      <KpiCard label="Team conversion" value={`${o.teamConversion}%`} hint="Average of their BAs" />
+      <KpiCard label="Team conversion" value={`${o.teamConversion}%`} hint="Average of their BA's" />
       <KpiCard label="Store coverage" value={`${o.coverage}%`} hint="Average of their stores" />
       <KpiCard label="Today's footfall" value={o.todayFootfall.toLocaleString()} />
     </div>

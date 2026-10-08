@@ -32,6 +32,13 @@ export type BaStatusCity = {
   total: number
 }
 
+export type ActiveBaRow = {
+  id: number
+  name: string
+  store: string
+  city: string
+}
+
 export type BaStatusPayload = {
   days: number
   total: number
@@ -39,6 +46,8 @@ export type BaStatusPayload = {
   break: number
   offline: number
   cities: BaStatusCity[]
+  /** Live checked-in BA's (same set as `active` count). */
+  activeBas?: ActiveBaRow[]
 }
 
 export type AttendanceRowLive = {
@@ -149,10 +158,10 @@ export async function downloadBaPerformanceExcel(
     { Field: 'Category', Value: meta.category || 'All' },
     { Field: 'SKU', Value: meta.sku || 'All' },
     { Field: 'Target month', Value: meta.targetMonth || dash.targetVsAchievement?.month || '—' },
-    { Field: 'Total BAs', Value: dash.baStatus?.total ?? 0 },
-    { Field: 'Active BAs', Value: dash.baStatus?.active ?? 0 },
-    { Field: 'Offline BAs', Value: dash.baStatus?.offline ?? 0 },
-    { Field: 'On Break BAs', Value: dash.baStatus?.break ?? 0 },
+    { Field: "Total BA's", Value: dash.baStatus?.total ?? 0 },
+    { Field: "Active BA's", Value: dash.baStatus?.active ?? 0 },
+    { Field: "Offline BA's", Value: dash.baStatus?.offline ?? 0 },
+    { Field: "On Break BA's", Value: dash.baStatus?.break ?? 0 },
     { Field: 'Customers Intercepted', Value: dash.kpis.customersIntercepted },
     { Field: 'Productive Calls', Value: dash.kpis.productiveCalls },
     { Field: 'Productive %', Value: dash.kpis.productivePct },

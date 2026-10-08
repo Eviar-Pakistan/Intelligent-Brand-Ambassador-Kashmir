@@ -43,7 +43,7 @@ export function ManagerDashboard() {
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <div className="text-xs text-slate-500">Active BAs</div>
+          <div className="text-xs text-slate-500">Active BA's</div>
           <div className="text-xl font-bold sm:text-2xl">3</div>
         </Card>
         <Card>
@@ -147,7 +147,7 @@ export function CoveragePage() {
               <StatusBadge status={s.status} />
             </div>
             <div className="mt-3 text-sm">
-              Coverage <strong>{s.coverage}%</strong> · {s.bas} BAs
+              Coverage <strong>{s.coverage}%</strong> · {s.bas} BA's
             </div>
           </Card>
         ))}

@@ -116,7 +116,7 @@ export function StoresPage() {
               <th className="px-4 py-3">Store code</th>
               <th className="px-4 py-3">Store</th>
               <th className="px-4 py-3">Footfall</th>
-              <th className="px-4 py-3">BAs</th>
+              <th className="px-4 py-3">BA's</th>
               <th className="px-4 py-3">Coverage</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Shopper QR</th>
@@ -281,7 +281,7 @@ export function StoreDetailPage() {
         <Card>
           <h3 className="mb-3 font-semibold">Assigned Ambassadors</h3>
           {assigned.length === 0 ? (
-            <p className="text-sm text-slate-500">No BAs assigned â€” needs deployment.</p>
+            <p className="text-sm text-slate-500">No BA's assigned — needs deployment.</p>
           ) : (
             <div className="space-y-2">
               {assigned.map((a) => (
@@ -675,7 +675,7 @@ function SchedulerPanel() {
     <div className="space-y-5">
       <PageHeader
         title="Intelligent Store Deployment"
-        description="Schedule certified BAs into peak shifts and activate QR"
+        description="Schedule certified BA's into peak shifts and activate QR"
         actions={
           <Button onClick={() => openCreate()} disabled={!storeOptions.length}>
             <CalendarClock size={15} /> Create shifts

@@ -77,7 +77,7 @@ export function CommandCenterPage() {
     live?.manager?.summary.shoppers_today != null
       ? `+${live.manager.summary.shoppers_today} today`
       : 'Live from API'
-  const storesDelta = `${ops.gpsOnline} BAs GPS online`
+  const storesDelta = `${ops.gpsOnline} BA's GPS online`
 
   return (
     <div className="space-y-5">
@@ -231,7 +231,7 @@ export function CommandCenterPage() {
 
         <Card>
           <CardHeader title="Operations" />
-          <StatRow label="Active BAs" value={loading ? '…' : String(ops.activeBas)} />
+          <StatRow label="Active BA's" value={loading ? '…' : String(ops.activeBas)} />
           <StatRow label="GPS online" value={loading ? '…' : String(ops.gpsOnline)} />
           <StatRow label="Attendance" value={loading ? '…' : ops.attendance} />
           <StatRow label="Store coverage" value={loading ? '…' : ops.storeCoverage} />
@@ -250,7 +250,7 @@ export function CommandCenterPage() {
             {loading ? (
               <p className="text-sm text-slate-500">Loading…</p>
             ) : baTop.length === 0 ? (
-              <p className="text-sm text-slate-500">No certified / deployed BAs yet.</p>
+              <p className="text-sm text-slate-500">No certified / deployed BA's yet.</p>
             ) : (
               baTop.map((b, i) => (
                 <div key={b.id} className="flex items-center justify-between text-sm">

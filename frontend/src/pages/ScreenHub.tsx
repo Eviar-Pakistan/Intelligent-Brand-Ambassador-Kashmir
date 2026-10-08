@@ -21,7 +21,7 @@ const experiences: {
     role: 'headOffice',
     icon: LayoutDashboard,
     title: 'Head Office',
-    desc: 'Command Center, campaigns, BAs, stores, AI optimization & reports',
+    desc: "Command Center, campaigns, BA's, stores, AI optimization & reports",
     layout: 'Desktop dashboard',
   },
   {

@@ -453,7 +453,7 @@ export function SupervisorsPage() {
               <tr>
                 <th className="px-4 py-3">Supervisor</th>
                 <th className="px-4 py-3">Stores</th>
-                <th className="px-4 py-3">BAs</th>
+                <th className="px-4 py-3">BA's</th>
                 <th className="px-4 py-3">Team conversion</th>
                 <th className="px-4 py-3">Coverage</th>
                 <th className="px-4 py-3">Actions</th>

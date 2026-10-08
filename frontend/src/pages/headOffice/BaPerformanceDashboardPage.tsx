@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Bar, Doughnut, Line } from 'react-chartjs-2'
-import { Download, RotateCcw, Search } from 'lucide-react'
+import { Bar, Doughnut } from 'react-chartjs-2'
+import { ChevronDown, Download, RotateCcw, Search } from 'lucide-react'
 import { Button, Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
 import {
   MONTH_ORDER,
-  baPerformanceBrands,
   baPerformanceCategories,
   demoCategorySalesForFilters,
   demoTargetVsSalesForFilters,
@@ -18,6 +17,7 @@ import {
 import {
   downloadBaPerformanceExcel,
   fetchBaPerformanceDashboard,
+  type ActiveBaRow,
   type BaPerformanceDashboard,
 } from '../../lib/baPerformanceApi'
 import {
@@ -38,6 +38,69 @@ function EmptyRow({ cols }: { cols: number }) {
         No data for this selection
       </td>
     </tr>
+  )
+}
+
+function ActiveBasKpiCard({
+  value,
+  hint,
+  activeBas,
+}: {
+  value: string | number
+  hint?: string
+  activeBas: ActiveBaRow[]
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Card
+      className={cn(
+        'relative overflow-visible',
+        open ? 'z-50' : 'z-0 animate-fade-up',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-start justify-between gap-2 text-left"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+            Active BA's
+          </div>
+          <div className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
+          {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+        </div>
+        <ChevronDown
+          size={16}
+          className={cn(
+            'mt-0.5 shrink-0 text-slate-400 transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+          {activeBas.length === 0 ? (
+            <p className="px-3 py-2.5 text-xs text-slate-400">No active BA's</p>
+          ) : (
+            <ul>
+              {activeBas.map((ba) => (
+                <li
+                  key={ba.id}
+                  className="border-b border-slate-50 px-3 py-2 last:border-b-0"
+                >
+                  <div className="truncate text-sm font-medium text-slate-900">{ba.name}</div>
+                  <div className="truncate text-xs text-slate-500">{ba.store}</div>
+                  <div className="truncate text-[11px] text-slate-400">{ba.city}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Card>
   )
 }
 
@@ -297,7 +360,6 @@ export function BaPerformanceDashboardPage() {
   const [month, setMonth] = useState<string | null>(() => monthForPreset('mtd'))
   const [store, setStore] = useState<string | null>(null)
   const [category, setCategory] = useState<ProductCategory | null>(null)
-  const [brand, setBrand] = useState<string | null>('Kashmir')
   const [sku, setSku] = useState<string | null>(null)
   const [salesPeriod, setSalesPeriod] = useState<SalesPeriodMode>('mom')
   const [datePreset, setDatePreset] = useState<DatePreset>('mtd')
@@ -402,7 +464,7 @@ export function BaPerformanceDashboardPage() {
   }, [town, storesByTown])
 
   const skuOptions = useMemo(() => {
-    // Always offer the full 14-SKU catalog; category/brand still filter charts.
+    // Always offer the full 14-SKU catalog; category still filters charts.
     return getAllSkus()
   }, [])
 
@@ -615,6 +677,10 @@ export function BaPerformanceDashboardPage() {
       : undefined
 
   const scopeLabel = data.townTargetVsSales.town
+  const targetVsSalesAchievementPct =
+    data.townTargetVsSales.target > 0
+      ? Math.round((data.townTargetVsSales.sales / data.townTargetVsSales.target) * 1000) / 10
+      : 0
 
   const categoryChart = useMemo<ChartData<'doughnut'>>(
     () => {
@@ -664,52 +730,43 @@ export function BaPerformanceDashboardPage() {
   const targetSalesOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
       ...defaultChartOptions,
-      plugins: { ...defaultChartOptions.plugins, legend: { display: false } },
+      plugins: {
+        ...defaultChartOptions.plugins,
+        legend: { display: false },
+        tooltip: {
+          ...defaultChartOptions.plugins.tooltip,
+          callbacks: {
+            afterBody: () => [
+              `Achievement: ${targetVsSalesAchievementPct}% of target`,
+            ],
+          },
+        },
+      },
       scales: {
         x: scaleDefaults,
         y: { ...scaleDefaults, beginAtZero: true },
       },
     }),
-    [],
+    [targetVsSalesAchievementPct],
   )
 
-  const periodSalesChart = useMemo<ChartData<'line'>>(
-    () => ({
-      labels: salesTargetPoints.map((p) => p.label),
+  const periodSalesChart = useMemo<ChartData<'doughnut'>>(() => {
+    const salesVal = salesTargetPoints.reduce((sum, p) => sum + (p.sales || 0), 0)
+    const targetVal = salesTargetPoints.reduce((sum, p) => sum + (p.target || 0), 0)
+    return {
+      labels: ['Sales', 'Target'],
       datasets: [
         {
-          label: 'Sales',
-          data: salesTargetPoints.map((p) => p.sales),
-          borderColor: chartGreen,
-          backgroundColor: chartGreen,
-          pointBackgroundColor: chartGreen,
-          pointBorderColor: '#fff',
-          pointBorderWidth: 1,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          tension: 0.25,
-          borderWidth: 2.5,
-        },
-        {
-          label: 'Target',
-          data: salesTargetPoints.map((p) => p.target),
-          borderColor: chartGold,
-          backgroundColor: chartGold,
-          pointBackgroundColor: chartGold,
-          pointBorderColor: '#fff',
-          pointBorderWidth: 1,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          tension: 0.25,
-          borderWidth: 2.5,
-          borderDash: [6, 4],
+          data: [salesVal, targetVal],
+          backgroundColor: [chartGreen, chartGold],
+          borderColor: '#fff',
+          borderWidth: 2,
         },
       ],
-    }),
-    [salesTargetPoints],
-  )
+    }
+  }, [salesTargetPoints])
 
-  const periodSalesOptions = useMemo<ChartOptions<'line'>>(
+  const periodSalesOptions = useMemo<ChartOptions<'doughnut'>>(
     () => ({
       ...defaultChartOptions,
       plugins: {
@@ -726,21 +783,19 @@ export function BaPerformanceDashboardPage() {
             padding: 16,
           },
         },
-      },
-      scales: {
-        x: scaleDefaults,
-        y: {
-          ...scaleDefaults,
-          beginAtZero: true,
-          ticks: {
-            ...scaleDefaults.ticks,
-            callback: (v) =>
-              typeof v === 'number' && v >= 1000
-                ? `${Math.round(v / 1000)}k`
-                : String(v),
+        tooltip: {
+          ...defaultChartOptions.plugins.tooltip,
+          callbacks: {
+            label: (ctx) => {
+              const val = typeof ctx.parsed === 'number' ? ctx.parsed : 0
+              const formatted =
+                val >= 1000 ? `${(val / 1000).toFixed(1)}k` : String(Math.round(val * 10) / 10)
+              return ` ${ctx.label}: ${formatted} Kg`
+            },
           },
         },
       },
+      cutout: '55%',
     }),
     [],
   )
@@ -929,9 +984,9 @@ export function BaPerformanceDashboardPage() {
         )}
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4">
         <KpiCard
-          label="Total BAs"
+          label="Total BA's"
           value={
             cityStatus?.total ??
             (cityStatus
@@ -940,12 +995,16 @@ export function BaPerformanceDashboardPage() {
           }
           hint={baStatusHint}
         />
-        <KpiCard label="Active BAs" value={cityStatus?.active ?? '—'} hint={baStatusHint} />
-        <KpiCard label="Offline BAs" value={cityStatus?.offline ?? '—'} hint={baStatusHint} />
-        <KpiCard label="On Break BAs" value={cityStatus?.break ?? '—'} hint={baStatusHint} />
+        <ActiveBasKpiCard
+          value={cityStatus?.active ?? '—'}
+          hint={baStatusHint}
+          activeBas={cityStatus?.activeBas ?? []}
+        />
+        <KpiCard label="Offline BA's" value={cityStatus?.offline ?? '—'} hint={baStatusHint} />
+        <KpiCard label="On Break BA's" value={cityStatus?.break ?? '—'} hint={baStatusHint} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="relative z-0 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <KpiCard label="Customers Intercepted" value={data.customersIntercepted.toLocaleString()} />
         <KpiCard label="Productive Calls" value={data.productiveCalls.toLocaleString()} />
         <KpiCard label="Productive %" value={`${data.productivePct}%`} />
@@ -981,20 +1040,12 @@ export function BaPerformanceDashboardPage() {
             allLabel="All stores"
           />
           <FilterPanel
-            title="Category"
+            title="Brands"
             options={baPerformanceCategories}
             value={category}
             onChange={handleCategoryChange}
             allowAll
-            allLabel="All categories"
-          />
-          <FilterPanel
-            title="Brand"
-            options={[...baPerformanceBrands]}
-            value={brand}
-            onChange={setBrand}
-            allowAll
-            allLabel="All brands"
+            allLabel="All Brands"
           />
           <FilterPanel
             title="SKU"
@@ -1013,28 +1064,41 @@ export function BaPerformanceDashboardPage() {
             <PeriodToggle value={salesPeriod} onChange={setSalesPeriod} />
           </div>
           <div className="p-3 sm:p-4">
-            <div className={cn('relative w-full', PERIOD_CHART_HEIGHT)}>
-              <Line data={periodSalesChart} options={periodSalesOptions} />
+            <div className={cn('relative mx-auto w-full max-w-sm', PERIOD_CHART_HEIGHT)}>
+              <Doughnut data={periodSalesChart} options={periodSalesOptions} />
             </div>
           </div>
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:items-stretch">
-          <ChartCard title="Category-wise target">
+          <ChartCard title="Brand Wise Achievement">
             <Doughnut data={categoryChart} options={categoryOptions} />
           </ChartCard>
 
-          <ChartCard title={`Target vs sales — ${scopeLabel}`}>
+          <ChartCard
+            title={`Target vs sales — ${scopeLabel}`}
+            headerRight={
+              <span
+                className={cn(
+                  'shrink-0 text-xs font-semibold tabular-nums',
+                  targetVsSalesAchievementPct >= 100 ? 'text-brand-700' : 'text-slate-600',
+                )}
+                title="Sales ÷ Target"
+              >
+                {targetVsSalesAchievementPct}% of target
+              </span>
+            }
+          >
             <Bar data={targetSalesChart} options={targetSalesOptions} />
           </ChartCard>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-3 lg:items-stretch">
-          <ChartCard title="Top 10 stores by target" chartHeight={TOP10_CHART_HEIGHT}>
+          <ChartCard title="Top 10 stores by performance" chartHeight={TOP10_CHART_HEIGHT}>
             <Bar data={topStoresChart} options={horizontalBarOptions} />
           </ChartCard>
 
-          <ChartCard title="Top 5 SKU targets" chartHeight={TOP10_CHART_HEIGHT}>
+          <ChartCard title="Top 5 selling SKU's" chartHeight={TOP10_CHART_HEIGHT}>
             <Bar data={topSkusChart} options={horizontalBarOptions} />
           </ChartCard>
         </div>
@@ -1043,7 +1107,7 @@ export function BaPerformanceDashboardPage() {
       <Card padding={false}>
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
           <CardHeader
-            title="Active BAs by city"
+            title="Active BA's by city"
             subtitle="Live now · checked-in vs offline by city"
           />
         </div>
@@ -1082,8 +1146,8 @@ export function BaPerformanceDashboardPage() {
             title="BA check-in / check-out"
             subtitle={
               isSingleDay
-                ? `Overall BAs · ${dateRangeLabel}`
-                : `Overall BAs · averages · ${dateRangeLabel}`
+                ? `Overall BA's · ${dateRangeLabel}`
+                : `Overall BA's · averages · ${dateRangeLabel}`
             }
           />
         </div>

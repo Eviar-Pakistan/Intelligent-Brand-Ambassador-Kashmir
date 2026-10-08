@@ -92,7 +92,7 @@ const initial: DemoMetrics = {
   stores: 24,
   notifications: [
     'Store #12 Lahore: high engagement / low conversion detected',
-    '3 BAs awaiting certification review',
+    "3 BA's awaiting certification review",
   ],
   sessionComplete: false,
 }

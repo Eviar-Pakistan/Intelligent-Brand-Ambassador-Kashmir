@@ -539,13 +539,26 @@ def _period_sales_series(
         target_by_month[t.month] += float(t.target_kg or 0)
 
     if mode == 'wow':
+        from calendar import monthrange
+
+        # Prorate monthly targets onto ISO weeks by calendar day in the range.
+        week_targets: dict[int, float] = defaultdict(float)
+        d = date_from
+        while d <= date_to:
+            week = d.isocalendar()[1]
+            ym = _month_key(d)
+            dim = monthrange(d.year, d.month)[1]
+            week_targets[week] += target_by_month.get(ym, 0) / dim if dim else 0.0
+            d += timedelta(days=1)
+
+        weeks = sorted(set(by_week.keys()) | set(week_targets.keys()))
         rows = []
-        for week in sorted(by_week.keys()):
+        for week in weeks:
             rows.append(
                 {
                     'label': f'W{week}',
-                    'sales': round(by_week[week], 1),
-                    'target': 0,
+                    'sales': round(by_week.get(week, 0), 1),
+                    'target': round(week_targets.get(week, 0), 1),
                 }
             )
         return rows
@@ -655,13 +668,33 @@ def _attendance_block(
     active_ba_ids: set[int] = set()
     ba_city: dict[int, str] = {}
     ba_stores: dict[int, set[int]] = defaultdict(set)
+    ba_names: dict[int, str] = {}
+    ba_store_label: dict[int, str] = {}
+
+    def _mark_active(ba_id: int, *, name: str, store: str, city: str, store_id: int | None):
+        active_ba_ids.add(ba_id)
+        if name:
+            ba_names[ba_id] = name
+        if city:
+            ba_city[ba_id] = city
+        if store:
+            ba_store_label[ba_id] = store
+        if store_id:
+            ba_stores[ba_id].add(store_id)
+
     for s in today_shifts:
         if not s.ambassador_id or not s.store_id:
             continue
         ba_city[s.ambassador_id] = s.store.city or '—'
         ba_stores[s.ambassador_id].add(s.store_id)
         if s.checked_in_at and not s.checked_out_at:
-            active_ba_ids.add(s.ambassador_id)
+            _mark_active(
+                s.ambassador_id,
+                name=(s.ambassador.name if s.ambassador else '') or '',
+                store=s.store.name or '—',
+                city=s.store.city or '—',
+                store_id=s.store_id,
+            )
 
     # Month-level deployments: live check-in may sit on the 1st-of-month row.
     for s in (
@@ -685,9 +718,13 @@ def _attendance_block(
             continue
         if store_name and (s.store.name or '').lower() != store_name.lower():
             continue
-        ba_city[s.ambassador_id] = s.store.city or '—'
-        ba_stores[s.ambassador_id].add(s.store_id)
-        active_ba_ids.add(s.ambassador_id)
+        _mark_active(
+            s.ambassador_id,
+            name=(s.ambassador.name if s.ambassador else '') or '',
+            store=s.store.name or '—',
+            city=s.store.city or '—',
+            store_id=s.store_id,
+        )
 
     from .models import BaAttendanceDay
 
@@ -695,7 +732,7 @@ def _attendance_block(
         date=today,
         checked_in_at__isnull=False,
         checked_out_at__isnull=True,
-    ).select_related('store', 'ambassador'):
+    ).select_related('store', 'ambassador', 'ambassador__store'):
         if not row.ambassador_id:
             continue
         sid = row.store_id or (row.ambassador.store_id if row.ambassador_id else None)
@@ -703,6 +740,9 @@ def _attendance_block(
             continue
         city = (row.store.city if row.store_id else None) or (
             row.ambassador.store.city if row.ambassador and row.ambassador.store_id else None
+        )
+        store_label = (row.store.name if row.store_id else None) or (
+            row.ambassador.store.name if row.ambassador and row.ambassador.store_id else None
         )
         if town and (city or '').lower() != town.lower():
             continue
@@ -712,7 +752,13 @@ def _attendance_block(
             ba_city[row.ambassador_id] = city
         if sid:
             ba_stores[row.ambassador_id].add(sid)
-        active_ba_ids.add(row.ambassador_id)
+        _mark_active(
+            row.ambassador_id,
+            name=(row.ambassador.name if row.ambassador else '') or '',
+            store=store_label or '—',
+            city=city or '—',
+            store_id=sid,
+        )
 
     deployed = Ambassador.objects.filter(
         status__in=(Ambassador.Status.DEPLOYED, Ambassador.Status.CERTIFIED),
@@ -772,6 +818,23 @@ def _attendance_block(
     active_n = sum(c['active'] for c in city_rows)
     break_n = sum(c['break'] for c in city_rows)
     offline_n = sum(c['offline'] for c in city_rows)
+
+    missing_names = [ba_id for ba_id in active_ba_ids if not ba_names.get(ba_id)]
+    if missing_names:
+        for ba in Ambassador.objects.filter(id__in=missing_names).only('id', 'name'):
+            ba_names[ba.id] = ba.name or ''
+
+    active_bas = [
+        {
+            'id': ba_id,
+            'name': ba_names.get(ba_id) or f'BA #{ba_id}',
+            'store': ba_store_label.get(ba_id) or '—',
+            'city': ba_city.get(ba_id) or '—',
+        }
+        for ba_id in active_ba_ids
+    ]
+    active_bas.sort(key=lambda r: ((r['city'] or '').lower(), (r['name'] or '').lower()))
+
     ba_status = {
         'days': 1,  # live snapshot (not averaged over the filter range)
         'total': active_n + break_n + offline_n,
@@ -779,6 +842,7 @@ def _attendance_block(
         'break': break_n,
         'offline': offline_n,
         'cities': city_rows,
+        'activeBas': active_bas,
         'asOf': 'live',
     }
 

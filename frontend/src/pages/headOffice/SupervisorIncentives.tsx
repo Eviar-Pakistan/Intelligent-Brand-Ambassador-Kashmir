@@ -96,7 +96,7 @@ export function SupervisorIncentives() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {r.storeCount} <span className="text-xs text-slate-400">· {r.baCount} BAs</span>
+                      {r.storeCount} <span className="text-xs text-slate-400">· {r.baCount} BA's</span>
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-800">{formatPkr(r.salary)}</td>
                     <td className="px-4 py-3">{formatPkr(r.fuelDa)}</td>
@@ -159,7 +159,7 @@ export function SupervisorIncentives() {
               <div className="text-xs text-emerald-200">Monthly package</div>
               <div className="text-2xl font-black">{formatPkr(selected.totalPkr)}</div>
               <div className="text-xs text-slate-300">
-                {selected.storeCount} stores · {selected.baCount} BAs
+                {selected.storeCount} stores · {selected.baCount} BA's
               </div>
             </div>
             <Row label="Sup salary" value={selected.salary} />

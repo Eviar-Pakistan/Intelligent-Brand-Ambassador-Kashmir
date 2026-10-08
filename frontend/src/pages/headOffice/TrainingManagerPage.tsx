@@ -110,7 +110,7 @@ export function TrainingManagerPage() {
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What should BAs learn from this video?"
+              placeholder="What should BA's learn from this video?"
             />
           </label>
           <label className="block text-sm">

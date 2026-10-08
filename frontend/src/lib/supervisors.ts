@@ -662,7 +662,7 @@ export async function downloadSupervisorBaReportsExcel(
       ['Date', date],
       ['Supervisor', supervisorName],
     ])
-    XLSX.utils.book_append_sheet(wb, empty, 'No BAs')
+    XLSX.utils.book_append_sheet(wb, empty, "No BA's")
   } else {
     for (const report of reports) {
       const displayName = report.baName || report.baCode || 'This BA'
