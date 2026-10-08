@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
-import { RotateCcw, Search } from 'lucide-react'
-import { Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
+import { Download, RotateCcw, Search } from 'lucide-react'
+import { Button, Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
 import {
   MONTH_ORDER,
   baPerformanceBrands,
@@ -16,6 +16,7 @@ import {
   type SalesPeriodMode,
 } from '../../data/baPerformance'
 import {
+  downloadBaPerformanceExcel,
   fetchBaPerformanceDashboard,
   type BaPerformanceDashboard,
 } from '../../lib/baPerformanceApi'
@@ -305,6 +306,7 @@ export function BaPerformanceDashboardPage() {
   const [dash, setDash] = useState<BaPerformanceDashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
   const [hoursCity, setHoursCity] = useState<string | null>(null)
   const [targetMonth, setTargetMonth] = useState<string>(() => {
     const d = new Date()
@@ -585,6 +587,25 @@ export function BaPerformanceDashboardPage() {
     return label
   }, [datePreset, customFrom, customTo, range])
 
+  async function handleDownload() {
+    if (!dash || downloading) return
+    setDownloading(true)
+    try {
+      await downloadBaPerformanceExcel(dash, {
+        dateLabel: dateRangeLabel,
+        town,
+        store,
+        category,
+        sku,
+        targetMonth,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const baStatusHint = !cityStatus
     ? loading
       ? 'Loading…'
@@ -853,7 +874,7 @@ export function BaPerformanceDashboardPage() {
             </div>
             <div className="text-xs text-slate-400">{dateRangeLabel}</div>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {DATE_PRESETS.map((p) => (
               <button
                 key={p.id}
@@ -869,6 +890,16 @@ export function BaPerformanceDashboardPage() {
                 {p.label}
               </button>
             ))}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!dash || loading || downloading}
+              onClick={() => void handleDownload()}
+              className="ml-1"
+            >
+              <Download size={16} className="mr-1.5" />
+              {downloading ? 'Downloading…' : 'Download'}
+            </Button>
           </div>
         </div>
         {datePreset === 'custom' && (

@@ -120,3 +120,160 @@ export async function fetchBaPerformanceDashboard(
     : '/api/intelligence/ba-performance/'
   return apiRequest<BaPerformanceDashboard>(path)
 }
+
+export type BaPerformanceDownloadMeta = {
+  dateLabel: string
+  town?: string | null
+  store?: string | null
+  category?: string | null
+  sku?: string | null
+  targetMonth?: string | null
+}
+
+/** Excel export of the currently filtered dashboard payload (kg sales). */
+export async function downloadBaPerformanceExcel(
+  dash: BaPerformanceDashboard,
+  meta: BaPerformanceDownloadMeta,
+) {
+  const XLSX = await import('xlsx')
+  const wb = XLSX.utils.book_new()
+  const from = dash.range?.from || 'start'
+  const to = dash.range?.to || 'end'
+
+  const summary = [
+    { Field: 'Date range', Value: meta.dateLabel || `${from} → ${to}` },
+    { Field: 'From', Value: from },
+    { Field: 'To', Value: to },
+    { Field: 'Town', Value: meta.town || 'All' },
+    { Field: 'Store', Value: meta.store || 'All' },
+    { Field: 'Category', Value: meta.category || 'All' },
+    { Field: 'SKU', Value: meta.sku || 'All' },
+    { Field: 'Target month', Value: meta.targetMonth || dash.targetVsAchievement?.month || '—' },
+    { Field: 'Total BAs', Value: dash.baStatus?.total ?? 0 },
+    { Field: 'Active BAs', Value: dash.baStatus?.active ?? 0 },
+    { Field: 'Offline BAs', Value: dash.baStatus?.offline ?? 0 },
+    { Field: 'On Break BAs', Value: dash.baStatus?.break ?? 0 },
+    { Field: 'Customers Intercepted', Value: dash.kpis.customersIntercepted },
+    { Field: 'Productive Calls', Value: dash.kpis.productiveCalls },
+    { Field: 'Productive %', Value: dash.kpis.productivePct },
+    { Field: 'Target (Ltr/Kg)', Value: dash.kpis.targetLtrKg },
+    { Field: 'Sales (Ltr/Kg)', Value: dash.kpis.salesLtrKg },
+    { Field: 'Achievement %', Value: dash.kpis.achievementPct },
+  ]
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Summary')
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.baStatus?.cities ?? []).map((c) => ({
+        City: c.city,
+        Stores: c.stores,
+        Active: c.active,
+        'On Break': c.break,
+        Offline: c.offline,
+        Total: c.total,
+      })),
+    ),
+    'BA Status by City',
+  )
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.attendance ?? []).map((r) => ({
+        BA: r.ba,
+        Store: r.store,
+        City: r.city,
+        Days: r.days,
+        'Check In': r.checkIn,
+        'Check Out': r.checkOut,
+        Hours: r.hours,
+        Status: r.status ?? '',
+      })),
+    ),
+    'Attendance',
+  )
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.categorySales ?? []).map((c) => ({
+        Category: c.name,
+        'Sales (Kg)': c.value,
+      })),
+    ),
+    'Category Sales',
+  )
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.topStores ?? []).map((s) => ({
+        Store: s.store,
+        'Sales (Kg)': s.sales,
+      })),
+    ),
+    'Top Stores',
+  )
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.topSkus ?? []).map((s) => ({
+        SKU: s.sku,
+        'Sales (Kg)': s.sales,
+      })),
+    ),
+    'Top SKUs',
+  )
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.periodSales ?? []).map((p) => ({
+        Period: p.label,
+        'Sales (Kg)': p.sales,
+        'Target (Kg)': p.target,
+      })),
+    ),
+    'Period Sales',
+  )
+
+  if (dash.targetVsAchievement?.rows?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        dash.targetVsAchievement.rows.map((r) => ({
+          Month: dash.targetVsAchievement?.monthLabel || dash.targetVsAchievement?.month || '',
+          BA: r.ambassador,
+          Store: r.store,
+          City: r.city,
+          'Target (Kg)': r.target,
+          'Sales (Kg)': r.sales,
+          'Achievement %': r.achievement ?? '',
+        })),
+      ),
+      'Target vs Achievement',
+    )
+  }
+
+  if (dash.workingHours?.points?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        dash.workingHours.points.map((p) => ({
+          Label: p.label,
+          'Avg Hours': p.hours,
+          Visits: p.count,
+        })),
+      ),
+      'Working Hours',
+    )
+  }
+
+  const name =
+    from === to
+      ? `ba_performance_${from}.xlsx`
+      : `ba_performance_${from}_to_${to}.xlsx`
+  XLSX.writeFile(wb, name)
+}
