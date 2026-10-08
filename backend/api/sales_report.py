@@ -9,6 +9,8 @@ OIL_PACK_KEYS = (
     'kpgoTin5',
     'kpgoPouch1x5',
     'kpgoSup1x5',
+    'kpgoPouch1',
+    'kpgoSup1',
     'kpgoBkt16',
 )
 
@@ -18,12 +20,14 @@ GHEE_PACK_KEYS = (
     'kbpBkt5',
     'kbpTin5',
     'kbpPouch1x5',
+    'kbpPouch1',
     'kbpBkt16',
 )
 
 WAADI_PACK_KEYS = (
     'wbpBkt5',
     'wbpPouch1x5',
+    'wbpPouch1',
     'wbpBkt25',
     'wbpBkt16',
 )
@@ -43,6 +47,8 @@ PACK_KG_PER_UNIT: dict[str, float] = {
     'kpgoTin5': 5.0,
     'kpgoPouch1x5': 5.0,  # 1×5 pack
     'kpgoSup1x5': 5.0,
+    'kpgoPouch1': 1.0,
+    'kpgoSup1': 1.0,
     'kpgoBkt16': 16.0,
     # Kashmir Banaspati
     'kbpBkt10': 10.0,
@@ -50,10 +56,12 @@ PACK_KG_PER_UNIT: dict[str, float] = {
     'kbpBkt5': 5.0,
     'kbpTin5': 5.0,
     'kbpPouch1x5': 5.0,
+    'kbpPouch1': 1.0,
     'kbpBkt16': 16.0,
     # Waadi Banaspati
     'wbpBkt5': 5.0,
     'wbpPouch1x5': 5.0,
+    'wbpPouch1': 1.0,
     'wbpBkt25': 2.5,
     'wbpBkt16': 16.0,
 }
@@ -65,15 +73,19 @@ PACK_KEY_LABELS: dict[str, str] = {
     'kpgoTin5': 'KPGO 5 LTR TIN Cons. RED',
     'kpgoPouch1x5': 'KPGO POUCH (1LTR x 5) Cons. RED',
     'kpgoSup1x5': 'KPGO Stand Up Pouch (1LTR x 5)',
+    'kpgoPouch1': 'KPGO POUCH 1 LTR',
+    'kpgoSup1': 'KPGO Stand Up Pouch 1 LTR',
     'kpgoBkt16': 'KPGO 16 LTR BKT',
     'kbpBkt10': 'KBP GOLD 10 KG BKT',
     'kbpBkt25': 'KBP GOLD 2.5 KG BKT',
     'kbpBkt5': 'KBP GOLD 5 KG BKT',
     'kbpTin5': 'KBP GOLD 5 KG TIN',
     'kbpPouch1x5': 'KBP GOLD POUCH (1KG X 5)',
+    'kbpPouch1': 'KBP POUCH 1 KG',
     'kbpBkt16': 'KBP 16 KG BKT',
     'wbpBkt5': 'WBP 5 KG BKT',
     'wbpPouch1x5': 'WBP POUCH (1KG X 5)',
+    'wbpPouch1': 'WBP POUCH 1 KG',
     'wbpBkt25': 'WBP 2.5 KG BKT',
     'wbpBkt16': 'WBP 16 KG BKT',
 }
@@ -83,7 +95,6 @@ PACK_LABEL_TO_KEY: dict[str, str] = {label: key for key, label in PACK_KEY_LABEL
 
 def all_pack_keys() -> tuple[str, ...]:
     return OIL_PACK_KEYS + GHEE_PACK_KEYS + WAADI_PACK_KEYS
-
 
 
 def _f(val) -> float:

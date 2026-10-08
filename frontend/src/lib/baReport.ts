@@ -18,6 +18,8 @@ export const OIL_PACK_KEYS = [
   'kpgoTin5',
   'kpgoPouch1x5',
   'kpgoSup1x5',
+  'kpgoPouch1',
+  'kpgoSup1',
   'kpgoBkt16',
 ] as const
 
@@ -27,12 +29,14 @@ export const GHEE_PACK_KEYS = [
   'kbpBkt5',
   'kbpTin5',
   'kbpPouch1x5',
+  'kbpPouch1',
   'kbpBkt16',
 ] as const
 
 export const WAADI_PACK_KEYS = [
   'wbpBkt5',
   'wbpPouch1x5',
+  'wbpPouch1',
   'wbpBkt25',
   'wbpBkt16',
 ] as const
@@ -45,15 +49,19 @@ export const PACK_KG_PER_UNIT: Record<string, number> = {
   kpgoTin5: 5,
   kpgoPouch1x5: 5,
   kpgoSup1x5: 5,
+  kpgoPouch1: 1,
+  kpgoSup1: 1,
   kpgoBkt16: 16,
   kbpBkt10: 10,
   kbpBkt25: 2.5,
   kbpBkt5: 5,
   kbpTin5: 5,
   kbpPouch1x5: 5,
+  kbpPouch1: 1,
   kbpBkt16: 16,
   wbpBkt5: 5,
   wbpPouch1x5: 5,
+  wbpPouch1: 1,
   wbpBkt25: 2.5,
   wbpBkt16: 16,
 }
@@ -84,6 +92,8 @@ export const oilSalesFields: FieldDef[] = [
   { key: 'kpgoTin5', label: `KPGO 5 LTR TIN Cons. RED${UNITS}` },
   { key: 'kpgoPouch1x5', label: `KPGO POUCH (1LTR x 5) Cons. RED${UNITS}` },
   { key: 'kpgoSup1x5', label: `KPGO Stand Up Pouch (1LTR x 5)${UNITS}` },
+  { key: 'kpgoPouch1', label: `KPGO POUCH 1 LTR${UNITS}` },
+  { key: 'kpgoSup1', label: `KPGO Stand Up Pouch 1 LTR${UNITS}` },
   { key: 'kpgoBkt16', label: `KPGO 16 LTR BKT${UNITS}` },
 ]
 
@@ -93,12 +103,14 @@ export const gheeSalesFields: FieldDef[] = [
   { key: 'kbpBkt5', label: `KBP GOLD 5 KG BKT${UNITS}` },
   { key: 'kbpTin5', label: `KBP GOLD 5 KG TIN${UNITS}` },
   { key: 'kbpPouch1x5', label: `KBP GOLD POUCH (1KG X 5)${UNITS}` },
+  { key: 'kbpPouch1', label: `KBP POUCH 1 KG${UNITS}` },
   { key: 'kbpBkt16', label: `KBP 16 KG BKT${UNITS}` },
 ]
 
 export const waadiSalesFields: FieldDef[] = [
   { key: 'wbpBkt5', label: `WBP 5 KG BKT${UNITS}` },
   { key: 'wbpPouch1x5', label: `WBP POUCH (1KG X 5)${UNITS}` },
+  { key: 'wbpPouch1', label: `WBP POUCH 1 KG${UNITS}` },
   { key: 'wbpBkt25', label: `WBP 2.5 KG BKT${UNITS}` },
   { key: 'wbpBkt16', label: `WBP 16 KG BKT${UNITS}` },
 ]
@@ -110,6 +122,8 @@ export const stockOilFields: FieldDef[] = [
   { key: 'stockKpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
   { key: 'stockKpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
   { key: 'stockKpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
+  { key: 'stockKpgoPouch1', label: 'KPGO POUCH 1 LTR' },
+  { key: 'stockKpgoSup1', label: 'KPGO Stand Up Pouch 1 LTR' },
   { key: 'stockKpgoBkt16', label: 'KPGO 16 LTR BKT' },
 ]
 
@@ -119,12 +133,14 @@ export const stockGheeFields: FieldDef[] = [
   { key: 'stockKbpBkt5', label: 'KBP GOLD 5 KG BKT' },
   { key: 'stockKbpTin5', label: 'KBP GOLD 5 KG TIN' },
   { key: 'stockKbpPouch1x5', label: 'KBP GOLD POUCH (1KG X 5)' },
+  { key: 'stockKbpPouch1', label: 'KBP POUCH 1 KG' },
   { key: 'stockKbpBkt16', label: 'KBP 16 KG BKT' },
 ]
 
 export const stockWaadiFields: FieldDef[] = [
   { key: 'stockWbpBkt5', label: 'WBP 5 KG BKT' },
   { key: 'stockWbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
+  { key: 'stockWbpPouch1', label: 'WBP POUCH 1 KG' },
   { key: 'stockWbpBkt25', label: 'WBP 2.5 KG BKT' },
   { key: 'stockWbpBkt16', label: 'WBP 16 KG BKT' },
 ]
