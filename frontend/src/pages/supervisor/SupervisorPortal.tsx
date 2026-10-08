@@ -1,7 +1,10 @@
+import { useCallback } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { DesktopShell } from '../../components/AppShell'
 import { Card, PageHeader } from '../../components/ui'
+import { fetchSupervisorStockMatrix } from '../../lib/stocksApi'
 import { signOut, useSupervisorSession } from '../../lib/supervisors'
+import { StockMatrixPanel } from '../headOffice/StocksPage'
 import {
   SupervisorBaTable,
   SupervisorDownloadReport,
@@ -88,5 +91,41 @@ export function SupervisorBasPage() {
       {header}
       {supervisor ? <SupervisorBaTable supervisor={supervisor} mode={overviewMode} /> : null}
     </div>
+  )
+}
+
+export function SupervisorStocksPage() {
+  const { supervisor, header, overviewMode } = usePortal(
+    'Stocks',
+    'SKU status across your assigned stores',
+  )
+  const fetchFn = useCallback(
+    () =>
+      fetchSupervisorStockMatrix({
+        mode: overviewMode,
+        supervisorId: supervisor?.id,
+      }),
+    [overviewMode, supervisor?.id],
+  )
+
+  if (!supervisor) {
+    return (
+      <div className="space-y-5">
+        {header}
+        <Card>
+          <p className="text-sm text-slate-500">Sign in to see stock for your stores.</p>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <StockMatrixPanel
+      fetchFn={fetchFn}
+      header={header}
+      title="Stocks"
+      description="Latest stock status for stores under your supervision"
+      emptyStoresMessage="No stores assigned to this supervisor yet."
+    />
   )
 }

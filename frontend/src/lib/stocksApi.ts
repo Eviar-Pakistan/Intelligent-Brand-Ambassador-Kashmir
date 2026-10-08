@@ -38,3 +38,18 @@ export async function fetchStockMatrix(): Promise<StockMatrixPayload | null> {
   if (!isApiAuthenticated()) return null
   return apiRequest<StockMatrixPayload>('/api/stock-matrix/')
 }
+
+/** Supervisor portal / HO preview — only stores assigned to that supervisor. */
+export async function fetchSupervisorStockMatrix(opts: {
+  mode: 'ho' | 'me'
+  supervisorId?: string | number
+}): Promise<StockMatrixPayload | null> {
+  if (!isApiAuthenticated()) return null
+  if (opts.mode === 'me') {
+    return apiRequest<StockMatrixPayload>('/api/supervisor/me/stock-matrix/')
+  }
+  if (opts.supervisorId == null || opts.supervisorId === '') return null
+  return apiRequest<StockMatrixPayload>(
+    `/api/supervisors/${opts.supervisorId}/stock-matrix/`,
+  )
+}

@@ -80,6 +80,7 @@ const supervisorNav: NavItem[] = [
   { to: '/supervisor', label: 'Overview', icon: LayoutDashboard, end: true, section: 'My stores' },
   { to: '/supervisor/stores', label: 'Store Characteristics', icon: Store, section: 'My stores' },
   { to: '/supervisor/bas', label: 'BA Performance', icon: Users, section: 'My stores' },
+  { to: '/supervisor/stocks', label: 'Stocks', icon: Package, section: 'My stores' },
 ]
 
 type ShellKind = 'headOffice' | 'admin' | 'storeManager' | 'supervisor'
@@ -128,6 +129,7 @@ const titles: Record<string, string> = {
   '/supervisor': 'Supervisor Overview',
   '/supervisor/stores': 'Store Characteristics',
   '/supervisor/bas': 'BA Performance',
+  '/supervisor/stocks': 'Stocks',
   '/ho/deployment': 'Intelligent Deployment',
   '/ho/complaints': 'Insights / Complaint Center',
   '/ho/consumers': 'Consumer Intelligence',

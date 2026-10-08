@@ -1208,15 +1208,19 @@ _STOCK_SKU_CATALOG: list[tuple[str, str]] = [
     ('stockKpgoTin5', 'KPGO 5 LTR TIN Cons. RED'),
     ('stockKpgoPouch1x5', 'KPGO POUCH (1LTR x 5) Cons. RED'),
     ('stockKpgoSup1x5', 'KPGO Stand Up Pouch (1LTR x 5)'),
+    ('stockKpgoPouch1', 'KPGO POUCH 1 LTR'),
+    ('stockKpgoSup1', 'KPGO Stand Up Pouch 1 LTR'),
     ('stockKpgoBkt16', 'KPGO 16 LTR BKT'),
     ('stockKbpBkt10', 'KBP GOLD 10 KG BKT'),
     ('stockKbpBkt25', 'KBP GOLD 2.5 KG BKT'),
     ('stockKbpBkt5', 'KBP GOLD 5 KG BKT'),
     ('stockKbpTin5', 'KBP GOLD 5 KG TIN'),
     ('stockKbpPouch1x5', 'KBP GOLD POUCH (1KG X 5)'),
+    ('stockKbpPouch1', 'KBP POUCH 1 KG'),
     ('stockKbpBkt16', 'KBP 16 KG BKT'),
     ('stockWbpBkt5', 'WBP 5 KG BKT'),
     ('stockWbpPouch1x5', 'WBP POUCH (1KG X 5)'),
+    ('stockWbpPouch1', 'WBP POUCH 1 KG'),
     ('stockWbpBkt25', 'WBP 2.5 KG BKT'),
     ('stockWbpBkt16', 'WBP 16 KG BKT'),
 ]
@@ -1248,23 +1252,22 @@ def _report_stock_sort_key(report: BaDailyReport):
     )
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def stock_matrix(request):
+def build_stock_matrix_payload(*, store_ids: list[int] | None = None) -> dict:
     """
-    GET /api/stock-matrix/
-    SKU × store grid from the latest submitted stock report per store
-    (last BA who checked out and submitted stock for that store).
+    SKU × store grid from the latest submitted stock report per store.
+    If store_ids is set, only those store columns are included.
     """
-    reports = list(
+    reports_qs = (
         BaDailyReport.objects.filter(store_id__isnull=False)
         .exclude(stock_json={})
         .select_related('store', 'shift', 'ambassador')
         .order_by('-updated_at', '-id')
     )
+    if store_ids is not None:
+        reports_qs = reports_qs.filter(store_id__in=store_ids)
 
     latest_by_store: dict[int, BaDailyReport] = {}
-    for report in reports:
+    for report in reports_qs:
         stock = report.stock_json if isinstance(report.stock_json, dict) else {}
         if not any(str(v).strip() for v in stock.values()):
             continue
@@ -1290,8 +1293,11 @@ def stock_matrix(request):
     for key in sorted(seen_keys):
         sku_keys.append(key)
 
-    # All stores as columns; cells filled from latest stock report per store.
-    all_stores = list(Store.objects.all().order_by('city', 'name', 'id'))
+    stores_qs = Store.objects.all().order_by('city', 'name', 'id')
+    if store_ids is not None:
+        stores_qs = stores_qs.filter(id__in=store_ids)
+    all_stores = list(stores_qs)
+
     store_cols = []
     cells: dict[str, dict[str, dict]] = {k: {} for k in sku_keys}
 
@@ -1343,15 +1349,24 @@ def stock_matrix(request):
 
     skus = [{'key': k, 'label': label_by_key.get(k, k)} for k in sku_keys]
 
-    return Response(
-        {
-            'skus': skus,
-            'stores': store_cols,
-            'cells': cells,
-            'legend': [
-                {'status': 'in_stock', 'label': 'In Stock'},
-                {'status': 'near_out', 'label': 'Near Out of Stock'},
-                {'status': 'out_of_stock', 'label': 'Out of Stock'},
-            ],
-        }
-    )
+    return {
+        'skus': skus,
+        'stores': store_cols,
+        'cells': cells,
+        'legend': [
+            {'status': 'in_stock', 'label': 'In Stock'},
+            {'status': 'near_out', 'label': 'Near Out of Stock'},
+            {'status': 'out_of_stock', 'label': 'Out of Stock'},
+        ],
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def stock_matrix(request):
+    """
+    GET /api/stock-matrix/
+    SKU × store grid from the latest submitted stock report per store
+    (last BA who checked out and submitted stock for that store).
+    """
+    return Response(build_stock_matrix_payload())

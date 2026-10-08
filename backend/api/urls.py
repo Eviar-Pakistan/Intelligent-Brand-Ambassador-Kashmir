@@ -34,6 +34,7 @@ from .supervisor_views import (
     supervisor_me_overview,
     supervisor_me_report_dates,
     supervisor_me_reports,
+    supervisor_me_stock_matrix,
 )
 from .incentive_views import (
     ba_my_incentive,
@@ -93,6 +94,7 @@ urlpatterns = [
     path('supervisor/me/overview/', supervisor_me_overview, name='supervisor-me-overview'),
     path('supervisor/me/report-dates/', supervisor_me_report_dates, name='supervisor-me-report-dates'),
     path('supervisor/me/reports/', supervisor_me_reports, name='supervisor-me-reports'),
+    path('supervisor/me/stock-matrix/', supervisor_me_stock_matrix, name='supervisor-me-stock-matrix'),
     path('shopper/store/<slug:slug>/', shopper_store_lookup, name='shopper-store-lookup'),
     path(
         'shopper/store/<slug:slug>/rewards/',

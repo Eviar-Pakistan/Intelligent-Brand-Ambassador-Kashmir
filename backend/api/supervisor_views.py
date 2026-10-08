@@ -16,6 +16,7 @@ from core.models import UserType
 
 from .models import Store, Supervisor
 from .serializers import SupervisorSerializer
+from .ba_attendance_views import build_stock_matrix_payload
 from .supervisor_ops import (
     build_supervisor_overview,
     supervisor_report_dates,
@@ -256,6 +257,13 @@ class SupervisorViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=['get'], url_path='stock-matrix')
+    def stock_matrix(self, request, pk=None):
+        """GET /api/supervisors/:id/stock-matrix/ — HO preview of supervisor store stocks."""
+        supervisor = self.get_object()
+        store_ids = list(supervisor.stores.values_list('id', flat=True))
+        return Response(build_stock_matrix_payload(store_ids=store_ids))
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -328,3 +336,14 @@ def supervisor_me_reports(request):
             'reports': supervisor_reports_for_date(profile, report_date),
         }
     )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supervisor_me_stock_matrix(request):
+    """GET /api/supervisor/me/stock-matrix/ — SKU × assigned-store stock grid."""
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
+    store_ids = list(profile.stores.values_list('id', flat=True))
+    return Response(build_stock_matrix_payload(store_ids=store_ids))

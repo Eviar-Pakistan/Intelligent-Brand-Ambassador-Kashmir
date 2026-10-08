@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, Package, X } from 'lucide-react'
 import { Button, Card, PageHeader, cn } from '../../components/ui'
 import {
@@ -40,7 +40,19 @@ function formatWhen(iso: string | null | undefined) {
   })
 }
 
-export function StocksPage() {
+export function StockMatrixPanel({
+  fetchFn,
+  title = 'Stocks',
+  description = 'Latest stock status per store from the last BA who checked out and submitted a report',
+  emptyStoresMessage = 'No stores found.',
+  header,
+}: {
+  fetchFn: () => Promise<StockMatrixPayload | null>
+  title?: string
+  description?: string
+  emptyStoresMessage?: string
+  header?: ReactNode
+}) {
   const [data, setData] = useState<StockMatrixPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +63,7 @@ export function StocksPage() {
       setError(null)
     }
     try {
-      const next = await fetchStockMatrix()
+      const next = await fetchFn()
       setData(next)
       if (!opts?.silent) setError(null)
     } catch (err) {
@@ -66,7 +78,8 @@ export function StocksPage() {
 
   useEffect(() => {
     void load()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when fetchFn identity changes from parent
+  }, [fetchFn])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -80,7 +93,8 @@ export function StocksPage() {
       window.clearInterval(id)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchFn])
 
   const skus = data?.skus ?? []
   const stores = data?.stores ?? []
@@ -89,17 +103,20 @@ export function StocksPage() {
     skus.some((sku) => Boolean(cells[sku.key]?.[String(store.storeId)]?.status)),
   )
 
+  const refreshBtn = (
+    <Button variant="secondary" size="sm" onClick={() => void load()}>
+      Refresh
+    </Button>
+  )
+
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Stocks"
-        description="Latest stock status per store from the last BA who checked out and submitted a report"
-        actions={
-          <Button variant="secondary" size="sm" onClick={() => void load()}>
-            Refresh
-          </Button>
-        }
-      />
+      {header}
+      {header ? (
+        <div className="flex justify-end">{refreshBtn}</div>
+      ) : (
+        <PageHeader title={title} description={description} actions={refreshBtn} />
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         {(
@@ -132,7 +149,7 @@ export function StocksPage() {
       ) : !stores.length ? (
         <Card className="flex flex-col items-center gap-2 px-4 py-12 text-center text-sm text-slate-500">
           <Package className="h-8 w-8 text-slate-300" />
-          No stores found.
+          {emptyStoresMessage}
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
@@ -184,7 +201,10 @@ export function StocksPage() {
                       const cell = cells[sku.key]?.[String(store.storeId)]
                       if (!cell?.status) {
                         return (
-                          <td key={store.storeId} className="border-b border-slate-100 px-2 py-2 text-center text-slate-300">
+                          <td
+                            key={store.storeId}
+                            className="border-b border-slate-100 px-2 py-2 text-center text-slate-300"
+                          >
                             —
                           </td>
                         )
@@ -211,4 +231,8 @@ export function StocksPage() {
       )}
     </div>
   )
+}
+
+export function StocksPage() {
+  return <StockMatrixPanel fetchFn={fetchStockMatrix} />
 }
