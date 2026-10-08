@@ -44,8 +44,8 @@ export const WAADI_PACK_KEYS = [
 /** kg (or LTR as kg) per form unit — BA still enters units; category totals convert here. */
 export const PACK_KG_PER_UNIT: Record<string, number> = {
   kpgoCan10: 10,
-  kpgoBtl3: 3,
-  kpgoBtl45: 4.5,
+  kpgoBtl3: 18, // 3 LTR × 6 per carton
+  kpgoBtl45: 18, // 4.5 LTR × 4 per carton
   kpgoTin5: 5,
   kpgoPouch1x5: 5,
   kpgoSup1x5: 5,

@@ -42,8 +42,8 @@ CATEGORY_PACK_KEYS = {
 PACK_KG_PER_UNIT: dict[str, float] = {
     # Kashmir Cooking Oil
     'kpgoCan10': 10.0,
-    'kpgoBtl3': 3.0,
-    'kpgoBtl45': 4.5,
+    'kpgoBtl3': 18.0,  # 3 LTR × 6 per carton
+    'kpgoBtl45': 18.0,  # 4.5 LTR × 4 per carton
     'kpgoTin5': 5.0,
     'kpgoPouch1x5': 5.0,  # 1×5 pack
     'kpgoSup1x5': 5.0,
