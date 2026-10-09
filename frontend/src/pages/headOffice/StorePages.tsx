@@ -41,7 +41,6 @@ import {
 import { isApiAuthenticated } from '../../lib/api'
 import {
   fetchMisSwapCandidates,
-  misPatchAmbassador,
   misPatchStore,
   misSwapBas,
   type MisSwapCandidate,
@@ -276,7 +275,12 @@ function MisStoreSettings({ storeId }: { storeId: number }) {
           <span className="mb-1 block font-medium text-slate-700">Footfall level</span>
           <select
             value={form.footfall}
-            onChange={(e) => setForm((f) => ({ ...f, footfall: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                footfall: e.target.value as 'High' | 'Medium' | 'Low',
+              }))
+            }
             className={fieldClass}
           >
             <option>High</option>
