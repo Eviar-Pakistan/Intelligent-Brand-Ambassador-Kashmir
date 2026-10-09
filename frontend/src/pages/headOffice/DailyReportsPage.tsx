@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileClock } from 'lucide-react'
+import { Download, FileClock, FileSpreadsheet } from 'lucide-react'
 import { Button, Card, Modal, PageHeader, StatusBadge } from '../../components/ui'
 import {
+  downloadDailyReportsExcel,
   fetchDailyReports,
   formatReportWhen,
+  latestReportDate,
+  localDateIso,
+  yesterdayReportDate,
   type DailyReportBaCard,
   type DailyReportRow,
 } from '../../lib/earlyCheckoutApi'
@@ -483,6 +487,8 @@ function MisEditReportModal({
   )
 }
 
+type DownloadMode = 'today' | 'yesterday' | 'custom'
+
 export function DailyReportsPage({ misEditable = false }: { misEditable?: boolean }) {
   const [cards, setCards] = useState<DailyReportBaCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -491,6 +497,13 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
   const [editing, setEditing] = useState<FlatReport | null>(null)
   const [search, setSearch] = useState('')
   const didAutoExpand = useRef(false)
+
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [downloadMode, setDownloadMode] = useState<DownloadMode>('today')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   async function load(opts?: { silent?: boolean }) {
     if (!opts?.silent) {
@@ -559,6 +572,47 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
     })
   }
 
+  const latestDate = useMemo(() => latestReportDate(cards), [cards])
+  const yesterdayDate = useMemo(() => yesterdayReportDate(cards), [cards])
+
+  async function runDownload() {
+    setDownloadError(null)
+    let from = ''
+    let to = ''
+    if (downloadMode === 'today') {
+      if (!latestDate) {
+        setDownloadError('No reports available to download yet.')
+        return
+      }
+      from = latestDate
+      to = latestDate
+    } else if (downloadMode === 'yesterday') {
+      from = yesterdayDate
+      to = yesterdayDate
+    } else {
+      if (!customFrom || !customTo) {
+        setDownloadError('Pick both From and To dates.')
+        return
+      }
+      if (customFrom > customTo) {
+        setDownloadError('From date must be on or before To date.')
+        return
+      }
+      from = customFrom
+      to = customTo
+    }
+
+    setDownloading(true)
+    try {
+      await downloadDailyReportsExcel(cards, from, to)
+      setDownloadOpen(false)
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Download failed.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -569,9 +623,26 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
             : 'Stock, daily sales, and competitor data from BA check-out (early or on time)'
         }
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void load()}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setDownloadError(null)
+                setDownloadMode('today')
+                const today = localDateIso()
+                setCustomFrom(latestDate || today)
+                setCustomTo(latestDate || today)
+                setDownloadOpen(true)
+              }}
+              disabled={loading}
+            >
+              <Download size={15} /> Download Excel
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void load()}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -672,6 +743,107 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
         onClose={() => setEditing(null)}
         onSaved={() => void load({ silent: true })}
       />
+
+      <Modal
+        open={downloadOpen}
+        onClose={() => !downloading && setDownloadOpen(false)}
+        title="Download daily reports"
+      >
+        <div className="space-y-4 text-sm">
+          <p className="text-slate-600">
+            One Excel sheet per BA. Inside each sheet, reports are listed day by day.
+          </p>
+
+          <div className="space-y-2">
+            <span className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Date filter
+            </span>
+            <div className="grid gap-2">
+              {(
+                [
+                  [
+                    'today',
+                    'Today (latest day with reports)',
+                    latestDate
+                      ? `Uses ${latestDate} — latest date that has checkout/report data.`
+                      : 'No report dates found yet.',
+                  ],
+                  [
+                    'yesterday',
+                    'Yesterday',
+                    yesterdayDate,
+                  ],
+                  ['custom', 'Custom date range', 'Pick From and To dates inclusive.'],
+                ] as const
+              ).map(([mode, label, hint]) => (
+                <label
+                  key={mode}
+                  className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-2.5 ${
+                    downloadMode === mode
+                      ? 'border-brand-500 bg-brand-50/60'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="daily-report-download-mode"
+                    className="mt-1"
+                    checked={downloadMode === mode}
+                    onChange={() => setDownloadMode(mode)}
+                  />
+                  <span>
+                    <span className="block font-medium text-slate-900">{label}</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {downloadMode === 'custom' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  From
+                </span>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  To
+                </span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500"
+                />
+              </label>
+            </div>
+          )}
+
+          {downloadError ? <p className="text-sm text-rose-600">{downloadError}</p> : null}
+
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button onClick={() => void runDownload()} disabled={downloading}>
+              <FileSpreadsheet size={15} />
+              {downloading ? 'Preparing…' : 'Download Excel'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setDownloadOpen(false)}
+              disabled={downloading}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
