@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Eye, KeyRound, Pencil, Plus, Trash2, Download } from 'lucide-react'
 import { Avatar, Button, Card, Modal, PageHeader, PasswordField, TableScroll } from '../../components/ui'
 import { stores } from '../../data/mock'
@@ -374,12 +374,13 @@ function EditStoresModal({ supervisor, onClose }: { supervisor: Supervisor | nul
   )
 }
 
-/** Head Office opens the supervisor's portal as a preview — no password needed, and it is labelled. */
+/** Head Office / MIS opens the supervisor's portal as a preview in a new tab. */
 function usePreview() {
-  const navigate = useNavigate()
+  const location = useLocation()
   return (id: string) => {
-    signIn(id, true)
-    navigate('/supervisor')
+    signIn(id, true, `${location.pathname}${location.search}`)
+    const url = `${window.location.origin}/supervisor`
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 }
 

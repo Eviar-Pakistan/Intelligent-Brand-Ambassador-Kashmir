@@ -31,7 +31,7 @@ import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
 import { useEffect, useState } from 'react'
 import { cn } from './ui'
 import { RoleSync } from './RoleLayouts'
-import { signOut, useSupervisorSession } from '../lib/supervisors'
+import { getPreviewReturnTo, signOut, useSupervisorSession } from '../lib/supervisors'
 import { useBrand } from '../context/BrandContext'
 
 type NavItem = {
@@ -147,6 +147,7 @@ const titles: Record<string, string> = {
   '/mis/daily-reports': 'Daily Reports',
   '/mis/ambassadors': 'Ambassadors',
   '/mis/stores': 'Store Management',
+  '/mis/stores/new': 'Create Store',
   '/mis/supervisors': 'Supervisors',
   '/mis/deployment': 'Intelligent Deployment',
   '/mis/complaints': 'Insights / Complaint Center',
@@ -236,8 +237,16 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
 
   function handleSignOut() {
     if (kind === 'supervisor') {
+      if (sv.preview) {
+        // Leave /supervisor first — signing out while still on SupervisorGate
+        // would Navigate to /login before we can return to HO/MIS.
+        const returnTo = getPreviewReturnTo()
+        navigate(returnTo, { replace: true })
+        window.setTimeout(() => signOut(), 0)
+        return
+      }
       signOut()
-      navigate(sv.preview ? '/ho/supervisors' : '/login')
+      navigate('/login')
       return
     }
     navigate('/login')

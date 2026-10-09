@@ -100,6 +100,7 @@ const misPages = (
     <Route path="ambassadors" element={<AmbassadorsPage />} />
     <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
     <Route path="stores" element={<StoresPage />} />
+    <Route path="stores/new" element={<CreateStorePage />} />
     <Route path="stores/:id" element={<StoreDetailPage />} />
     <Route path="deployment" element={<DeploymentPage />} />
     <Route path="supervisors" element={<SupervisorsPage />} />

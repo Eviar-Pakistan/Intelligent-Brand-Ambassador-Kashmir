@@ -1,9 +1,9 @@
 import { useCallback } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { DesktopShell } from '../../components/AppShell'
 import { Card, PageHeader } from '../../components/ui'
 import { fetchSupervisorStockMatrix } from '../../lib/stocksApi'
-import { signOut, useSupervisorSession } from '../../lib/supervisors'
+import { useSupervisorSession } from '../../lib/supervisors'
 import { StockMatrixPanel } from '../headOffice/StocksPage'
 import {
   SupervisorBaTable,
@@ -24,23 +24,7 @@ export function usePortal(title: string, description: string) {
   const { supervisor, preview } = useSupervisorSession()
 
   const header = (
-    <>
-      {preview && supervisor && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-          <span>
-            Head Office preview — you are viewing the portal as <strong>{supervisor.name}</strong>.
-          </span>
-          <Link
-            to="/ho/supervisors"
-            onClick={signOut}
-            className="text-xs font-semibold text-amber-900 underline"
-          >
-            Exit preview
-          </Link>
-        </div>
-      )}
-      <PageHeader title={title} description={supervisor ? `${supervisor.name} · ${description}` : description} />
-    </>
+    <PageHeader title={title} description={supervisor ? `${supervisor.name} · ${description}` : description} />
   )
 
   /** HO preview uses HO JWT + supervisor id; real supervisor uses /me/overview/ */

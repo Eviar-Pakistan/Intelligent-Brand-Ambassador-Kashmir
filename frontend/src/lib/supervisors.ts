@@ -310,7 +310,12 @@ export function supervisorOfStore(storeId: number) {
 
 // ─── Signing in ──────────────────────────────────────────────────────────────
 
-export type SupervisorSession = { id: string; preview: boolean }
+export type SupervisorSession = {
+  id: string
+  preview: boolean
+  /** Path to return to when exiting HO/MIS preview (e.g. /ho/supervisors/12). */
+  returnTo?: string
+}
 
 const sessionListeners = new Set<() => void>()
 let sessionCache: string | null | undefined
@@ -332,14 +337,28 @@ function readSession(): SupervisorSession | null {
   }
 }
 
-export function signIn(id: string, preview = false) {
+export function signIn(id: string, preview = false, returnTo?: string) {
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ id, preview } satisfies SupervisorSession))
+    const payload: SupervisorSession = {
+      id,
+      preview,
+      ...(preview && returnTo ? { returnTo } : {}),
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(payload))
   } catch {
     // ignore
   }
   sessionCache = undefined
   sessionListeners.forEach((l) => l())
+}
+
+/** Where Exit preview should land (defaults to HO supervisors list). */
+export function getPreviewReturnTo() {
+  const s = readSession()
+  if (s?.preview && typeof s.returnTo === 'string' && s.returnTo.startsWith('/')) {
+    return s.returnTo
+  }
+  return '/ho/supervisors'
 }
 
 export function signOut() {
