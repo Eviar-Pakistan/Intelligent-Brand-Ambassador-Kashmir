@@ -75,6 +75,8 @@ export function BaHomePage() {
     loading: shiftLoading,
     busy: shiftBusy,
     error: shiftError,
+    regionNotice,
+    clearRegionNotice,
     upcoming,
     checkedIn,
     checkedOut,
@@ -438,6 +440,31 @@ export function BaHomePage() {
               Cancel
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!regionNotice}
+        onClose={clearRegionNotice}
+        title="Outside store region"
+      >
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-3">
+            <MapPin className="mt-0.5 shrink-0 text-rose-600" size={22} />
+            <p className="text-sm leading-relaxed text-slate-800">
+              {regionNotice}
+            </p>
+          </div>
+          <p className="text-sm text-slate-600">
+            Stay near your assigned store, enable GPS, then try again.
+          </p>
+          <button
+            type="button"
+            onClick={clearRegionNotice}
+            className="w-full rounded-xl bg-navy-900 py-3 text-sm font-semibold text-white transition hover:bg-brand-600"
+          >
+            OK
+          </button>
         </div>
       </Modal>
 

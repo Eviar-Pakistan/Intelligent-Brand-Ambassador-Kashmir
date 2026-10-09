@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import date, datetime, time, timedelta
 
@@ -26,6 +27,8 @@ from .serializers import AmbassadorComplaintSerializer
 
 DAY_KEYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 _SHIFT_TIME_RE = re.compile(r'(\d{1,2}):(\d{2})\s*(AM|PM)', re.IGNORECASE)
+STORE_GEOFENCE_M = 100.0
+_EARTH_RADIUS_M = 6_371_000.0
 
 
 def _float_or_none(v):
@@ -43,6 +46,57 @@ def _geo_from_request(data) -> tuple[float | None, float | None, float | None]:
     lng = _float_or_none(data.get('longitude'))
     accuracy = _float_or_none(data.get('accuracy'))
     return lat, lng, accuracy
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Straight-line distance in meters between two WGS84 points."""
+    rlat1, rlng1, rlat2, rlng2 = map(math.radians, (lat1, lng1, lat2, lng2))
+    dlat = rlat2 - rlat1
+    dlng = rlng2 - rlng1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlng / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _store_geofence_error(store, lat, lng, *, action: str):
+    """
+    If the store has lat/lng, BA must be within STORE_GEOFENCE_M.
+    Stores without coordinates: no check (current behavior).
+    Returns a DRF Response to reject, or None to allow.
+    """
+    if store is None:
+        return None
+    store_lat = _float_or_none(getattr(store, 'latitude', None))
+    store_lng = _float_or_none(getattr(store, 'longitude', None))
+    if store_lat is None or store_lng is None:
+        return None
+
+    verb = 'check in' if action == 'check_in' else 'check out'
+    if lat is None or lng is None:
+        return Response(
+            {
+                'detail': (
+                    f'Location is required to {verb} at this store. '
+                    'Enable GPS and try again.'
+                ),
+                'code': 'store_region_gps_required',
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    distance_m = _haversine_m(lat, lng, store_lat, store_lng)
+    if distance_m > STORE_GEOFENCE_M:
+        return Response(
+            {
+                'detail': (
+                    f'You are outside the store region. '
+                    f'Move within {int(STORE_GEOFENCE_M)} m of the store to {verb}.'
+                ),
+                'code': 'outside_store_region',
+                'distanceM': round(distance_m, 1),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
 
 
 def _day_key(d: date) -> str:
@@ -754,6 +808,12 @@ def ba_check_in(request):
 
     lat, lng, accuracy = _geo_from_request(request.data)
 
+    # Store geofence (100 m) only for store attendance when the store has coordinates.
+    if attendance_type == 'store':
+        blocked = _store_geofence_error(shift.store, lat, lng, action='check_in')
+        if blocked is not None:
+            return blocked
+
     shift.checked_in_at = timezone.now()
     shift.check_in_lat = lat
     shift.check_in_lng = lng
@@ -820,6 +880,12 @@ def ba_check_out(request):
         )
 
     lat, lng, accuracy = _geo_from_request(request.data)
+    attendance_type = (shift.ba_attendance_type or '').strip().lower()
+    if attendance_type != 'training':
+        blocked = _store_geofence_error(shift.store, lat, lng, action='check_out')
+        if blocked is not None:
+            return blocked
+
     shift.checked_out_at = timezone.now()
     shift.check_out_lat = lat
     shift.check_out_lng = lng
@@ -837,7 +903,7 @@ def ba_check_out(request):
     shift.save(update_fields=update_fields)
 
     # Restore Deployed after training-day checkout (HO list).
-    if (shift.ba_attendance_type or '').strip().lower() == 'training':
+    if attendance_type == 'training':
         if ambassador.status == Ambassador.Status.TRAINING and ambassador.store_id:
             ambassador.status = Ambassador.Status.DEPLOYED
             ambassador.save(update_fields=['status', 'updated_at'])
@@ -939,7 +1005,12 @@ def ba_submit_daily_report(request):
 
     # Checkout clock is set when the BA submits the last report (not at stock step).
     lat, lng, accuracy = _geo_from_request(request.data)
+    attendance_type = (shift.ba_attendance_type or '').strip().lower()
     if not shift.checked_out_at:
+        if attendance_type != 'training':
+            blocked = _store_geofence_error(shift.store, lat, lng, action='check_out')
+            if blocked is not None:
+                return blocked
         shift.checked_out_at = timezone.now()
         shift.check_out_lat = lat
         shift.check_out_lng = lng
