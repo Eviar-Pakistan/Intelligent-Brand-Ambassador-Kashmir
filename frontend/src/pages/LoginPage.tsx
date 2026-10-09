@@ -16,6 +16,7 @@ import {
 import { baEmailInUse, baSignOut, syncAmbassadorsFromApi } from '../lib/baAccounts'
 import { loginWithEmail, logoutApi } from '../lib/auth'
 import { ApiError } from '../lib/api'
+import { USER_TYPE_MIS } from '../lib/misApi'
 import { syncStoresFromApi } from '../lib/storeRegistry'
 
 type LoginMode = 'headOffice' | 'supervisor'
@@ -57,11 +58,13 @@ export function LoginPage() {
 
   function enter(role: Role) {
     setRole(role)
-    if (role === 'headOffice') {
+    if (role === 'headOffice' || role === 'mis') {
       const from = (location.state as { from?: string } | null)?.from
       if (
         typeof from === 'string' &&
-        (from.startsWith('/ho') || from.startsWith('/admin') || from.startsWith('/manager'))
+        ((role === 'headOffice' &&
+          (from.startsWith('/ho') || from.startsWith('/admin') || from.startsWith('/manager'))) ||
+          (role === 'mis' && from.startsWith('/mis')))
       ) {
         navigate(from)
         return
@@ -176,7 +179,7 @@ export function LoginPage() {
         return
       }
 
-      await loginWithEmail(email, password)
+      const { user } = await loginWithEmail(email, password)
       signOut()
       baSignOut()
       try {
@@ -187,6 +190,10 @@ export function LoginPage() {
         ])
       } catch {
         // best-effort
+      }
+      if (user?.user_type === USER_TYPE_MIS) {
+        enter('mis')
+        return
       }
       enter('headOffice')
     } catch (err) {

@@ -269,11 +269,15 @@ export async function downloadSupervisorLogins(
 
 export async function assignStores(supervisorId: string, storeIds: number[]) {
   if (isApiAuthenticated()) {
-    const saved = await apiRequest<Record<string, unknown>>(`/api/supervisors/${supervisorId}/assign-stores/`, {
-      method: 'POST',
-      body: { storeIds },
-    })
-    const mapped = mapApi(saved)
+    const onMis =
+      typeof window !== 'undefined' && window.location.pathname.startsWith('/mis')
+    const saved = onMis
+      ? await (await import('./misApi')).misPatchSupervisorStores(supervisorId, storeIds)
+      : await apiRequest<Record<string, unknown>>(`/api/supervisors/${supervisorId}/assign-stores/`, {
+          method: 'POST',
+          body: { storeIds },
+        })
+    const mapped = mapApi(saved as Record<string, unknown>)
     // exclusivity is enforced on server; refresh list lightly
     commit(
       supervisors.map((s) => {

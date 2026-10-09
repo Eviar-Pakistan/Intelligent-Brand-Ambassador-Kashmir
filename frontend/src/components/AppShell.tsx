@@ -24,6 +24,7 @@ import {
   MessageSquareWarning,
   Package,
   UserRoundSearch,
+  ScrollText,
   type LucideIcon,
 } from 'lucide-react'
 import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
@@ -51,11 +52,22 @@ const headOfficeNav: NavItem[] = [
   { to: '/ho/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
   { to: '/ho/complaints', label: 'Insights / Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
   { to: '/ho/interceptions', label: 'Interceptions', icon: UserRoundSearch, section: 'Operations' },
+  { to: '/ho/mis-audit-log', label: 'MIS Audit Log', icon: ScrollText, section: 'Operations' },
   { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
   { to: '/ho/optimization', label: 'AI Optimization', icon: Brain, section: 'Intelligence' },
   { to: '/ho/leaderboard', label: 'Leaderboard', icon: Trophy, section: 'Intelligence' },
   { to: '/ho/incentives', label: 'Incentives', icon: Banknote, section: 'Intelligence' },
   { to: '/ho/reports', label: 'Reports', icon: FileBarChart, section: 'Intelligence' },
+]
+
+const misNav: NavItem[] = [
+  { to: '/mis/daily-reports', label: 'Daily Reports', icon: FileClock, end: true, section: 'Command' },
+  { to: '/mis/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
+  { to: '/mis/stores', label: 'Stores', icon: Store, section: 'Operations' },
+  { to: '/mis/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
+  { to: '/mis/deployment', label: 'Deployment', icon: Map, section: 'Operations' },
+  { to: '/mis/complaints', label: 'Insights / Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
+  { to: '/mis/interceptions', label: 'Interceptions', icon: UserRoundSearch, section: 'Operations' },
 ]
 
 const adminNav: NavItem[] = [
@@ -83,7 +95,7 @@ const supervisorNav: NavItem[] = [
   { to: '/supervisor/stocks', label: 'Stocks', icon: Package, section: 'My stores' },
 ]
 
-type ShellKind = 'headOffice' | 'admin' | 'storeManager' | 'supervisor'
+type ShellKind = 'headOffice' | 'mis' | 'admin' | 'storeManager' | 'supervisor'
 
 const shellConfig: Record<
   ShellKind,
@@ -94,6 +106,12 @@ const shellConfig: Record<
     nav: headOfficeNav,
     brand: 'Head Office',
     subtitle: 'Retail Command Center',
+  },
+  mis: {
+    role: 'mis',
+    nav: misNav,
+    brand: 'MIS',
+    subtitle: 'Operations desk',
   },
   admin: {
     role: 'admin',
@@ -125,6 +143,14 @@ const titles: Record<string, string> = {
   '/ho/stores': 'Store Management',
   '/ho/stores/new': 'Create Store',
   '/ho/supervisors': 'Supervisors',
+  '/ho/mis-audit-log': 'MIS Audit Log',
+  '/mis/daily-reports': 'Daily Reports',
+  '/mis/ambassadors': 'Ambassadors',
+  '/mis/stores': 'Store Management',
+  '/mis/supervisors': 'Supervisors',
+  '/mis/deployment': 'Intelligent Deployment',
+  '/mis/complaints': 'Insights / Complaint Center',
+  '/mis/interceptions': 'User Interceptions',
   '/admin/supervisors': 'Supervisors',
   '/supervisor': 'Supervisor Overview',
   '/supervisor/stores': 'Store Characteristics',

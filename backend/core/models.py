@@ -8,6 +8,7 @@ class UserType(models.IntegerChoices):
     STORE_MANAGER = 3, 'Store Manager'
     BRAND_AMBASSADOR = 4, 'Brand Ambassador'
     SUPERVISOR = 5, 'Supervisor'
+    MIS = 6, 'MIS'
 
 
 class AbstractCoreUser(AbstractUser):
@@ -20,6 +21,7 @@ class AbstractCoreUser(AbstractUser):
         3 — Store Manager
         4 — Brand Ambassador
         5 — Supervisor
+        6 — MIS
     """
 
     email = models.EmailField(unique=True)
@@ -27,7 +29,7 @@ class AbstractCoreUser(AbstractUser):
         choices=UserType.choices,
         default=UserType.BRAND_AMBASSADOR,
         db_index=True,
-        help_text='1=Head Office, 2=Admin, 3=Store Manager, 4=Brand Ambassador, 5=Supervisor',
+        help_text='1=Head Office, 2=Admin, 3=Store Manager, 4=Brand Ambassador, 5=Supervisor, 6=MIS',
     )
     phone = models.CharField(max_length=20, blank=True)
     is_active_user = models.BooleanField(
@@ -65,6 +67,10 @@ class AbstractCoreUser(AbstractUser):
     @property
     def is_supervisor(self):
         return self.user_type == UserType.SUPERVISOR
+
+    @property
+    def is_mis(self):
+        return self.user_type == UserType.MIS
 
 
 class User(AbstractCoreUser):

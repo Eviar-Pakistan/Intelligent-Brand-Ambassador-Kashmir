@@ -347,11 +347,17 @@ export function Modal({
   onClose,
   title,
   children,
+  size = 'md',
+  footer,
 }: {
   open: boolean
   onClose: () => void
   title: string
   children: ReactNode
+  /** md ≈ 32rem, xl ≈ 64rem for wide forms */
+  size?: 'md' | 'xl'
+  /** Pinned below the scrollable body (does not scroll away) */
+  footer?: ReactNode
 }) {
   useEffect(() => {
     if (!open) return
@@ -363,16 +369,30 @@ export function Modal({
   if (!open) return null
   return (
     <ModalContext.Provider value={{ open, setOpen: onClose }}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
         <button className="absolute inset-0 bg-navy-950/50" onClick={onClose} aria-label="Close" />
-      <div className="relative z-10 w-full max-w-lg animate-fade-up rounded-2xl bg-white p-4 shadow-2xl sm:p-5 max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-            <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+        <div
+          className={cn(
+            'relative z-10 flex w-full flex-col animate-fade-up rounded-2xl bg-white shadow-2xl',
+            'max-h-[min(90dvh,calc(100dvh-1.5rem))]',
+            size === 'xl' ? 'max-w-5xl' : 'max-w-lg',
+          )}
+        >
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+            <h3 className="min-w-0 truncate text-lg font-semibold text-slate-900">{title}</h3>
+            <button
+              onClick={onClose}
+              className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+            >
               <X size={18} />
             </button>
           </div>
-          {children}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
+          {footer ? (
+            <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3 sm:px-5">
+              {footer}
+            </div>
+          ) : null}
         </div>
       </div>
     </ModalContext.Provider>

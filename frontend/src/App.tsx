@@ -35,6 +35,7 @@ import {
 import { IncentivesPage } from './pages/headOffice/IncentivesPage'
 import { ComplaintsPage } from './pages/headOffice/ComplaintPages'
 import { InterceptionsPage } from './pages/headOffice/InterceptionsPage'
+import { MisAuditLogPage } from './pages/headOffice/MisAuditLogPage'
 import {
   AttendancePage,
   CoveragePage,
@@ -87,7 +88,24 @@ const hoPages = (
     <Route path="incentives" element={<IncentivesPage />} />
     <Route path="complaints" element={<ComplaintsPage />} />
     <Route path="interceptions" element={<InterceptionsPage />} />
+    <Route path="mis-audit-log" element={<MisAuditLogPage />} />
     <Route path="reports" element={<ReportPage />} />
+  </>
+)
+
+const misPages = (
+  <>
+    <Route index element={<Navigate to="daily-reports" replace />} />
+    <Route path="daily-reports" element={<DailyReportsPage misEditable />} />
+    <Route path="ambassadors" element={<AmbassadorsPage />} />
+    <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />
+    <Route path="stores" element={<StoresPage />} />
+    <Route path="stores/:id" element={<StoreDetailPage />} />
+    <Route path="deployment" element={<DeploymentPage />} />
+    <Route path="supervisors" element={<SupervisorsPage />} />
+    <Route path="supervisors/:id" element={<SupervisorDetailPage />} />
+    <Route path="complaints" element={<ComplaintsPage />} />
+    <Route path="interceptions" element={<InterceptionsPage />} />
   </>
 )
 
@@ -136,6 +154,10 @@ export default function App() {
             <Route element={<RequireApiAuth />}>
               <Route path="/ho" element={<DesktopShell kind="headOffice" />}>
                 {hoPages}
+              </Route>
+
+              <Route path="/mis" element={<DesktopShell kind="mis" />}>
+                {misPages}
               </Route>
 
               <Route path="/admin" element={<DesktopShell kind="admin" />}>

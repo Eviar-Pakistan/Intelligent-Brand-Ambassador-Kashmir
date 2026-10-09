@@ -44,6 +44,15 @@ from .incentive_views import (
     incentives_overview,
 )
 from .ba_targets_views import BaTargetViewSet, ba_my_targets, ba_targets_bulk
+from .mis_views import (
+    mis_audit_logs,
+    mis_patch_ambassador,
+    mis_patch_daily_report,
+    mis_patch_store,
+    mis_patch_supervisor_stores,
+    mis_swap_bas,
+    mis_swap_candidates,
+)
 from .views import (
     ConsumerViewSet,
     AmbassadorComplaintViewSet,
@@ -125,6 +134,17 @@ urlpatterns = [
     path('ba-targets/bulk/', ba_targets_bulk, name='ba-targets-bulk'),
     path('early-checkouts/', early_checkout_reports, name='early-checkouts'),
     path('daily-reports/', daily_reports, name='daily-reports'),
+    path('mis/audit-logs/', mis_audit_logs, name='mis-audit-logs'),
+    path('mis/daily-reports/<int:report_id>/', mis_patch_daily_report, name='mis-patch-daily-report'),
+    path('mis/ambassadors/<int:ambassador_id>/', mis_patch_ambassador, name='mis-patch-ambassador'),
+    path('mis/stores/<int:store_id>/', mis_patch_store, name='mis-patch-store'),
+    path(
+        'mis/supervisors/<int:supervisor_id>/stores/',
+        mis_patch_supervisor_stores,
+        name='mis-patch-supervisor-stores',
+    ),
+    path('mis/swap-candidates/', mis_swap_candidates, name='mis-swap-candidates'),
+    path('mis/swap-bas/', mis_swap_bas, name='mis-swap-bas'),
     path('stock-matrix/', stock_matrix, name='stock-matrix'),
     path('ba/training/video/', ba_training_video, name='ba-training-video'),
     path('ba/sessions/', ba_create_session, name='ba-create-session'),

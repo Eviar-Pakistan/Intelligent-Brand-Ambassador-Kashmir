@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileClock } from 'lucide-react'
-import { Button, Card, PageHeader, StatusBadge } from '../../components/ui'
+import { Button, Card, Modal, PageHeader, StatusBadge } from '../../components/ui'
 import {
   fetchDailyReports,
   formatReportWhen,
@@ -13,6 +13,7 @@ import {
   gheeSalesFields,
   interceptionFields,
   oilSalesFields,
+  STOCK_OPTIONS,
   stockGheeFields,
   stockOilFields,
   stockWaadiFields,
@@ -20,6 +21,7 @@ import {
   whyNotFields,
   type FieldDef,
 } from '../../lib/baReport'
+import { misPatchDailyReport } from '../../lib/misApi'
 
 type FlatReport = DailyReportRow & {
   baId: string
@@ -213,10 +215,14 @@ function CheckoutReportCard({
   report,
   expanded,
   onToggle,
+  misEditable,
+  onEdit,
 }: {
   report: FlatReport
   expanded: boolean
   onToggle: () => void
+  misEditable?: boolean
+  onEdit?: () => void
 }) {
   // Field reports: prefer submittedAt (created_at). Checkout on month shifts is often reused later.
   const when = formatReportWhen(
@@ -247,6 +253,15 @@ function CheckoutReportCard({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {report.isEarlyCheckout && <StatusBadge status="Incomplete" />}
           {report.hasFieldReport && <StatusBadge status="Submitted" />}
+          {misEditable && report.fieldReportId && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="text-sm font-semibold text-rose-600 hover:text-rose-700"
+            >
+              Edit
+            </button>
+          )}
           <button
             type="button"
             onClick={onToggle}
@@ -291,11 +306,190 @@ function Meta({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function DailyReportsPage() {
+function MisEditReportModal({
+  report,
+  onClose,
+  onSaved,
+}: {
+  report: FlatReport | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [stock, setStock] = useState<Record<string, string>>({})
+  const [sales, setSales] = useState<Record<string, string>>({})
+  const [otherBrands, setOtherBrands] = useState<{ id?: string; name?: string; price?: string }[]>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!report) return
+    setStock({ ...(report.stock || {}) })
+    const s: Record<string, string> = {}
+    for (const [k, v] of Object.entries(report.sales || {})) {
+      s[k] = v == null ? '' : String(v)
+    }
+    setSales(s)
+    setOtherBrands(
+      Array.isArray(report.otherBrands) && report.otherBrands.length
+        ? report.otherBrands.map((r, i) => ({
+            id: r.id || String(i + 1),
+            name: r.name || '',
+            price: r.price || '',
+          }))
+        : DEFAULT_OTHER_BRANDS.map((r) => ({ ...r })),
+    )
+    setErr(null)
+  }, [report])
+
+  async function save() {
+    if (!report?.fieldReportId) return
+    setBusy(true)
+    setErr(null)
+    try {
+      await misPatchDailyReport(report.fieldReportId, {
+        stock,
+        sales,
+        otherBrands,
+      })
+      onSaved()
+      onClose()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={!!report}
+      onClose={onClose}
+      size="xl"
+      title={report ? `${report.baName} · ${report.storeName || 'Store'}` : 'Edit report'}
+      footer={
+        report ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {err ? <p className="mr-auto text-sm text-rose-600">{err}</p> : null}
+            <Button variant="secondary" onClick={onClose} disabled={busy}>
+              Close
+            </Button>
+            <Button onClick={() => void save()} disabled={busy}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </Button>
+          </div>
+        ) : null
+      }
+    >
+      {report && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>{report.baCity || report.city || '—'}</span>
+            <span>·</span>
+            <span>{formatReportWhen(report.submittedAt || report.checkedOutAt)}</span>
+            <span className="rounded-md bg-rose-50 px-1.5 py-0.5 font-semibold text-rose-600">
+              Editable (MIS)
+            </span>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="min-w-0 space-y-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4">
+              <h4 className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Stock report
+              </h4>
+              {STOCK_SECTIONS.map((section) => (
+                <div key={section.title} className="space-y-2">
+                  <p className="text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                    {section.title}
+                  </p>
+                  {section.fields.map((f) => (
+                    <label key={f.key} className="block min-w-0 text-xs">
+                      <span className="mb-1 block font-medium text-slate-700">{f.label}</span>
+                      <select
+                        value={stock[f.key] || ''}
+                        onChange={(e) => setStock((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm leading-normal"
+                      >
+                        <option value="">—</option>
+                        {STOCK_OPTIONS.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <div className="min-w-0 space-y-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4">
+              <h4 className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Daily sales
+              </h4>
+              {SALES_SECTIONS.map((section) => (
+                <div key={section.title} className="space-y-2">
+                  <p className="text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                    {section.title}
+                  </p>
+                  {section.fields.map((f) => (
+                    <label key={f.key} className="block min-w-0 text-xs">
+                      <span className="mb-1 block font-medium text-slate-700">{f.label}</span>
+                      <input
+                        value={sales[f.key] || ''}
+                        onChange={(e) => setSales((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-brand-500"
+                      />
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <div className="min-w-0 space-y-2 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4 md:col-span-2 xl:col-span-1">
+              <h4 className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                Competitor data
+              </h4>
+              <div className="space-y-2">
+                {otherBrands.map((row, idx) => (
+                  <div key={row.id || idx} className="grid grid-cols-[1fr_7rem] gap-2">
+                    <input
+                      value={row.name || ''}
+                      placeholder="Brand"
+                      onChange={(e) =>
+                        setOtherBrands((prev) =>
+                          prev.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r)),
+                        )
+                      }
+                      className="min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-brand-500"
+                    />
+                    <input
+                      value={row.price || ''}
+                      placeholder="Price"
+                      onChange={(e) =>
+                        setOtherBrands((prev) =>
+                          prev.map((r, i) => (i === idx ? { ...r, price: e.target.value } : r)),
+                        )
+                      }
+                      className="min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-brand-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+export function DailyReportsPage({ misEditable = false }: { misEditable?: boolean }) {
   const [cards, setCards] = useState<DailyReportBaCard[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [editing, setEditing] = useState<FlatReport | null>(null)
+  const [search, setSearch] = useState('')
   const didAutoExpand = useRef(false)
 
   async function load(opts?: { silent?: boolean }) {
@@ -334,16 +528,26 @@ export function DailyReportsPage() {
     }
   }, [])
 
-  const filtered = useMemo(() => flattenCards(cards), [cards])
+  const filtered = useMemo(() => {
+    const rows = flattenCards(cards)
+    const q = search.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(
+      (r) =>
+        r.baName.toLowerCase().includes(q) ||
+        r.baCode.toLowerCase().includes(q) ||
+        r.storeName.toLowerCase().includes(q),
+    )
+  }, [cards, search])
 
   // Auto-expand once when reports first load — do not re-open after the user hides.
   useEffect(() => {
-    if (didAutoExpand.current || !filtered.length) return
+    if (misEditable || didAutoExpand.current || !filtered.length) return
     const prefer = filtered.find((r) => r.hasFieldReport) ?? filtered[0]
     if (!prefer) return
     didAutoExpand.current = true
     setExpandedIds(new Set([prefer.id]))
-  }, [filtered])
+  }, [filtered, misEditable])
 
   function toggle(id: string) {
     didAutoExpand.current = true
@@ -359,13 +563,28 @@ export function DailyReportsPage() {
     <div className="space-y-5">
       <PageHeader
         title="BA daily reports"
-        description="Stock, daily sales, and competitor data from BA check-out (early or on time)"
+        description={
+          misEditable
+            ? 'Edit stock, sales, and competitor data for any BA report — changes are audit-logged.'
+            : 'Stock, daily sales, and competitor data from BA check-out (early or on time)'
+        }
         actions={
           <Button variant="secondary" size="sm" onClick={() => void load()}>
             Refresh
           </Button>
         }
       />
+
+      {misEditable && (
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by BA name…"
+            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+          />
+        </div>
+      )}
 
       {error && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -387,6 +606,54 @@ export function DailyReportsPage() {
             </p>
           </div>
         </Card>
+      ) : misEditable ? (
+        <Card padding={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <tr>
+                  <th className="px-4 py-3">BA</th>
+                  <th className="px-4 py-3">Store</th>
+                  <th className="px-4 py-3">City</th>
+                  <th className="px-4 py-3">When</th>
+                  <th className="px-4 py-3">Source</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-900">{r.baName}</div>
+                      <div className="text-xs text-slate-400">{r.baCode}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{r.storeName || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.baCity || r.city || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-600">
+                      {formatReportWhen(r.submittedAt || r.checkedOutAt)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {r.source === 'excel' ? 'Excel' : r.hasFieldReport ? 'Checkout' : 'Anytime'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.fieldReportId ? (
+                        <button
+                          type="button"
+                          className="text-sm font-semibold text-rose-600"
+                          onClick={() => setEditing(r)}
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">No report</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {filtered.map((r) => (
@@ -399,6 +666,12 @@ export function DailyReportsPage() {
           ))}
         </div>
       )}
+
+      <MisEditReportModal
+        report={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => void load({ silent: true })}
+      />
     </div>
   )
 }

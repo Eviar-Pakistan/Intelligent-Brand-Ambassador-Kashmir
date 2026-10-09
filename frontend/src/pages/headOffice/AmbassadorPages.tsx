@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { stores, type LifecycleStage } from '../../data/mock'
 import {
@@ -33,6 +33,8 @@ import {
   type BaAccount,
 } from '../../lib/baAccounts'
 import { AssessmentReport } from '../ba/AssessmentReport'
+import { misPatchAmbassador } from '../../lib/misApi'
+import { useRoleBase } from './StoreCreation'
 import { fetchIncentivesOverview, formatPkr, type IncentiveBreakdown } from '../../lib/incentives'
 import { shiftLabelFromTimes } from '../../context/ScheduleContext'
 import {
@@ -804,38 +806,229 @@ function UploadTargetsModal({
   )
 }
 
+/** Turn HO clock text like "04:12 pm" into datetime-local value for today. */
+function clockToDatetimeLocal(clock: string | null | undefined): string {
+  if (!clock || !clock.trim()) return ''
+  const m = clock
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i)
+  if (!m) return ''
+  let hour = Number(m[1])
+  const minute = Number(m[2])
+  const ap = m[3].toLowerCase()
+  if (ap === 'pm' && hour < 12) hour += 12
+  if (ap === 'am' && hour === 12) hour = 0
+  const now = new Date()
+  const y = now.getFullYear()
+  const mo = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${d}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
 function AmbassadorDetailModal({
   account,
   onClose,
+  misEditable,
 }: {
   account: BaAccount | null
   onClose: () => void
+  misEditable?: boolean
 }) {
+  const [name, setName] = useState('')
+  const [city, setCity] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [checkIn, setCheckIn] = useState('')
+  const [checkOut, setCheckOut] = useState('')
+  const [clearIn, setClearIn] = useState(false)
+  const [clearOut, setClearOut] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!account) return
+    setName(account.name || '')
+    setCity(account.city || '')
+    setPhone(account.phone || '')
+    setEmail(account.email || '')
+    setCheckIn(clockToDatetimeLocal(account.checkIn))
+    setCheckOut(clockToDatetimeLocal(account.checkOut))
+    setClearIn(false)
+    setClearOut(false)
+    setErr(null)
+  }, [account])
+
+  async function saveMis() {
+    if (!account) return
+    setBusy(true)
+    setErr(null)
+    try {
+      await misPatchAmbassador(account.id, {
+        name,
+        city,
+        phone,
+        email,
+        clearCheckIn: clearIn,
+        clearCheckOut: clearOut,
+        checkedInAt: !clearIn && checkIn ? new Date(checkIn).toISOString() : undefined,
+        checkedOutAt: !clearOut && checkOut ? new Date(checkOut).toISOString() : undefined,
+      })
+      await syncAmbassadorsFromApi()
+      onClose()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <Modal open={!!account} onClose={onClose} title={account ? account.name : 'Ambassador'}>
       {account && (
         <div className="space-y-4 text-sm">
           <div className="flex items-center gap-2">
-            <StatusBadge status={account.status} />
-            <span className="text-xs text-slate-500">
-              {[account.city, account.email, account.phone].filter(Boolean).join(' · ') || 'No contact details'}
-            </span>
+            <Avatar name={account.name} />
+            <div>
+              <div className="font-semibold text-slate-900">{account.name}</div>
+              <div className="text-xs text-slate-500">
+                BA code {account.code || '—'}
+                {account.storeName ? ` · ${account.storeName}` : ''}
+              </div>
+            </div>
           </div>
 
-          {account.result ? (
-            <AssessmentReport name={account.name} result={account.result} answers={account.answers} />
+          {misEditable ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(
+                  [
+                    ['name', 'Name', name, setName],
+                    ['city', 'City', city, setCity],
+                    ['phone', 'Phone', phone, setPhone],
+                    ['email', 'Email', email, setEmail],
+                  ] as const
+                ).map(([key, label, value, setter]) => (
+                  <label key={key} className="block min-w-0">
+                    <span className="mb-1.5 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                      {label}
+                    </span>
+                    <input
+                      value={value}
+                      onChange={(e) => setter(e.target.value)}
+                      className="w-full min-w-0 rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-brand-500"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="space-y-4 border-t border-slate-100 pt-4">
+                <div className="min-w-0">
+                  <span className="mb-1.5 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Check-in today
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="datetime-local"
+                      value={clearIn ? '' : checkIn}
+                      disabled={clearIn}
+                      onChange={(e) => {
+                        setClearIn(false)
+                        setCheckIn(e.target.value)
+                      }}
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 disabled:bg-slate-50 disabled:text-slate-400"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={!checkIn && !clearIn}
+                      onClick={() => {
+                        setClearIn(true)
+                        setCheckIn('')
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                  {clearIn && (
+                    <p className="mt-1.5 text-[11px] text-amber-700">Will clear on save</p>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <span className="mb-1.5 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Check-out today
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="datetime-local"
+                      value={clearOut ? '' : checkOut}
+                      disabled={clearOut}
+                      onChange={(e) => {
+                        setClearOut(false)
+                        setCheckOut(e.target.value)
+                      }}
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 disabled:bg-slate-50 disabled:text-slate-400"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={!checkOut && !clearOut}
+                      onClick={() => {
+                        setClearOut(true)
+                        setCheckOut('')
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                  {clearOut && (
+                    <p className="mt-1.5 text-[11px] text-amber-700">Will clear on save</p>
+                  )}
+                </div>
+              </div>
+
+              {err && <p className="text-sm text-rose-600">{err}</p>}
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                <Button variant="secondary" onClick={onClose} disabled={busy}>
+                  Close
+                </Button>
+                <Button onClick={() => void saveMis()} disabled={busy}>
+                  {busy ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </div>
           ) : (
-            <p className="text-slate-600">
-              {account.videoWatched
-                ? `Training video watched · ${account.answers.length} assessment answer${account.answers.length === 1 ? '' : 's'} submitted so far.`
-                : 'Has not finished the training video yet.'}
-            </p>
-          )}
+            <>
+              <div className="flex items-center gap-2">
+                <StatusBadge status={account.status} />
+                <span className="text-xs text-slate-500">
+                  {[account.city, account.email, account.phone].filter(Boolean).join(' · ') ||
+                    'No contact details'}
+                </span>
+              </div>
 
-          <div>
-            <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">Account link</div>
-            <AccountLinkPanel account={account} />
-          </div>
+              {account.result ? (
+                <AssessmentReport name={account.name} result={account.result} answers={account.answers} />
+              ) : (
+                <p className="text-slate-600">
+                  {account.videoWatched
+                    ? `Training video watched · ${account.answers.length} assessment answer${account.answers.length === 1 ? '' : 's'} submitted so far.`
+                    : 'Has not finished the training video yet.'}
+                </p>
+              )}
+
+              <div>
+                <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  Account link
+                </div>
+                <AccountLinkPanel account={account} />
+              </div>
+            </>
+          )}
         </div>
       )}
     </Modal>
@@ -843,6 +1036,9 @@ function AmbassadorDetailModal({
 }
 
 export function AmbassadorsPage() {
+  const base = useRoleBase()
+  const { pathname } = useLocation()
+  const isMis = pathname.startsWith('/mis')
   const [tab, setTab] = useState('All')
   const [q, setQ] = useState('')
   const accounts = useBaAccounts()
@@ -959,13 +1155,14 @@ export function AmbassadorsPage() {
               <th className="px-4 py-3">Check-in</th>
               <th className="px-4 py-3">Check-out</th>
               <th className="px-4 py-3">Data filled</th>
+              <th className="px-4 py-3">View</th>
               <th className="px-4 py-3">Open link</th>
             </tr>
           </thead>
           <tbody>
             {filteredAccounts.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-500">
                   No ambassadors match this filter.
                 </td>
               </tr>
@@ -979,7 +1176,7 @@ export function AmbassadorsPage() {
                 </td>
                 <td className="px-4 py-3">
                   <Link
-                    to={`/ho/ambassadors/${a.id}`}
+                    to={`${base}/ambassadors/${a.id}`}
                     className="flex items-center gap-3 text-left"
                   >
                     <Avatar name={a.name} />
@@ -1007,6 +1204,11 @@ export function AmbassadorsPage() {
                 <td className="px-4 py-3 tabular-nums text-slate-700">{a.checkOut || '—'}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={a.checkOut ? 'Submitted' : a.checkIn ? 'Incomplete' : 'Pending'} />
+                </td>
+                <td className="px-4 py-3">
+                  <Button variant="secondary" size="sm" onClick={() => setDetailId(a.id)}>
+                    View
+                  </Button>
                 </td>
                 <td className="px-4 py-3">
                   <Button
@@ -1132,6 +1334,7 @@ export function AmbassadorsPage() {
       <AmbassadorDetailModal
         account={accounts.find((a) => a.id === detailId) ?? null}
         onClose={() => setDetailId(null)}
+        misEditable={isMis}
       />
     </div>
   )
@@ -1140,6 +1343,7 @@ export function AmbassadorsPage() {
 export function AmbassadorProfilePage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const base = useRoleBase()
   const accounts = useBaAccounts()
   useCreatedStores()
   const account = useMemo(
@@ -1314,7 +1518,7 @@ export function AmbassadorProfilePage() {
     return (
       <div className="mx-auto max-w-lg space-y-4 py-16 text-center">
         <p className="text-slate-600">Ambassador not found.</p>
-        <Button variant="secondary" onClick={() => navigate('/ho/ambassadors')}>
+        <Button variant="secondary" onClick={() => navigate(`${base}/ambassadors`)}>
           ← Back to Ambassadors
         </Button>
       </div>
@@ -1324,7 +1528,7 @@ export function AmbassadorProfilePage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link to="/ho/ambassadors" className="text-sm text-slate-500 hover:text-brand-600">
+        <Link to={`${base}/ambassadors`} className="text-sm text-slate-500 hover:text-brand-600">
           ← Ambassadors
         </Link>
         <Button size="sm" onClick={() => setShiftOpen(true)} disabled={isDemoBa(account.id)}>

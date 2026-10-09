@@ -1042,3 +1042,55 @@ class UserInterception(models.Model):
 
     def __str__(self):
         return f'{self.status} · {self.name} · BA {self.ambassador_id}'
+
+
+class MisAuditLog(models.Model):
+    """Immutable audit trail of changes made by MIS users."""
+
+    class Action(models.TextChoices):
+        EDIT_DAILY_REPORT = 'edit_daily_report', 'Edit daily report'
+        EDIT_ATTENDANCE = 'edit_attendance', 'Edit attendance'
+        EDIT_AMBASSADOR = 'edit_ambassador', 'Edit ambassador'
+        EDIT_STORE = 'edit_store', 'Edit store'
+        EDIT_SUPERVISOR_STORES = 'edit_supervisor_stores', 'Edit supervisor stores'
+        SWAP_BAS = 'swap_bas', 'Swap BAs'
+
+    mis_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mis_audit_logs',
+    )
+    action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
+    summary = models.CharField(max_length=500)
+    before_json = models.JSONField(default=dict, blank=True)
+    after_json = models.JSONField(default=dict, blank=True)
+    ambassador = models.ForeignKey(
+        Ambassador,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mis_audit_logs',
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mis_audit_logs',
+    )
+    report = models.ForeignKey(
+        BaDailyReport,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mis_audit_logs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.action} · {self.summary[:60]}'

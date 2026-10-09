@@ -1,4 +1,4 @@
-﻿import { Link, useParams } from 'react-router-dom'
+﻿import { Link, useLocation, useParams } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { stores } from '../../data/mock'
 import {
@@ -12,7 +12,7 @@ import {
   StatusBadge,
   TableScroll,
 } from '../../components/ui'
-import { CalendarClock, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react'
 import { parseShiftLabelTimes, shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
 import { StoreQrCard } from '../../components/StoreQrCard'
 import { findCreatedStore, shopperPath, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
@@ -39,6 +39,13 @@ import {
   updateShift,
 } from '../../lib/deploymentApi'
 import { isApiAuthenticated } from '../../lib/api'
+import {
+  fetchMisSwapCandidates,
+  misPatchAmbassador,
+  misPatchStore,
+  misSwapBas,
+  type MisSwapCandidate,
+} from '../../lib/misApi'
 
 const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1))
 const MINUTE_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
@@ -166,8 +173,132 @@ export function StoresPage() {
   )
 }
 
+function MisStoreSettings({ storeId }: { storeId: number }) {
+  const record = findCreatedStore(storeId)
+  const [form, setForm] = useState({
+    code: record?.code || '',
+    name: record?.name || '',
+    city: record?.city || '',
+    address: record?.address || '',
+    footfall: record?.footfall || 'Medium',
+    peakHours: record?.peakHours || '',
+    contactName: '',
+    contactPhone: '',
+    latitude: record?.latitude != null ? String(record.latitude) : '',
+    longitude: record?.longitude != null ? String(record.longitude) : '',
+  })
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    const r = findCreatedStore(storeId)
+    if (!r) return
+    setForm({
+      code: r.code || '',
+      name: r.name || '',
+      city: r.city || '',
+      address: r.address || '',
+      footfall: r.footfall || 'Medium',
+      peakHours: r.peakHours || '',
+      contactName: '',
+      contactPhone: '',
+      latitude: r.latitude != null ? String(r.latitude) : '',
+      longitude: r.longitude != null ? String(r.longitude) : '',
+    })
+  }, [storeId])
+
+  async function save() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      await misPatchStore(storeId, {
+        code: form.code,
+        name: form.name,
+        city: form.city,
+        // Keep existing address / contact person in DB; fields removed from MIS UI
+        address: form.address || form.city,
+        footfall: form.footfall,
+        peakHours: form.peakHours,
+        contactPhone: form.contactPhone,
+        latitude: form.latitude === '' ? null : Number(form.latitude),
+        longitude: form.longitude === '' ? null : Number(form.longitude),
+      })
+      await syncStoresFromApi()
+      setMsg('Store saved (audit logged).')
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const fieldClass = 'w-full rounded-xl border border-slate-200 px-3 py-2 text-sm'
+
+  return (
+    <Card>
+      <h3 className="mb-3 font-semibold">Store settings</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(
+          [
+            ['code', 'Store code *'],
+            ['name', 'Store name *'],
+            ['city', 'City *'],
+            ['peakHours', 'Peak hours'],
+            ['contactPhone', 'Contact phone'],
+          ] as const
+        ).map(([key, label]) => (
+          <label key={key} className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700">{label}</span>
+            <input
+              value={form[key]}
+              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+              className={fieldClass}
+            />
+          </label>
+        ))}
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Latitude</span>
+          <input
+            value={form.latitude}
+            onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
+            className={fieldClass}
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Longitude</span>
+          <input
+            value={form.longitude}
+            onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
+            className={fieldClass}
+          />
+        </label>
+        <label className="block text-sm sm:col-span-2 sm:max-w-[calc(50%-0.375rem)]">
+          <span className="mb-1 block font-medium text-slate-700">Footfall level</span>
+          <select
+            value={form.footfall}
+            onChange={(e) => setForm((f) => ({ ...f, footfall: e.target.value }))}
+            className={fieldClass}
+          >
+            <option>High</option>
+            <option>Medium</option>
+            <option>Low</option>
+          </select>
+        </label>
+      </div>
+      {msg && <p className="mt-3 text-sm text-slate-600">{msg}</p>}
+      <div className="mt-4 flex gap-2">
+        <Button onClick={() => void save()} disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 export function StoreDetailPage() {
   const { id } = useParams()
+  const { pathname } = useLocation()
+  const isMis = pathname.startsWith('/mis')
   const base = useRoleBase()
   useCreatedStores()
   const accounts = useBaAccounts()
@@ -242,7 +373,7 @@ export function StoreDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/ho/deployment">
+            <Link to={`${base}/deployment`}>
               <Button variant="secondary">
                 <CalendarClock size={15} /> Schedule BA
               </Button>
@@ -262,19 +393,27 @@ export function StoreDetailPage() {
 
       <StoreQrCard store={store} />
 
-      {record && (
-        <Card>
-          <h3 className="mb-3 font-semibold">Store details</h3>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <Detail label="Address" value={record.address} />
-            <Detail label="Footfall" value={record.footfall} />
-            <Detail
-              label="Coordinates"
-              value={record.latitude !== null && record.longitude !== null ? `${record.latitude}, ${record.longitude}` : ''}
-            />
-            <Detail label="Peak hours" value={record.peakHours} />
-          </dl>
-        </Card>
+      {isMis ? (
+        <MisStoreSettings storeId={store.id} />
+      ) : (
+        record && (
+          <Card>
+            <h3 className="mb-3 font-semibold">Store details</h3>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <Detail label="Address" value={record.address} />
+              <Detail label="Footfall" value={record.footfall} />
+              <Detail
+                label="Coordinates"
+                value={
+                  record.latitude !== null && record.longitude !== null
+                    ? `${record.latitude}, ${record.longitude}`
+                    : ''
+                }
+              />
+              <Detail label="Peak hours" value={record.peakHours} />
+            </dl>
+          </Card>
+        )
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -287,7 +426,7 @@ export function StoreDetailPage() {
               {assigned.map((a) => (
                 <Link
                   key={a.id}
-                  to={`/ho/ambassadors/${a.id}`}
+                  to={`${base}/ambassadors/${a.id}`}
                   className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 hover:bg-brand-50"
                 >
                   <div className="flex items-center gap-2">
@@ -352,13 +491,124 @@ export function DeploymentPage() {
 
 type TimeParts = { hour: string; minute: string; ampm: string }
 
+function SwapBasModal({
+  open,
+  monthYm,
+  onClose,
+  onDone,
+}: {
+  open: boolean
+  monthYm: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [candidates, setCandidates] = useState<MisSwapCandidate[]>([])
+  const [firstId, setFirstId] = useState('')
+  const [secondId, setSecondId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setFirstId('')
+    setSecondId('')
+    setError(null)
+    setLoading(true)
+    void fetchMisSwapCandidates(monthYm)
+      .then(setCandidates)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load shifts'))
+      .finally(() => setLoading(false))
+  }, [open, monthYm])
+
+  async function confirm() {
+    if (!firstId || !secondId) return
+    setBusy(true)
+    setError(null)
+    try {
+      await misSwapBas(Number(firstId), Number(secondId))
+      onDone()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Swap failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const label = monthLabel(monthYm)
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Swap BAs · ${label}`}>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Select the two assigned shifts. The BAs will exchange stores for this month. Past and
+          checked-in attendance records are preserved. If either BA has started a shift today, both
+          assignments for today stay as scheduled and the swap applies from tomorrow.
+        </p>
+        {loading ? (
+          <p className="text-sm text-slate-400">Loading assigned shifts…</p>
+        ) : (
+          <>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold text-slate-800">First shift</span>
+              <select
+                value={firstId}
+                onChange={(e) => setFirstId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">Choose an assigned shift…</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id} disabled={String(c.id) === secondId}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold text-slate-800">Second shift</span>
+              <select
+                value={secondId}
+                onChange={(e) => setSecondId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">Choose an assigned shift…</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id} disabled={String(c.id) === firstId}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+        <p className="text-xs text-slate-400">
+          The swap will be blocked if it creates overlapping BA shift hours.
+        </p>
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void confirm()} disabled={busy || !firstId || !secondId}>
+            {busy ? 'Swapping…' : 'Confirm swap'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function SchedulerPanel() {
+  const { pathname } = useLocation()
+  const isMis = pathname.startsWith('/mis')
   const accounts = useBaAccounts()
   const createdStores = useCreatedStores()
   const { schedule, loading, refreshSchedule } = useSchedule()
   const [monthYm, setMonthYm] = useState('2026-09')
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
+  const [swapOpen, setSwapOpen] = useState(false)
   const [createTab, setCreateTab] = useState<'individual' | 'bulk'>('individual')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [previousBaId, setPreviousBaId] = useState<string | null>(null)
@@ -731,6 +981,11 @@ function SchedulerPanel() {
                 <ChevronRight size={16} />
               </button>
             </div>
+            {isMis && (
+              <Button size="sm" variant="secondary" onClick={() => setSwapOpen(true)}>
+                <ArrowLeftRight size={14} /> Swap BAs
+              </Button>
+            )}
             <Button size="sm" onClick={() => openCreate()} disabled={!storeOptions.length}>
               <Plus size={14} /> Add shift
             </Button>
@@ -1055,6 +1310,17 @@ function SchedulerPanel() {
           )}
         </div>
       </Modal>
+
+      <SwapBasModal
+        open={swapOpen}
+        monthYm={monthYm}
+        onClose={() => setSwapOpen(false)}
+        onDone={() => {
+          void refreshSchedule(monthYm)
+          setToast('BA stores swapped')
+          setTimeout(() => setToast(null), 3000)
+        }}
+      />
     </div>
   )
 }

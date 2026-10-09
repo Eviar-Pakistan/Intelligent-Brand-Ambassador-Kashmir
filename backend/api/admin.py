@@ -12,6 +12,7 @@ from .models import (
     BaTarget,
     Consumer,
     IncentiveKpiSettings,
+    MisAuditLog,
     PlatformSettings,
     ShiftAssignment,
     Store,
@@ -293,3 +294,11 @@ class BaTargetAdmin(admin.ModelAdmin):
     search_fields = ('ambassador__name', 'ambassador__code', 'sku')
     raw_id_fields = ('ambassador', 'created_by')
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(MisAuditLog)
+class MisAuditLogAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_at', 'mis_user', 'action', 'summary')
+    list_filter = ('action', 'created_at')
+    search_fields = ('summary', 'mis_user__email')
+    readonly_fields = ('created_at',)
