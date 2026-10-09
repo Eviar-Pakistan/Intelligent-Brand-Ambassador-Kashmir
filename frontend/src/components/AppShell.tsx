@@ -6,12 +6,8 @@ import {
   Megaphone,
   Store,
   Users,
-  Brain,
-  FileBarChart,
   FileClock,
   Settings,
-  ShoppingBag,
-  Trophy,
   Map,
   ClipboardCheck,
   Sparkles,
@@ -53,11 +49,7 @@ const headOfficeNav: NavItem[] = [
   { to: '/ho/complaints', label: 'Insights / Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
   { to: '/ho/interceptions', label: 'Interceptions', icon: UserRoundSearch, section: 'Operations' },
   { to: '/ho/mis-audit-log', label: 'MIS Audit Log', icon: ScrollText, section: 'Operations' },
-  { to: '/ho/consumers', label: 'Consumers', icon: ShoppingBag, section: 'Intelligence' },
-  { to: '/ho/optimization', label: 'AI Optimization', icon: Brain, section: 'Intelligence' },
-  { to: '/ho/leaderboard', label: 'Leaderboard', icon: Trophy, section: 'Intelligence' },
   { to: '/ho/incentives', label: 'Incentives', icon: Banknote, section: 'Intelligence' },
-  { to: '/ho/reports', label: 'Reports', icon: FileBarChart, section: 'Intelligence' },
 ]
 
 const misNav: NavItem[] = [
