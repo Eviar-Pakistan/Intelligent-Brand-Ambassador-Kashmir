@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from django.utils import timezone
@@ -12,6 +13,76 @@ if TYPE_CHECKING:
 
 
 DAY_KEYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+
+
+def parse_shift_minutes(label: str) -> tuple[int, int] | None:
+    """Parse '10:00 AM – 6:00 PM' into (start, end) minutes-from-midnight."""
+    if not label:
+        return None
+    parts = re.split(r'\s*[-–—]\s*', label.strip())
+    if len(parts) != 2:
+        return None
+
+    def one(s: str) -> int | None:
+        s = s.strip().upper().replace('.', '')
+        for fmt in ('%I:%M %p', '%I %p', '%H:%M', '%H'):
+            try:
+                t = datetime.strptime(s, fmt).time()
+                return t.hour * 60 + t.minute
+            except ValueError:
+                continue
+        return None
+
+    a, b = one(parts[0]), one(parts[1])
+    if a is None or b is None:
+        return None
+    if b <= a:
+        b += 24 * 60
+    return a, b
+
+
+def shift_hours_contained(inner_label: str, outer_label: str) -> bool:
+    """True when inner shift hours fall fully inside outer (including equal)."""
+    inner = parse_shift_minutes(inner_label)
+    outer = parse_shift_minutes(outer_label)
+    if not inner or not outer:
+        return False
+    return inner[0] >= outer[0] and inner[1] <= outer[1]
+
+
+def find_containing_shift(
+    *,
+    ambassador,
+    store,
+    date_val: date,
+    shift_label: str,
+    exclude_pk=None,
+):
+    """
+    Same BA + same store + same date: return an existing shift whose hours
+    fully contain the new shift_label (forward-only conflict rule).
+    """
+    from .models import ShiftAssignment
+
+    if ambassador is None or store is None or date_val is None:
+        return None
+
+    qs = ShiftAssignment.objects.filter(
+        ambassador=ambassador,
+        store=store,
+        date=date_val,
+    ).exclude(status=ShiftAssignment.Status.OPEN)
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+
+    new_label = (shift_label or '').strip()
+    for existing in qs.only('id', 'shift_label'):
+        old_label = (existing.shift_label or '').strip()
+        if not old_label:
+            continue
+        if new_label == old_label or shift_hours_contained(new_label, old_label):
+            return existing
+    return None
 
 
 def monday_of(d: date | None = None) -> date:

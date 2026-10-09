@@ -1,5 +1,6 @@
 from django.conf import settings
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from .models import (
     Ambassador,
@@ -18,7 +19,7 @@ from .models import (
     SurveyQuestion,
     TrainingVideo,
 )
-from .shifts import day_key_for, peak_matches
+from .shifts import day_key_for, find_containing_shift, peak_matches
 from .deployment import reconcile_ambassador_deployments
 
 
@@ -1058,24 +1059,49 @@ class ShiftAssignmentSerializer(serializers.ModelSerializer):
             validated['peak_recommended'] = peak_matches(shift_label, store.peak_hours or '')
         return validated
 
+    def _reject_if_hours_inside_existing(
+        self,
+        *,
+        ambassador,
+        store,
+        date_val,
+        shift_label: str,
+        exclude_pk=None,
+    ):
+        """Block create/update when new hours fall inside an existing same BA/store/day shift."""
+        hit = find_containing_shift(
+            ambassador=ambassador,
+            store=store,
+            date_val=date_val,
+            shift_label=shift_label,
+            exclude_pk=exclude_pk,
+        )
+        if hit is None:
+            return
+        raise DRFValidationError(
+            detail=(
+                'This shift conflicts with an existing assignment '
+                f'({hit.shift_label}). New hours fall inside that shift — '
+                'choose different times.'
+            )
+        )
+
     def create(self, validated_data):
         validated_data = self._apply_peak_and_day(validated_data)
         ambassador = validated_data.get('ambassador')
+        store = validated_data.get('store')
         date_val = validated_data['date']
         shift_label = validated_data['shift_label']
         if ambassador is None:
             validated_data['status'] = ShiftAssignment.Status.OPEN
         else:
-            conflict = ShiftAssignment.objects.filter(
+            self._reject_if_hours_inside_existing(
                 ambassador=ambassador,
-                date=date_val,
+                store=store,
+                date_val=date_val,
                 shift_label=shift_label,
-            ).exists()
-            validated_data['status'] = (
-                ShiftAssignment.Status.CONFLICT
-                if conflict
-                else ShiftAssignment.Status.SCHEDULED
             )
+            validated_data['status'] = ShiftAssignment.Status.SCHEDULED
         request = self.context.get('request')
         if request and request.user and request.user.is_authenticated:
             validated_data['created_by'] = request.user
@@ -1086,25 +1112,20 @@ class ShiftAssignmentSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         validated_data = self._apply_peak_and_day(validated_data)
         ambassador = validated_data.get('ambassador', instance.ambassador)
+        store = validated_data.get('store', instance.store)
         date_val = validated_data.get('date', instance.date)
         shift_label = validated_data.get('shift_label', instance.shift_label)
         if ambassador is None:
             validated_data['status'] = ShiftAssignment.Status.OPEN
         else:
-            conflict = (
-                ShiftAssignment.objects.filter(
-                    ambassador=ambassador,
-                    date=date_val,
-                    shift_label=shift_label,
-                )
-                .exclude(pk=instance.pk)
-                .exists()
+            self._reject_if_hours_inside_existing(
+                ambassador=ambassador,
+                store=store,
+                date_val=date_val,
+                shift_label=shift_label,
+                exclude_pk=instance.pk,
             )
-            validated_data['status'] = (
-                ShiftAssignment.Status.CONFLICT
-                if conflict
-                else ShiftAssignment.Status.SCHEDULED
-            )
+            validated_data['status'] = ShiftAssignment.Status.SCHEDULED
         instance = super().update(instance, validated_data)
         reconcile_ambassador_deployments()
         return instance

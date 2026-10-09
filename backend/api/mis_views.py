@@ -415,7 +415,7 @@ def mis_swap_candidates(request):
             date__gte=start,
             date__lte=end,
             ambassador__isnull=False,
-            status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
+            status=ShiftAssignment.Status.SCHEDULED,
         )
         .select_related('ambassador', 'store')
         .order_by('ambassador__name', 'store__name', 'shift_label', 'date')

@@ -28,7 +28,7 @@ from .serializers import (
     StoreSerializer,
     SurveyQuestionSerializer,
 )
-from .shifts import build_week_days, monday_of, peak_matches
+from .shifts import build_week_days, find_containing_shift, monday_of, peak_matches
 
 
 class StoreViewSet(viewsets.ModelViewSet):
@@ -319,21 +319,16 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
         assigned = 0
         for i, slot in enumerate(open_slots):
             ba = pool[i % len(pool)]
-            conflict = (
-                ShiftAssignment.objects.filter(
-                    ambassador=ba,
-                    date=slot.date,
-                    shift_label=slot.shift_label,
-                )
-                .exclude(pk=slot.pk)
-                .exists()
-            )
+            if find_containing_shift(
+                ambassador=ba,
+                store=slot.store,
+                date_val=slot.date,
+                shift_label=slot.shift_label,
+                exclude_pk=slot.pk,
+            ):
+                continue
             slot.ambassador = ba
-            slot.status = (
-                ShiftAssignment.Status.CONFLICT
-                if conflict
-                else ShiftAssignment.Status.SCHEDULED
-            )
+            slot.status = ShiftAssignment.Status.SCHEDULED
             if not slot.peak_recommended:
                 slot.peak_recommended = peak_matches(slot.shift_label, slot.store.peak_hours or '')
             slot.save(

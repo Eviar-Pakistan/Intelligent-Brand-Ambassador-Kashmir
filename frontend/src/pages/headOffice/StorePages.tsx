@@ -12,7 +12,7 @@ import {
   StatusBadge,
   TableScroll,
 } from '../../components/ui'
-import { ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react'
 import { parseShiftLabelTimes, shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
 import { StoreQrCard } from '../../components/StoreQrCard'
 import { findCreatedStore, shopperPath, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
@@ -21,6 +21,7 @@ import {
   syncAmbassadorsFromApi,
   useBaAccounts,
   isDemoBa,
+  isPlaceholderBaName,
   getBaAccounts,
 } from '../../lib/baAccounts'
 import { resolveBaByCode, resolveBaByName } from '../../lib/baCodes'
@@ -35,6 +36,7 @@ import {
   createShift,
   deleteShift,
   deployAmbassador,
+  toIsoDate,
   undeployAmbassador,
   updateShift,
 } from '../../lib/deploymentApi'
@@ -54,10 +56,12 @@ function monthLabel(ym: string) {
   return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
 }
 
-function shiftMonth(ym: string, delta: number) {
-  const [y, m] = ym.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
+function currentMonthYm(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function todayDateLabel(d = new Date()) {
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 function partsFromHhmm(hhmm: string) {
@@ -609,7 +613,8 @@ function SchedulerPanel() {
   const accounts = useBaAccounts()
   const createdStores = useCreatedStores()
   const { schedule, loading, refreshSchedule } = useSchedule()
-  const [monthYm, setMonthYm] = useState('2026-09')
+  const [monthYm, setMonthYm] = useState(() => currentMonthYm())
+  const [todayIso, setTodayIso] = useState(() => toIsoDate(new Date()))
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [swapOpen, setSwapOpen] = useState(false)
@@ -617,13 +622,13 @@ function SchedulerPanel() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [previousBaId, setPreviousBaId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkFileName, setBulkFileName] = useState('')
   const [bulkResult, setBulkResult] = useState<BulkShiftParseResult | null>(null)
   const bulkInputRef = useRef<HTMLInputElement>(null)
 
-  const deployable = accounts.filter((a) => !isDemoBa(a.id))
   const storeOptions =
     createdStores.length > 0
       ? createdStores.map((s) => ({
@@ -648,6 +653,29 @@ function SchedulerPanel() {
     end: { hour: '6', minute: '00', ampm: 'PM' } as TimeParts,
   })
 
+  // Add/Edit shift: unassigned BAs only; hide Hiring Pending / Store Closed / Closed placeholders.
+  const deployable = useMemo(() => {
+    return accounts.filter((a) => {
+      if (isDemoBa(a.id)) return false
+      if (isPlaceholderBaName(a.name)) return false
+      if (a.storeId == null) return true
+      if (editingId && form.baId && a.id === form.baId) return true
+      return false
+    })
+  }, [accounts, editingId, form.baId])
+
+  // Keep board on the current calendar month + today's date (rolls over at midnight).
+  useEffect(() => {
+    const syncToday = () => {
+      const now = new Date()
+      setTodayIso(toIsoDate(now))
+      setMonthYm(currentMonthYm(now))
+    }
+    syncToday()
+    const id = window.setInterval(syncToday, 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+
   useEffect(() => {
     void Promise.all([
       syncStoresFromApi(),
@@ -664,14 +692,20 @@ function SchedulerPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeOptions.length])
 
-  const conflictCount = schedule.filter((s) => s.status === 'Conflict').length
-  const openCount = schedule.filter((s) => s.status === 'Open' || !s.baId).length
-  const filledCount = schedule.filter((s) => s.status === 'Scheduled' && s.baId).length
+  // Deployment board: only ShiftAssignment rows for today.
+  const todaySchedule = useMemo(
+    () => schedule.filter((s) => (s.dateIso || '') === todayIso),
+    [schedule, todayIso],
+  )
+
+  const conflictCount = todaySchedule.filter((s) => s.status === 'Conflict').length
+  const openCount = todaySchedule.filter((s) => s.status === 'Open' || !s.baId).length
+  const filledCount = todaySchedule.filter((s) => s.status === 'Scheduled' && s.baId).length
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return schedule
-    return schedule.filter((slot) => {
+    if (!q) return todaySchedule
+    return todaySchedule.filter((slot) => {
       const storeMeta = storeOptions.find((s) => s.id === slot.storeId)
       const ba = accounts.find((a) => a.id === slot.baId)
       const hay = [
@@ -687,7 +721,7 @@ function SchedulerPanel() {
         .toLowerCase()
       return hay.includes(q)
     })
-  }, [schedule, search, storeOptions, accounts])
+  }, [todaySchedule, search, storeOptions, accounts])
 
   function showToast(msg: string) {
     setToast(msg)
@@ -900,7 +934,12 @@ function SchedulerPanel() {
       setModalOpen(false)
       setPreviousBaId(null)
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not save assignment')
+      const msg = err instanceof Error ? err.message : 'Could not save assignment'
+      if (/conflict|fall inside/i.test(msg)) {
+        setConflictNotice(msg)
+      } else {
+        showToast(msg)
+      }
     } finally {
       setSaving(false)
     }
@@ -924,12 +963,13 @@ function SchedulerPanel() {
 
   const selectedStore = storeOptions.find((s) => String(s.id) === form.storeId)
   const label = monthLabel(monthYm)
+  const todayLabel = todayDateLabel()
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Intelligent Store Deployment"
-        description="Schedule certified BA's into peak shifts and activate QR"
+        description="Shows today's BA store assignments only (updates with the calendar day)"
         actions={
           <Button onClick={() => openCreate()} disabled={!storeOptions.length}>
             <CalendarClock size={15} /> Create shifts
@@ -945,8 +985,8 @@ function SchedulerPanel() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <div className="text-xs text-slate-500">Monthly shifts</div>
-          <div className="text-2xl font-bold">{schedule.length}</div>
+          <div className="text-xs text-slate-500">Today&apos;s shifts</div>
+          <div className="text-2xl font-bold">{todaySchedule.length}</div>
         </Card>
         <Card>
           <div className="text-xs text-slate-500">Scheduled</div>
@@ -966,24 +1006,8 @@ function SchedulerPanel() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-semibold text-slate-900">Deployment scheduler</h3>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-0.5">
-              <button
-                type="button"
-                className="rounded-full p-1.5 text-slate-600 hover:bg-slate-50"
-                onClick={() => setMonthYm((m) => shiftMonth(m, -1))}
-                aria-label="Previous month"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="min-w-[9.5rem] text-center text-sm font-semibold text-slate-800">{label}</span>
-              <button
-                type="button"
-                className="rounded-full p-1.5 text-slate-600 hover:bg-slate-50"
-                onClick={() => setMonthYm((m) => shiftMonth(m, 1))}
-                aria-label="Next month"
-              >
-                <ChevronRight size={16} />
-              </button>
+            <div className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-slate-800">
+              Today · {todayLabel}
             </div>
             {isMis && (
               <Button size="sm" variant="secondary" onClick={() => setSwapOpen(true)}>
@@ -1010,7 +1034,7 @@ function SchedulerPanel() {
 
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-500">
-            No shifts for {label}.{' '}
+            No shifts for today ({todayLabel}).{' '}
             <button type="button" className="font-semibold text-brand-600" onClick={() => openCreate()}>
               Add one
             </button>
@@ -1060,7 +1084,7 @@ function SchedulerPanel() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-medium">{slot.shift}</div>
-                        <div className="text-xs text-slate-400">{label}</div>
+                        <div className="text-xs text-slate-400">{todayLabel}</div>
                         {slot.peakRecommended && (
                           <span className="mt-1 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
                             Peak recommended
@@ -1174,14 +1198,26 @@ function SchedulerPanel() {
                   onChange={(e) => setForm((f) => ({ ...f, baId: e.target.value }))}
                 >
                   <option value="">Unassigned (open shift)</option>
-                  {deployable.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.code ? `${a.code} · ` : ''}
-                      {a.name}
-                      {a.city ? ` (${a.city})` : ''}
+                  {deployable.length === 0 ? (
+                    <option value="" disabled>
+                      No available BA&apos;s
                     </option>
-                  ))}
+                  ) : (
+                    deployable.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.code ? `${a.code} · ` : ''}
+                        {a.name}
+                        {a.city ? ` (${a.city})` : ''}
+                        {a.storeId != null ? ' · current' : ''}
+                      </option>
+                    ))
+                  )}
                 </Select>
+                {deployable.length === 0 && (
+                  <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                    No available BA&apos;s — all ambassadors are already assigned to a store
+                  </div>
+                )}
               </label>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1312,6 +1348,24 @@ function SchedulerPanel() {
               )}
             </div>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!conflictNotice}
+        onClose={() => setConflictNotice(null)}
+        title="Shift conflict"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-900">
+            {conflictNotice}
+          </div>
+          <p className="text-sm text-slate-600">
+            Pick times that are not inside an existing shift for this BA at this store.
+          </p>
+          <Button className="w-full" onClick={() => setConflictNotice(null)}>
+            OK
+          </Button>
         </div>
       </Modal>
 
