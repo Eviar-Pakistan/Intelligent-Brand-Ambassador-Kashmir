@@ -805,6 +805,9 @@ class ShiftAssignment(models.Model):
     check_in_lat = models.FloatField(null=True, blank=True)
     check_in_lng = models.FloatField(null=True, blank=True)
     check_in_accuracy_m = models.FloatField(null=True, blank=True)
+    check_out_lat = models.FloatField(null=True, blank=True)
+    check_out_lng = models.FloatField(null=True, blank=True)
+    check_out_accuracy_m = models.FloatField(null=True, blank=True)
     early_leave_reason = models.TextField(
         blank=True,
         default='',

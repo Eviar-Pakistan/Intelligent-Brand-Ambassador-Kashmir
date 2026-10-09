@@ -89,6 +89,8 @@ export type BaShiftState = {
   storeLng: number | null
   checkInLat: number | null
   checkInLng: number | null
+  checkOutLat: number | null
+  checkOutLng: number | null
   hasShift: boolean
   shiftMessage: string | null
   loading: boolean
@@ -147,6 +149,8 @@ function applyTodayShift(
     storeLng: (v: number | null) => void
     checkInLat: (v: number | null) => void
     checkInLng: (v: number | null) => void
+    checkOutLat: (v: number | null) => void
+    checkOutLng: (v: number | null) => void
     upcoming: (v: BaUpcomingShift[]) => void
     checkedIn: (v: boolean) => void
     checkInAt: (v: Date | null) => void
@@ -174,6 +178,8 @@ function applyTodayShift(
     set.storeLng(numOrNull(data.ambassador.storeLng))
     set.checkInLat(null)
     set.checkInLng(null)
+    set.checkOutLat(null)
+    set.checkOutLng(null)
     set.checkedIn(false)
     set.checkInAt(null)
     set.checkedOut(false)
@@ -195,6 +201,8 @@ function applyTodayShift(
   set.storeLng(numOrNull(shift.storeLng))
   set.checkInLat(numOrNull(shift.checkInLat))
   set.checkInLng(numOrNull(shift.checkInLng))
+  set.checkOutLat(numOrNull(shift.checkOutLat))
+  set.checkOutLng(numOrNull(shift.checkOutLng))
   set.checkedIn(!!shift.checkedIn)
   set.checkInAt(shift.checkedInAt ? new Date(shift.checkedInAt) : null)
   set.checkedOut(!!shift.checkedOut)
@@ -226,6 +234,8 @@ export function BaShiftProvider({
   const [storeLng, setStoreLng] = useState<number | null>(null)
   const [checkInLat, setCheckInLat] = useState<number | null>(null)
   const [checkInLng, setCheckInLng] = useState<number | null>(null)
+  const [checkOutLat, setCheckOutLat] = useState<number | null>(null)
+  const [checkOutLng, setCheckOutLng] = useState<number | null>(null)
   const [upcoming, setUpcoming] = useState<BaUpcomingShift[]>([])
   const [checkedIn, setCheckedIn] = useState(false)
   const [checkInAt, setCheckInAt] = useState<Date | null>(null)
@@ -244,6 +254,8 @@ export function BaShiftProvider({
       storeLng: setStoreLng,
       checkInLat: setCheckInLat,
       checkInLng: setCheckInLng,
+      checkOutLat: setCheckOutLat,
+      checkOutLng: setCheckOutLng,
       upcoming: setUpcoming,
       checkedIn: setCheckedIn,
       checkInAt: setCheckInAt,
@@ -279,6 +291,8 @@ export function BaShiftProvider({
       setStoreLng(null)
       setCheckInLat(null)
       setCheckInLng(null)
+      setCheckOutLat(null)
+      setCheckOutLng(null)
       setUpcoming([])
       setCheckedIn(false)
       setCheckInAt(null)
@@ -366,6 +380,8 @@ export function BaShiftProvider({
       storeLng,
       checkInLat,
       checkInLng,
+      checkOutLat,
+      checkOutLng,
       hasShift,
       shiftMessage,
       loading,
@@ -394,6 +410,8 @@ export function BaShiftProvider({
       storeLng,
       checkInLat,
       checkInLng,
+      checkOutLat,
+      checkOutLng,
       hasShift,
       shiftMessage,
       loading,

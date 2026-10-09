@@ -21,6 +21,8 @@ export type BaShiftPayload = {
   baAttendanceType?: BaAttendanceType | string | null
   checkInLat?: number | null
   checkInLng?: number | null
+  checkOutLat?: number | null
+  checkOutLng?: number | null
   storeLat?: number | null
   storeLng?: number | null
 }
@@ -58,7 +60,7 @@ export type BaTodayShiftResponse = {
   }
 }
 
-function readGeo(): Promise<{ latitude?: number; longitude?: number; accuracy?: number }> {
+export function readGeo(): Promise<{ latitude?: number; longitude?: number; accuracy?: number }> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve({})
@@ -94,11 +96,13 @@ export async function baCheckInApi(token: string, attendanceType: BaAttendanceTy
 }
 
 export async function baCheckOutApi(token: string, earlyLeaveReason?: string) {
+  const geo = await readGeo()
   return apiRequest<BaTodayShiftResponse>('/api/ba/check-out/', {
     method: 'POST',
     auth: false,
     body: {
       token,
+      ...geo,
       ...(earlyLeaveReason?.trim()
         ? { early_leave_reason: earlyLeaveReason.trim() }
         : {}),

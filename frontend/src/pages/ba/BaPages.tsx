@@ -68,6 +68,8 @@ export function BaHomePage() {
     storeLng,
     checkInLat,
     checkInLng,
+    checkOutLat,
+    checkOutLng,
     hasShift,
     shiftMessage,
     loading: shiftLoading,
@@ -341,16 +343,30 @@ export function BaHomePage() {
             )}
 
             {checkedOut && isTrainingAttendance && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
-                <CheckCircle2 size={16} />
-                Training attendance complete
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+                  <CheckCircle2 size={16} />
+                  Training attendance complete
+                </div>
+                {(checkOutLat != null || checkOutLng != null) && (
+                  <div className="rounded-xl bg-[#faf6ee] px-3 py-2.5 text-xs tabular-nums text-slate-500">
+                    Check-out GPS {formatCoord(checkOutLat) ?? '—'}, {formatCoord(checkOutLng) ?? '—'}
+                  </div>
+                )}
               </div>
             )}
 
             {checkedOut && !isTrainingAttendance && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
-                <CheckCircle2 size={16} />
-                Checked out · Check In returns tomorrow
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+                  <CheckCircle2 size={16} />
+                  Checked out · Check In returns tomorrow
+                </div>
+                {(checkOutLat != null || checkOutLng != null) && (
+                  <div className="rounded-xl bg-[#faf6ee] px-3 py-2.5 text-xs tabular-nums text-slate-500">
+                    Check-out GPS {formatCoord(checkOutLat) ?? '—'}, {formatCoord(checkOutLng) ?? '—'}
+                  </div>
+                )}
               </div>
             )}
 

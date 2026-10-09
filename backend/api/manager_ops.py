@@ -93,6 +93,8 @@ def build_manager_overview() -> dict:
                 'checked_out_at': shift.checked_out_at.isoformat() if shift.checked_out_at else None,
                 'check_in_lat': shift.check_in_lat,
                 'check_in_lng': shift.check_in_lng,
+                'check_out_lat': shift.check_out_lat,
+                'check_out_lng': shift.check_out_lng,
                 'gps': gps,
                 'status': status,
             }
@@ -120,6 +122,8 @@ def build_manager_overview() -> dict:
                 'checked_out_at': None,
                 'check_in_lat': None,
                 'check_in_lng': None,
+                'check_out_lat': None,
+                'check_out_lng': None,
                 'gps': '—',
                 'status': 'Unscheduled',
             }

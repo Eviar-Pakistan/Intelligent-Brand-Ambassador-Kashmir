@@ -967,6 +967,9 @@ class ShiftAssignmentSerializer(serializers.ModelSerializer):
     checkInLat = serializers.FloatField(source='check_in_lat', read_only=True)
     checkInLng = serializers.FloatField(source='check_in_lng', read_only=True)
     checkInAccuracyM = serializers.FloatField(source='check_in_accuracy_m', read_only=True)
+    checkOutLat = serializers.FloatField(source='check_out_lat', read_only=True)
+    checkOutLng = serializers.FloatField(source='check_out_lng', read_only=True)
+    checkOutAccuracyM = serializers.FloatField(source='check_out_accuracy_m', read_only=True)
     baAttendanceType = serializers.CharField(source='ba_attendance_type', read_only=True)
     store_id = serializers.PrimaryKeyRelatedField(
         queryset=Store.objects.all(),
@@ -1005,6 +1008,9 @@ class ShiftAssignmentSerializer(serializers.ModelSerializer):
             'checkInLat',
             'checkInLng',
             'checkInAccuracyM',
+            'checkOutLat',
+            'checkOutLng',
+            'checkOutAccuracyM',
             'baAttendanceType',
             'store_id',
             'ambassador_id',

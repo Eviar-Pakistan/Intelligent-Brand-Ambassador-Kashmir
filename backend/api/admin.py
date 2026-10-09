@@ -256,6 +256,9 @@ class ShiftAssignmentAdmin(admin.ModelAdmin):
         'check_in_lat',
         'check_in_lng',
         'check_in_accuracy_m',
+        'check_out_lat',
+        'check_out_lng',
+        'check_out_accuracy_m',
         'early_leave_reason',
     )
 

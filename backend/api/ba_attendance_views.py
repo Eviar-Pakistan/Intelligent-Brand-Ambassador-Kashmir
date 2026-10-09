@@ -28,6 +28,23 @@ DAY_KEYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 _SHIFT_TIME_RE = re.compile(r'(\d{1,2}):(\d{2})\s*(AM|PM)', re.IGNORECASE)
 
 
+def _float_or_none(v):
+    if v is None or v == '':
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _geo_from_request(data) -> tuple[float | None, float | None, float | None]:
+    """latitude / longitude / accuracy from BA client body."""
+    lat = _float_or_none(data.get('latitude'))
+    lng = _float_or_none(data.get('longitude'))
+    accuracy = _float_or_none(data.get('accuracy'))
+    return lat, lng, accuracy
+
+
 def _day_key(d: date) -> str:
     return DAY_KEYS[d.weekday()]
 
@@ -395,6 +412,8 @@ def serialize_ba_shift(shift: ShiftAssignment | None, ambassador: Ambassador) ->
             'baAttendanceType': (shift.ba_attendance_type or '') or None,
             'checkInLat': shift.check_in_lat,
             'checkInLng': shift.check_in_lng,
+            'checkOutLat': shift.check_out_lat,
+            'checkOutLng': shift.check_out_lng,
             'storeLat': store_lat,
             'storeLng': store_lng,
         },
@@ -733,22 +752,12 @@ def ba_check_in(request):
     if shift.checked_in_at:
         return Response(serialize_ba_shift(shift, ambassador))
 
-    lat = request.data.get('latitude')
-    lng = request.data.get('longitude')
-    accuracy = request.data.get('accuracy')
-
-    def _f(v):
-        if v is None or v == '':
-            return None
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return None
+    lat, lng, accuracy = _geo_from_request(request.data)
 
     shift.checked_in_at = timezone.now()
-    shift.check_in_lat = _f(lat)
-    shift.check_in_lng = _f(lng)
-    shift.check_in_accuracy_m = _f(accuracy)
+    shift.check_in_lat = lat
+    shift.check_in_lng = lng
+    shift.check_in_accuracy_m = accuracy
     shift.ba_attendance_type = attendance_type
     shift.save(
         update_fields=[
@@ -774,7 +783,7 @@ def ba_check_in(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def ba_check_out(request):
-    """POST /api/ba/check-out/  Body: { token, early_leave_reason? }"""
+    """POST /api/ba/check-out/  Body: { token, early_leave_reason?, latitude?, longitude?, accuracy? }"""
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
@@ -810,8 +819,18 @@ def ba_check_out(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    lat, lng, accuracy = _geo_from_request(request.data)
     shift.checked_out_at = timezone.now()
-    update_fields = ['checked_out_at', 'updated_at']
+    shift.check_out_lat = lat
+    shift.check_out_lng = lng
+    shift.check_out_accuracy_m = accuracy
+    update_fields = [
+        'checked_out_at',
+        'check_out_lat',
+        'check_out_lng',
+        'check_out_accuracy_m',
+        'updated_at',
+    ]
     if reason:
         shift.early_leave_reason = reason
         update_fields.append('early_leave_reason')
@@ -919,18 +938,42 @@ def ba_submit_daily_report(request):
         )
 
     # Checkout clock is set when the BA submits the last report (not at stock step).
+    lat, lng, accuracy = _geo_from_request(request.data)
     if not shift.checked_out_at:
         shift.checked_out_at = timezone.now()
-        update_fields = ['checked_out_at', 'updated_at']
+        shift.check_out_lat = lat
+        shift.check_out_lng = lng
+        shift.check_out_accuracy_m = accuracy
+        update_fields = [
+            'checked_out_at',
+            'check_out_lat',
+            'check_out_lng',
+            'check_out_accuracy_m',
+            'updated_at',
+        ]
         if early_reason:
             shift.early_leave_reason = early_reason
             update_fields.append('early_leave_reason')
         shift.save(update_fields=update_fields)
         upsert_attendance_from_shift(shift)
-    elif early_reason and not (shift.early_leave_reason or '').strip():
-        shift.early_leave_reason = early_reason
-        shift.save(update_fields=['early_leave_reason', 'updated_at'])
-        upsert_attendance_from_shift(shift)
+    else:
+        # Fill GPS if checkout already stamped but location was never stored.
+        geo_fields: list[str] = []
+        if shift.check_out_lat is None and lat is not None:
+            shift.check_out_lat = lat
+            geo_fields.append('check_out_lat')
+        if shift.check_out_lng is None and lng is not None:
+            shift.check_out_lng = lng
+            geo_fields.append('check_out_lng')
+        if shift.check_out_accuracy_m is None and accuracy is not None:
+            shift.check_out_accuracy_m = accuracy
+            geo_fields.append('check_out_accuracy_m')
+        if early_reason and not (shift.early_leave_reason or '').strip():
+            shift.early_leave_reason = early_reason
+            geo_fields.append('early_leave_reason')
+        if geo_fields:
+            shift.save(update_fields=[*geo_fields, 'updated_at'])
+            upsert_attendance_from_shift(shift)
 
     store = None
     store_id_raw = request.data.get('store_id') or request.data.get('storeId')

@@ -3,6 +3,7 @@
  */
 
 import { apiRequest, isApiAuthenticated } from './api'
+import { readGeo } from './baAttendanceApi'
 
 export type DailyReportRow = {
   id: string
@@ -78,6 +79,8 @@ export async function submitBaDailyReportApi(input: {
   /** Applied when checkout is stamped on final report submit. */
   earlyLeaveReason?: string
 }) {
+  const geo = await readGeo()
+
   return apiRequest('/api/ba/daily-report/', {
     method: 'POST',
     auth: false,
@@ -88,6 +91,7 @@ export async function submitBaDailyReportApi(input: {
       other_brands: input.otherBrands ?? [],
       source: input.source ?? 'manual',
       file_name: input.fileName ?? '',
+      ...geo,
       ...(input.storeId != null ? { store_id: input.storeId } : {}),
       ...(input.earlyLeaveReason?.trim()
         ? { early_leave_reason: input.earlyLeaveReason.trim() }
