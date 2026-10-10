@@ -1052,6 +1052,7 @@ class MisAuditLog(models.Model):
 
     class Action(models.TextChoices):
         EDIT_DAILY_REPORT = 'edit_daily_report', 'Edit daily report'
+        CREATE_DAILY_REPORT = 'create_daily_report', 'Create daily report'
         EDIT_ATTENDANCE = 'edit_attendance', 'Edit attendance'
         EDIT_AMBASSADOR = 'edit_ambassador', 'Edit ambassador'
         EDIT_STORE = 'edit_store', 'Edit store'

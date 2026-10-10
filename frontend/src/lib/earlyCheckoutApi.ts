@@ -68,6 +68,43 @@ export function formatReportWhen(iso: string | null | undefined) {
   })
 }
 
+/** Calendar day from YYYY-MM-DD (no timezone shift). */
+export function formatReportDateOnly(isoDate: string | null | undefined) {
+  if (!isoDate) return null
+  const key = isoDate.slice(0, 10)
+  const parts = key.split('-').map(Number)
+  if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return null
+  const [y, m, d] = parts
+  return new Date(y, m - 1, d).toLocaleDateString('en-PK', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+export function isMisCreatedReport(r: Pick<DailyReportRow, 'fileName'>) {
+  return (r.fileName || '').toLowerCase() === 'mis-created'
+}
+
+/**
+ * When column: use shift/report calendar date for MIS (and field-only) rows;
+ * keep checkout datetime for normal check-outs.
+ */
+export function formatActivityWhen(r: DailyReportRow) {
+  const day = formatReportDateOnly(r.date)
+  if (isMisCreatedReport(r) || (r.hasFieldReport && !r.checkedOutAt && day)) {
+    return day || formatReportWhen(r.submittedAt)
+  }
+  return formatReportWhen(r.checkedOutAt || r.submittedAt) || day || '—'
+}
+
+export function reportSourceLabel(r: DailyReportRow) {
+  if (isMisCreatedReport(r)) return 'MIS'
+  if (r.source === 'excel') return 'Excel'
+  if (r.hasFieldReport) return 'Checkout'
+  return 'Check-out only'
+}
+
 export async function submitBaDailyReportApi(input: {
   token: string
   stock?: Record<string, string>

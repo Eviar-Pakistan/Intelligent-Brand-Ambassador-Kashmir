@@ -197,6 +197,205 @@ def mis_patch_daily_report(request, report_id: int):
     )
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def mis_daily_report_bas(request):
+    """GET /api/mis/daily-report-bas/ — BA list for Add Report dropdown."""
+    err = require_mis(request)
+    if err:
+        return err
+
+    rows = (
+        Ambassador.objects.exclude(status=Ambassador.Status.REJECTED)
+        .order_by('name', 'code', 'id')
+        .values('id', 'name', 'code', 'city', 'status')
+    )
+    return Response(
+        {
+            'results': [
+                {
+                    'id': r['id'],
+                    'name': r['name'] or '',
+                    'code': r['code'] or '',
+                    'city': r['city'] or '',
+                    'status': r['status'] or '',
+                    'label': (
+                        f'{r["code"]} · {r["name"]}'.strip(' ·')
+                        if r['code']
+                        else (r['name'] or f'BA #{r["id"]}')
+                    ),
+                }
+                for r in rows
+            ]
+        }
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def mis_ba_shifts_for_report(request, ambassador_id: int):
+    """GET /api/mis/ambassadors/<id>/shifts-for-report/ — shifts + whether a report exists."""
+    err = require_mis(request)
+    if err:
+        return err
+
+    ba = Ambassador.objects.filter(pk=ambassador_id).first()
+    if not ba:
+        return Response({'detail': 'Ambassador not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    shifts = list(
+        ShiftAssignment.objects.filter(ambassador_id=ba.id)
+        .select_related('store')
+        .order_by('-date', '-id')[:200]
+    )
+    shift_ids = [s.id for s in shifts]
+    report_by_shift = {
+        r.shift_id: r.id
+        for r in BaDailyReport.objects.filter(shift_id__in=shift_ids).only('id', 'shift_id')
+        if r.shift_id
+    }
+    # Also match reports by BA + date when shift FK is missing
+    dates = {s.date for s in shifts}
+    report_by_date = {
+        r.date: r.id
+        for r in BaDailyReport.objects.filter(ambassador_id=ba.id, date__in=dates).only(
+            'id', 'date', 'shift_id'
+        )
+    }
+
+    results = []
+    for s in shifts:
+        report_id = report_by_shift.get(s.id) or report_by_date.get(s.date)
+        store_name = s.store.name if s.store_id else ''
+        city = s.store.city if s.store_id else ''
+        results.append(
+            {
+                'id': s.id,
+                'date': s.date.isoformat(),
+                'shiftLabel': s.shift_label or '',
+                'status': s.status,
+                'storeId': s.store_id,
+                'storeName': store_name,
+                'city': city,
+                'hasReport': report_id is not None,
+                'fieldReportId': report_id,
+                'label': (
+                    f'{s.date.isoformat()} · {store_name or "Store"}'
+                    f'{f" ({city})" if city else ""} · {s.shift_label or "Shift"}'
+                ),
+            }
+        )
+    return Response(
+        {
+            'ambassadorId': ba.id,
+            'ambassadorName': ba.name,
+            'baCode': ba.code or '',
+            'results': results,
+        }
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mis_create_daily_report(request):
+    """
+    POST /api/mis/daily-reports/
+    Body: { shiftId, stock?, sales?, otherBrands? }
+    Creates BaDailyReport only — does not stamp checkout or attendance Present.
+    """
+    err = require_mis(request)
+    if err:
+        return err
+
+    try:
+        shift_id = int(request.data.get('shiftId') or request.data.get('shift_id'))
+    except (TypeError, ValueError):
+        return Response({'detail': 'shiftId is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    shift = (
+        ShiftAssignment.objects.select_related('ambassador', 'store')
+        .filter(pk=shift_id)
+        .first()
+    )
+    if not shift or not shift.ambassador_id:
+        return Response(
+            {'detail': 'Shift not found or has no assigned BA.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    existing = BaDailyReport.objects.filter(shift=shift).first()
+    if not existing:
+        existing = BaDailyReport.objects.filter(
+            ambassador_id=shift.ambassador_id,
+            date=shift.date,
+        ).first()
+    if existing:
+        return Response(
+            {
+                'detail': 'Report is already created for this shift.',
+                'code': 'report_already_exists',
+                'fieldReportId': existing.id,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    stock = request.data.get('stock', request.data.get('stock_json'))
+    sales = request.data.get('sales', request.data.get('sales_json'))
+    other = request.data.get('otherBrands', request.data.get('other_brands_json'))
+    if not isinstance(stock, dict):
+        stock = {}
+    if not isinstance(sales, dict):
+        sales = {}
+    if not isinstance(other, list):
+        other = []
+
+    report = BaDailyReport.objects.create(
+        ambassador=shift.ambassador,
+        store=shift.store,
+        shift=shift,
+        date=shift.date,
+        stock_json=stock,
+        sales_json=normalize_sales_json(sales),
+        other_brands_json=other,
+        source=BaDailyReport.Source.MANUAL,
+        file_name='mis-created',
+    )
+
+    ba_name = shift.ambassador.name if shift.ambassador_id else 'BA'
+    store_name = shift.store.name if shift.store_id else 'Store'
+    after = {
+        'stock': report.stock_json,
+        'sales': report.sales_json,
+        'otherBrands': report.other_brands_json,
+        'shiftId': shift.id,
+        'date': report.date.isoformat(),
+    }
+    log_mis_action(
+        user=request.user,
+        action=MisAuditLog.Action.CREATE_DAILY_REPORT,
+        summary=(
+            f'Created daily report for {ba_name} · {store_name} · {report.date.isoformat()} '
+            f'({shift.shift_label or "shift"}).'
+        ),
+        before={},
+        after=after,
+        ambassador=shift.ambassador,
+        store=shift.store,
+        report=report,
+    )
+    return Response(
+        {
+            'id': report.id,
+            'date': report.date.isoformat(),
+            'shiftId': shift.id,
+            'stock': report.stock_json,
+            'sales': report.sales_json,
+            'otherBrands': report.other_brands_json,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def mis_patch_ambassador(request, ambassador_id: int):

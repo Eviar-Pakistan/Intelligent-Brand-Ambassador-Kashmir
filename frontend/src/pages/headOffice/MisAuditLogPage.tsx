@@ -31,7 +31,8 @@ function formatWhen(iso: string) {
 
 const ACTION_FILTERS: { id: string; label: string }[] = [
   { id: '', label: 'All' },
-  { id: 'edit_daily_report', label: 'Daily reports' },
+  { id: 'edit_daily_report', label: 'Edit daily reports' },
+  { id: 'create_daily_report', label: 'Create daily reports' },
   { id: 'edit_attendance', label: 'Attendance' },
   { id: 'edit_ambassador', label: 'Ambassadors' },
   { id: 'edit_store', label: 'Stores' },

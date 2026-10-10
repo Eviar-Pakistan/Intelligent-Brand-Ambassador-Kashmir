@@ -46,6 +46,9 @@ from .incentive_views import (
 from .ba_targets_views import BaTargetViewSet, ba_my_targets, ba_targets_bulk
 from .mis_views import (
     mis_audit_logs,
+    mis_ba_shifts_for_report,
+    mis_create_daily_report,
+    mis_daily_report_bas,
     mis_patch_ambassador,
     mis_patch_daily_report,
     mis_patch_store,
@@ -135,7 +138,14 @@ urlpatterns = [
     path('early-checkouts/', early_checkout_reports, name='early-checkouts'),
     path('daily-reports/', daily_reports, name='daily-reports'),
     path('mis/audit-logs/', mis_audit_logs, name='mis-audit-logs'),
+    path('mis/daily-report-bas/', mis_daily_report_bas, name='mis-daily-report-bas'),
+    path('mis/daily-reports/', mis_create_daily_report, name='mis-create-daily-report'),
     path('mis/daily-reports/<int:report_id>/', mis_patch_daily_report, name='mis-patch-daily-report'),
+    path(
+        'mis/ambassadors/<int:ambassador_id>/shifts-for-report/',
+        mis_ba_shifts_for_report,
+        name='mis-ba-shifts-for-report',
+    ),
     path('mis/ambassadors/<int:ambassador_id>/', mis_patch_ambassador, name='mis-patch-ambassador'),
     path('mis/stores/<int:store_id>/', mis_patch_store, name='mis-patch-store'),
     path(

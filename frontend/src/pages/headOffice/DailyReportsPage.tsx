@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, FileClock, FileSpreadsheet } from 'lucide-react'
+import { Download, FileClock, FileSpreadsheet, Plus } from 'lucide-react'
+import { ApiError } from '../../lib/api'
 import { Button, Card, Modal, PageHeader, StatusBadge } from '../../components/ui'
 import {
   downloadDailyReportsExcel,
   fetchDailyReports,
+  formatActivityWhen,
+  formatReportDateOnly,
   formatReportWhen,
   latestReportDate,
   localDateIso,
+  reportSourceLabel,
   yesterdayReportDate,
   type DailyReportBaCard,
   type DailyReportRow,
@@ -25,7 +29,14 @@ import {
   whyNotFields,
   type FieldDef,
 } from '../../lib/baReport'
-import { misPatchDailyReport } from '../../lib/misApi'
+import {
+  fetchMisBaShiftsForReport,
+  fetchMisReportBas,
+  misCreateDailyReport,
+  misPatchDailyReport,
+  type MisBaShiftForReport,
+  type MisReportBaOption,
+} from '../../lib/misApi'
 
 type FlatReport = DailyReportRow & {
   baId: string
@@ -74,6 +85,9 @@ function flattenCards(cards: DailyReportBaCard[]): FlatReport[] {
     }
   }
   return rows.sort((a, b) => {
+    const ka = a.date || a.checkedOutAt || a.submittedAt || ''
+    const kb = b.date || b.checkedOutAt || b.submittedAt || ''
+    if (ka !== kb) return ka < kb ? 1 : -1
     const ta = new Date(a.checkedOutAt || a.submittedAt || 0).getTime()
     const tb = new Date(b.checkedOutAt || b.submittedAt || 0).getTime()
     return tb - ta
@@ -228,20 +242,8 @@ function CheckoutReportCard({
   misEditable?: boolean
   onEdit?: () => void
 }) {
-  // Field reports: prefer submittedAt (created_at). Checkout on month shifts is often reused later.
-  const when = formatReportWhen(
-    report.hasFieldReport
-      ? report.submittedAt || report.checkedOutAt
-      : report.checkedOutAt || report.submittedAt,
-  )
-  const source =
-    report.source === 'excel'
-      ? 'Excel'
-      : report.source === 'manual'
-        ? 'Checkout'
-        : report.hasFieldReport
-          ? 'Checkout'
-          : 'Check-out only'
+  const when = formatActivityWhen(report)
+  const source = reportSourceLabel(report)
   const stock = stockGroups(report)
   const sales = salesGroups(report)
   const competitors = competitorRows(report)
@@ -389,7 +391,10 @@ function MisEditReportModal({
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>{report.baCity || report.city || '—'}</span>
             <span>·</span>
-            <span>{formatReportWhen(report.submittedAt || report.checkedOutAt)}</span>
+            <span>
+              {formatReportDateOnly(report.date) ||
+                formatReportWhen(report.submittedAt || report.checkedOutAt)}
+            </span>
             <span className="rounded-md bg-rose-50 px-1.5 py-0.5 font-semibold text-rose-600">
               Editable (MIS)
             </span>
@@ -489,12 +494,330 @@ function MisEditReportModal({
 
 type DownloadMode = 'today' | 'yesterday' | 'custom'
 
+function MisAddReportModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [step, setStep] = useState<'pick' | 'form'>('pick')
+  const [bas, setBas] = useState<MisReportBaOption[]>([])
+  const [baId, setBaId] = useState('')
+  const [shifts, setShifts] = useState<MisBaShiftForReport[]>([])
+  const [selectedShift, setSelectedShift] = useState<MisBaShiftForReport | null>(null)
+  const [loadingBas, setLoadingBas] = useState(false)
+  const [loadingShifts, setLoadingShifts] = useState(false)
+  const [alreadyOpen, setAlreadyOpen] = useState(false)
+  const [stock, setStock] = useState<Record<string, string>>({})
+  const [sales, setSales] = useState<Record<string, string>>({})
+  const [otherBrands, setOtherBrands] = useState<{ id?: string; name?: string; price?: string }[]>(
+    () => DEFAULT_OTHER_BRANDS.map((r) => ({ ...r })),
+  )
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setStep('pick')
+    setBaId('')
+    setShifts([])
+    setSelectedShift(null)
+    setAlreadyOpen(false)
+    setStock({})
+    setSales({})
+    setOtherBrands(DEFAULT_OTHER_BRANDS.map((r) => ({ ...r })))
+    setErr(null)
+    setLoadingBas(true)
+    void fetchMisReportBas()
+      .then(setBas)
+      .catch((e) => setErr(e instanceof Error ? e.message : 'Could not load BAs'))
+      .finally(() => setLoadingBas(false))
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !baId) {
+      setShifts([])
+      return
+    }
+    setLoadingShifts(true)
+    setErr(null)
+    void fetchMisBaShiftsForReport(baId)
+      .then(setShifts)
+      .catch((e) => setErr(e instanceof Error ? e.message : 'Could not load shifts'))
+      .finally(() => setLoadingShifts(false))
+  }, [open, baId])
+
+  function pickShift(shift: MisBaShiftForReport) {
+    if (shift.hasReport) {
+      setSelectedShift(shift)
+      setAlreadyOpen(true)
+      return
+    }
+    setSelectedShift(shift)
+    setStock({})
+    setSales({})
+    setOtherBrands(DEFAULT_OTHER_BRANDS.map((r) => ({ ...r })))
+    setErr(null)
+    setStep('form')
+  }
+
+  async function save() {
+    if (!selectedShift) return
+    setBusy(true)
+    setErr(null)
+    try {
+      await misCreateDailyReport({
+        shiftId: selectedShift.id,
+        stock,
+        sales,
+        otherBrands,
+      })
+      onCreated()
+      onClose()
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setAlreadyOpen(true)
+        setErr(null)
+      } else {
+        setErr(e instanceof Error ? e.message : 'Could not create report')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const baLabel = bas.find((b) => String(b.id) === baId)?.label || 'BA'
+
+  return (
+    <>
+      <Modal
+        open={open && !alreadyOpen}
+        onClose={onClose}
+        size={step === 'form' ? 'xl' : 'md'}
+        title={step === 'form' ? `Add report · ${baLabel}` : 'Add report'}
+        footer={
+          step === 'form' ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {err ? <p className="mr-auto text-sm text-rose-600">{err}</p> : null}
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setStep('pick')
+                  setErr(null)
+                }}
+                disabled={busy}
+              >
+                Back
+              </Button>
+              <Button onClick={() => void save()} disabled={busy}>
+                {busy ? 'Saving…' : 'Create report'}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={onClose}>
+                Cancel
+              </Button>
+            </div>
+          )
+        }
+      >
+        {step === 'pick' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Choose a BA, then pick a shift. The report is saved for that shift only — check-in /
+              check-out times are not changed.
+            </p>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold text-slate-800">Brand ambassador</span>
+              <select
+                value={baId}
+                onChange={(e) => setBaId(e.target.value)}
+                disabled={loadingBas}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">{loadingBas ? 'Loading…' : 'Select a BA…'}</option>
+                {bas.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {baId ? (
+              <div className="space-y-2">
+                <span className="block text-sm font-semibold text-slate-800">Shifts</span>
+                {loadingShifts ? (
+                  <p className="text-sm text-slate-400">Loading shifts…</p>
+                ) : shifts.length === 0 ? (
+                  <p className="text-sm text-slate-500">No shifts found for this BA.</p>
+                ) : (
+                  <ul className="max-h-72 space-y-1.5 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-2">
+                    {shifts.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          type="button"
+                          onClick={() => pickShift(s)}
+                          className={`w-full rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                            s.hasReport
+                              ? 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-amber-50'
+                              : 'bg-white text-slate-800 ring-1 ring-slate-200 hover:border-brand-500 hover:ring-brand-400'
+                          }`}
+                        >
+                          <span className="font-medium">{s.label}</span>
+                          {s.hasReport ? (
+                            <span className="mt-0.5 block text-xs font-semibold text-amber-700">
+                              Report already created
+                            </span>
+                          ) : (
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              Click to create report
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+            {err ? <p className="text-sm text-rose-600">{err}</p> : null}
+          </div>
+        ) : selectedShift ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>{selectedShift.storeName || 'Store'}</span>
+              <span>·</span>
+              <span>{selectedShift.date}</span>
+              <span>·</span>
+              <span>{selectedShift.shiftLabel || 'Shift'}</span>
+              <span className="rounded-md bg-rose-50 px-1.5 py-0.5 font-semibold text-rose-600">
+                New (MIS)
+              </span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="min-w-0 space-y-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4">
+                <h4 className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                  Stock report
+                </h4>
+                {STOCK_SECTIONS.map((section) => (
+                  <div key={section.title} className="space-y-2">
+                    <p className="text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                      {section.title}
+                    </p>
+                    {section.fields.map((f) => (
+                      <label key={f.key} className="block min-w-0 text-xs">
+                        <span className="mb-1 block font-medium text-slate-700">{f.label}</span>
+                        <select
+                          value={stock[f.key] || ''}
+                          onChange={(e) =>
+                            setStock((prev) => ({ ...prev, [f.key]: e.target.value }))
+                          }
+                          className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm leading-normal"
+                        >
+                          <option value="">—</option>
+                          {STOCK_OPTIONS.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="min-w-0 space-y-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4">
+                <h4 className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                  Daily sales
+                </h4>
+                {SALES_SECTIONS.map((section) => (
+                  <div key={section.title} className="space-y-2">
+                    <p className="text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                      {section.title}
+                    </p>
+                    {section.fields.map((f) => (
+                      <label key={f.key} className="block min-w-0 text-xs">
+                        <span className="mb-1 block font-medium text-slate-700">{f.label}</span>
+                        <input
+                          value={sales[f.key] || ''}
+                          onChange={(e) =>
+                            setSales((prev) => ({ ...prev, [f.key]: e.target.value }))
+                          }
+                          className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-brand-500"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="min-w-0 space-y-2 rounded-xl border border-slate-100 bg-slate-50/80 p-3 sm:p-4 md:col-span-2 xl:col-span-1">
+                <h4 className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                  Competitor data
+                </h4>
+                <div className="space-y-2">
+                  {otherBrands.map((row, idx) => (
+                    <div key={row.id || idx} className="grid grid-cols-[1fr_7rem] gap-2">
+                      <input
+                        value={row.name || ''}
+                        placeholder="Brand"
+                        onChange={(e) =>
+                          setOtherBrands((prev) =>
+                            prev.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r)),
+                          )
+                        }
+                        className="min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-brand-500"
+                      />
+                      <input
+                        value={row.price || ''}
+                        placeholder="Price"
+                        onChange={(e) =>
+                          setOtherBrands((prev) =>
+                            prev.map((r, i) => (i === idx ? { ...r, price: e.target.value } : r)),
+                          )
+                        }
+                        className="min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-brand-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={alreadyOpen}
+        onClose={() => setAlreadyOpen(false)}
+        title="Report already created"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-700">
+            A daily report is already created for this shift
+            {selectedShift ? ` (${selectedShift.label})` : ''}. Use Edit on the existing report
+            instead.
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={() => setAlreadyOpen(false)}>OK</Button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
+}
+
 export function DailyReportsPage({ misEditable = false }: { misEditable?: boolean }) {
   const [cards, setCards] = useState<DailyReportBaCard[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<FlatReport | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
   const [search, setSearch] = useState('')
   const didAutoExpand = useRef(false)
 
@@ -619,11 +942,16 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
         title="BA daily reports"
         description={
           misEditable
-            ? 'Edit stock, sales, and competitor data for any BA report — changes are audit-logged.'
+            ? 'Add or edit stock, sales, and competitor data for BA reports — changes are audit-logged.'
             : 'Stock, daily sales, and competitor data from BA check-out (early or on time)'
         }
         actions={
           <div className="flex flex-wrap gap-2">
+            {misEditable && (
+              <Button size="sm" onClick={() => setAddOpen(true)} disabled={loading}>
+                <Plus size={15} /> Add report
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
@@ -701,11 +1029,9 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
                     <td className="px-4 py-3 text-slate-700">{r.storeName || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{r.baCity || r.city || '—'}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-600">
-                      {formatReportWhen(r.submittedAt || r.checkedOutAt)}
+                      {formatActivityWhen(r)}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {r.source === 'excel' ? 'Excel' : r.hasFieldReport ? 'Checkout' : 'Anytime'}
-                    </td>
+                    <td className="px-4 py-3 text-slate-600">{reportSourceLabel(r)}</td>
                     <td className="px-4 py-3 text-right">
                       {r.fieldReportId ? (
                         <button
@@ -743,6 +1069,14 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
         onClose={() => setEditing(null)}
         onSaved={() => void load({ silent: true })}
       />
+
+      {misEditable && (
+        <MisAddReportModal
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          onCreated={() => void load({ silent: true })}
+        />
+      )}
 
       <Modal
         open={downloadOpen}

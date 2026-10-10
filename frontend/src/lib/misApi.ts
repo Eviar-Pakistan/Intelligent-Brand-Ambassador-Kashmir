@@ -47,6 +47,44 @@ export async function fetchMisAuditLogs(params?: {
   return data.results ?? []
 }
 
+export type MisReportBaOption = {
+  id: number
+  name: string
+  code: string
+  city: string
+  status: string
+  label: string
+}
+
+export type MisBaShiftForReport = {
+  id: number
+  date: string
+  shiftLabel: string
+  status: string
+  storeId: number | null
+  storeName: string
+  city: string
+  hasReport: boolean
+  fieldReportId: number | null
+  label: string
+}
+
+export async function fetchMisReportBas(): Promise<MisReportBaOption[]> {
+  if (!isApiAuthenticated()) return []
+  const data = await apiRequest<{ results: MisReportBaOption[] }>('/api/mis/daily-report-bas/')
+  return data.results ?? []
+}
+
+export async function fetchMisBaShiftsForReport(
+  ambassadorId: number | string,
+): Promise<MisBaShiftForReport[]> {
+  if (!isApiAuthenticated()) return []
+  const data = await apiRequest<{ results: MisBaShiftForReport[] }>(
+    `/api/mis/ambassadors/${encodeURIComponent(String(ambassadorId))}/shifts-for-report/`,
+  )
+  return data.results ?? []
+}
+
 export async function misPatchDailyReport(
   reportId: number,
   body: {
@@ -58,6 +96,23 @@ export async function misPatchDailyReport(
   return apiRequest(`/api/mis/daily-reports/${reportId}/`, {
     method: 'PATCH',
     body: {
+      stock: body.stock,
+      sales: body.sales,
+      otherBrands: body.otherBrands,
+    },
+  })
+}
+
+export async function misCreateDailyReport(body: {
+  shiftId: number
+  stock?: Record<string, string>
+  sales?: Record<string, string | number>
+  otherBrands?: { id?: string; name?: string; price?: string }[]
+}) {
+  return apiRequest<{ id: number }>('/api/mis/daily-reports/', {
+    method: 'POST',
+    body: {
+      shiftId: body.shiftId,
       stock: body.stock,
       sales: body.sales,
       otherBrands: body.otherBrands,
