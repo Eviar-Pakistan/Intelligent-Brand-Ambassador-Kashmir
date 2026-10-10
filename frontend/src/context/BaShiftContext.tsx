@@ -7,7 +7,6 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { ApiError } from '../lib/api'
 import {
   baCheckInApi,
   baCheckOutApi,
@@ -97,9 +96,6 @@ export type BaShiftState = {
   loading: boolean
   busy: boolean
   error: string | null
-  /** Geofence / GPS popup message (store region). */
-  regionNotice: string | null
-  clearRegionNotice: () => void
   upcoming: BaUpcomingShift[]
   checkedIn: boolean
   checkedOut: boolean
@@ -113,20 +109,6 @@ export type BaShiftState = {
   checkOut: (earlyLeaveReason?: string) => void
   markReportSubmitted: () => void
   refresh: () => Promise<void>
-}
-
-export function regionMessageFromError(err: unknown): string | null {
-  if (!(err instanceof ApiError)) return null
-  const body = err.body as { code?: string; detail?: string } | null
-  const code = body && typeof body === 'object' ? body.code : undefined
-  if (code === 'outside_store_region' || code === 'store_region_gps_required') {
-    return err.message
-  }
-  const msg = err.message || ''
-  if (/outside the store region|location is required to check/i.test(msg)) {
-    return msg
-  }
-  return null
 }
 
 const BaShiftContext = createContext<BaShiftState | null>(null)
@@ -243,7 +225,6 @@ export function BaShiftProvider({
   const [loading, setLoading] = useState(apiMode)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [regionNotice, setRegionNotice] = useState<string | null>(null)
   const [hasShift, setHasShift] = useState(!apiMode)
   const [shiftMessage, setShiftMessage] = useState<string | null>(null)
   const [city, setCity] = useState(PLACEHOLDER)
@@ -339,25 +320,16 @@ export function BaShiftProvider({
     !!checkInAt &&
     now.getTime() - checkInAt.getTime() >= CHECKOUT_UNLOCK_AFTER_MS
 
-  const clearRegionNotice = useCallback(() => setRegionNotice(null), [])
-
   const checkIn = useCallback(
     (type: BaAttendanceType = 'store') => {
       if (apiMode && inviteToken) {
         if (!hasShift || checkedIn || checkedOut || busy) return
         setBusy(true)
         setError(null)
-        setRegionNotice(null)
         void baCheckInApi(inviteToken, type)
           .then((data) => applyTodayShift(data, applySetters))
           .catch((err) => {
-            const region = regionMessageFromError(err)
-            if (region) {
-              setRegionNotice(region)
-              setError(null)
-            } else {
-              setError(err instanceof Error ? err.message : 'Check-in failed')
-            }
+            setError(err instanceof Error ? err.message : 'Check-in failed')
           })
           .finally(() => setBusy(false))
         return
@@ -378,20 +350,13 @@ export function BaShiftProvider({
         if (!checkedIn || checkedOut || busy) return
         setBusy(true)
         setError(null)
-        setRegionNotice(null)
         void baCheckOutApi(inviteToken, earlyLeaveReason)
           .then((data) => {
             applyTodayShift(data, applySetters)
             setReportSubmitted(true)
           })
           .catch((err) => {
-            const region = regionMessageFromError(err)
-            if (region) {
-              setRegionNotice(region)
-              setError(null)
-            } else {
-              setError(err instanceof Error ? err.message : 'Check-out failed')
-            }
+            setError(err instanceof Error ? err.message : 'Check-out failed')
           })
           .finally(() => setBusy(false))
         return
@@ -426,8 +391,6 @@ export function BaShiftProvider({
       loading,
       busy,
       error,
-      regionNotice,
-      clearRegionNotice,
       upcoming,
       checkedIn,
       checkedOut,
@@ -458,8 +421,6 @@ export function BaShiftProvider({
       loading,
       busy,
       error,
-      regionNotice,
-      clearRegionNotice,
       upcoming,
       checkedIn,
       checkedOut,

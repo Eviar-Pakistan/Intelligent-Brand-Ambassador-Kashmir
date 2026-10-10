@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, MapPin } from 'lucide-react'
-import { regionMessageFromError, useBaShift } from '../../context/BaShiftContext'
+import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { useBaShift } from '../../context/BaShiftContext'
 import { useBaSession } from '../../lib/baAccounts'
 import { submitBaDailyReportApi } from '../../lib/earlyCheckoutApi'
-import { Modal } from '../../components/ui'
 import { fetchBaOwnTargets, monthInputValue } from '../../lib/baTargets'
 import {
   baPerformanceCategories,
@@ -408,7 +407,6 @@ export function BaOtherBrandsPage() {
   const [submitted, setSubmitted] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [regionNotice, setRegionNotice] = useState<string | null>(null)
 
   function updateRow(id: string, patch: Partial<OtherBrandRow>) {
     setRows((prev) =>
@@ -473,13 +471,7 @@ export function BaOtherBrandsPage() {
         checkOut(earlyReason)
       } catch (err) {
         setBusy(false)
-        const region = regionMessageFromError(err)
-        if (region) {
-          setRegionNotice(region)
-          setError(null)
-        } else {
-          setError(err instanceof Error ? err.message : 'Could not save report.')
-        }
+        setError(err instanceof Error ? err.message : 'Could not save report.')
         return
       }
       setBusy(false)
@@ -513,30 +505,6 @@ export function BaOtherBrandsPage() {
   }
 
   return (
-    <>
-      <Modal
-        open={!!regionNotice}
-        onClose={() => setRegionNotice(null)}
-        title="Outside store region"
-      >
-        <div className="space-y-4">
-          <div className="flex gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-3">
-            <MapPin className="mt-0.5 shrink-0 text-rose-600" size={22} />
-            <p className="text-sm leading-relaxed text-slate-800">{regionNotice}</p>
-          </div>
-          <p className="text-sm text-slate-600">
-            Stay near your assigned store, enable GPS, then try again.
-          </p>
-          <button
-            type="button"
-            onClick={() => setRegionNotice(null)}
-            className="w-full rounded-xl bg-navy-900 py-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-          >
-            OK
-          </button>
-        </div>
-      </Modal>
-
       <form noValidate onSubmit={handleSubmit} className="space-y-4 bg-[#f7f4ec] p-4 pb-8">
         <PageChrome
           title="Other Brands"
@@ -596,6 +564,5 @@ export function BaOtherBrandsPage() {
           {busy ? 'Submitting…' : 'Submit'}
         </button>
       </form>
-    </>
   )
 }
