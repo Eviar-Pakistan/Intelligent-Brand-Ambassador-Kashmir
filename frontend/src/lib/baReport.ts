@@ -86,12 +86,12 @@ export const whyNotFields: FieldDef[] = [
 ]
 
 export const oilSalesFields: FieldDef[] = [
-  { key: 'kpgoCan10', label: `KPGO 10 LTR CAN Cons. RED${UNITS}` },
-  { key: 'kpgoBtl3', label: `KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED${UNITS}` },
-  { key: 'kpgoBtl45', label: `KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED${UNITS}` },
-  { key: 'kpgoTin5', label: `KPGO 5 LTR TIN Cons. RED${UNITS}` },
-  { key: 'kpgoPouch1x5', label: `KPGO POUCH (1LTR x 5) Cons. RED${UNITS}` },
-  { key: 'kpgoSup1x5', label: `KPGO Stand Up Pouch (1LTR x 5)${UNITS}` },
+  { key: 'kpgoCan10', label: `KPGO 10 LTR CAN. RED${UNITS}` },
+  { key: 'kpgoBtl3', label: `KPGO 3.0 LTR BOTTLE. RED${UNITS}` },
+  { key: 'kpgoBtl45', label: `KPGO 4.5 LTR BOTTLE. RED${UNITS}` },
+  { key: 'kpgoTin5', label: `KPGO 5 LTR TIN. RED${UNITS}` },
+  { key: 'kpgoPouch1x5', label: `KPGO POUCH (1LTR x 5) Carton. RED${UNITS}` },
+  { key: 'kpgoSup1x5', label: `KPGO Stand Up Pouch (1LTR x 5) Carton. RED${UNITS}` },
   { key: 'kpgoPouch1', label: `KPGO POUCH 1 LTR${UNITS}` },
   { key: 'kpgoSup1', label: `KPGO Stand Up Pouch 1 LTR${UNITS}` },
   { key: 'kpgoBkt16', label: `KPGO 16 LTR BKT${UNITS}` },
@@ -112,16 +112,16 @@ export const waadiSalesFields: FieldDef[] = [
   { key: 'wbpPouch1x5', label: `WBP POUCH (1KG X 5)${UNITS}` },
   { key: 'wbpPouch1', label: `WBP POUCH 1 KG${UNITS}` },
   { key: 'wbpBkt25', label: `WBP 2.5 KG BKT${UNITS}` },
-  { key: 'wbpBkt16', label: `WBP 16 KG BKT${UNITS}` },
+  // { key: 'wbpBkt16', label: `WBP 16 KG BKT${UNITS}` },
 ]
 
 export const stockOilFields: FieldDef[] = [
-  { key: 'stockKpgoCan10', label: 'KPGO 10 LTR CAN Cons. RED' },
-  { key: 'stockKpgoBtl3', label: 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED' },
-  { key: 'stockKpgoBtl45', label: 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED' },
-  { key: 'stockKpgoTin5', label: 'KPGO 5 LTR TIN Cons. RED' },
-  { key: 'stockKpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Cons. RED' },
-  { key: 'stockKpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5)' },
+  { key: 'stockKpgoCan10', label: 'KPGO 10 LTR CAN. RED' },
+  { key: 'stockKpgoBtl3', label: 'KPGO 3.0 LTR BOTTLE. RED' },
+  { key: 'stockKpgoBtl45', label: 'KPGO 4.5 LTR BOTTLE. RED' },
+  { key: 'stockKpgoTin5', label: 'KPGO 5 LTR TIN. RED' },
+  { key: 'stockKpgoPouch1x5', label: 'KPGO POUCH (1LTR x 5) Carton. RED' },
+  { key: 'stockKpgoSup1x5', label: 'KPGO Stand Up Pouch (1LTR x 5) Carton. RED' },
   { key: 'stockKpgoPouch1', label: 'KPGO POUCH 1 LTR' },
   { key: 'stockKpgoSup1', label: 'KPGO Stand Up Pouch 1 LTR' },
   { key: 'stockKpgoBkt16', label: 'KPGO 16 LTR BKT' },
@@ -142,7 +142,7 @@ export const stockWaadiFields: FieldDef[] = [
   { key: 'stockWbpPouch1x5', label: 'WBP POUCH (1KG X 5)' },
   { key: 'stockWbpPouch1', label: 'WBP POUCH 1 KG' },
   { key: 'stockWbpBkt25', label: 'WBP 2.5 KG BKT' },
-  { key: 'stockWbpBkt16', label: 'WBP 16 KG BKT' },
+  // { key: 'stockWbpBkt16', label: 'WBP 16 KG BKT' },
 ]
 
 export const STOCK_OPTIONS = ['In Stock', 'Out of Stock', 'Near Out of Stock'] as const

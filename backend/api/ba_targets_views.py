@@ -98,12 +98,12 @@ CATEGORY_SKU_KEYS = {
 # Catalog pack labels per category (for default assigned SKUs when HO sets category target).
 CATEGORY_PACK_LABELS = {
     'Kashmir Cooking Oil': [
-        'KPGO 10 LTR CAN Cons. RED',
-        'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED',
-        'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED',
-        'KPGO 5 LTR TIN Cons. RED',
-        'KPGO POUCH (1LTR x 5) Cons. RED',
-        'KPGO Stand Up Pouch (1LTR x 5)',
+        'KPGO 10 LTR CAN. RED',
+        'KPGO 3.0 LTR BOTTLE. RED',
+        'KPGO 4.5 LTR BOTTLE. RED',
+        'KPGO 5 LTR TIN. RED',
+        'KPGO POUCH (1LTR x 5) Carton. RED',
+        'KPGO Stand Up Pouch (1LTR x 5) Carton. RED',
         'KPGO POUCH 1 LTR',
         'KPGO Stand Up Pouch 1 LTR',
         'KPGO 16 LTR BKT',
@@ -122,7 +122,6 @@ CATEGORY_PACK_LABELS = {
         'WBP POUCH (1KG X 5)',
         'WBP POUCH 1 KG',
         'WBP 2.5 KG BKT',
-        'WBP 16 KG BKT',
     ],
 }
 

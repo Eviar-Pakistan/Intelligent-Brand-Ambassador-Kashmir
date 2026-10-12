@@ -1247,12 +1247,12 @@ def ba_leaderboard(request):
 
 # Known stock SKU keys from BA checkout forms (label used when key has no override).
 _STOCK_SKU_CATALOG: list[tuple[str, str]] = [
-    ('stockKpgoCan10', 'KPGO 10 LTR CAN Cons. RED'),
-    ('stockKpgoBtl3', 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED'),
-    ('stockKpgoBtl45', 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED'),
-    ('stockKpgoTin5', 'KPGO 5 LTR TIN Cons. RED'),
-    ('stockKpgoPouch1x5', 'KPGO POUCH (1LTR x 5) Cons. RED'),
-    ('stockKpgoSup1x5', 'KPGO Stand Up Pouch (1LTR x 5)'),
+    ('stockKpgoCan10', 'KPGO 10 LTR CAN. RED'),
+    ('stockKpgoBtl3', 'KPGO 3.0 LTR BOTTLE. RED'),
+    ('stockKpgoBtl45', 'KPGO 4.5 LTR BOTTLE. RED'),
+    ('stockKpgoTin5', 'KPGO 5 LTR TIN. RED'),
+    ('stockKpgoPouch1x5', 'KPGO POUCH (1LTR x 5) Carton. RED'),
+    ('stockKpgoSup1x5', 'KPGO Stand Up Pouch (1LTR x 5) Carton. RED'),
     ('stockKpgoPouch1', 'KPGO POUCH 1 LTR'),
     ('stockKpgoSup1', 'KPGO Stand Up Pouch 1 LTR'),
     ('stockKpgoBkt16', 'KPGO 16 LTR BKT'),
@@ -1267,7 +1267,6 @@ _STOCK_SKU_CATALOG: list[tuple[str, str]] = [
     ('stockWbpPouch1x5', 'WBP POUCH (1KG X 5)'),
     ('stockWbpPouch1', 'WBP POUCH 1 KG'),
     ('stockWbpBkt25', 'WBP 2.5 KG BKT'),
-    ('stockWbpBkt16', 'WBP 16 KG BKT'),
 ]
 
 

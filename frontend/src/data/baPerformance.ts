@@ -49,12 +49,12 @@ export const baPerformanceBrands = ['Kashmir', 'Waadi'] as const
 
 /** LMT SKUs — packs across KCO / KBP / WBP. */
 const OIL_SKUS = [
-  'KPGO 10 LTR CAN Cons. RED',
-  'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED',
-  'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED',
-  'KPGO 5 LTR TIN Cons. RED',
-  'KPGO POUCH (1LTR x 5) Cons. RED',
-  'KPGO Stand Up Pouch (1LTR x 5)',
+  'KPGO 10 LTR CAN. RED',
+  'KPGO 3.0 LTR BOTTLE. RED',
+  'KPGO 4.5 LTR BOTTLE. RED',
+  'KPGO 5 LTR TIN. RED',
+  'KPGO POUCH (1LTR x 5) Carton. RED',
+  'KPGO Stand Up Pouch (1LTR x 5) Carton. RED',
   'KPGO POUCH 1 LTR',
   'KPGO Stand Up Pouch 1 LTR',
   'KPGO 16 LTR BKT',
@@ -75,7 +75,6 @@ const WAADI_SKUS = [
   'WBP POUCH (1KG X 5)',
   'WBP POUCH 1 KG',
   'WBP 2.5 KG BKT',
-  'WBP 16 KG BKT',
 ] as const
 
 export type ProductFilters = {
@@ -171,15 +170,15 @@ export const DEMO_TOP_STORES_BY_TARGET = [
 ] as const
 
 export const DEMO_TOP_SKU_TARGETS = [
-  { sku: 'KPGO 10 LTR CAN Cons. RED', sales: 12480 },
+  { sku: 'KPGO 10 LTR CAN. RED', sales: 12480 },
   { sku: 'KBP GOLD 10 KG BKT', sales: 9620 },
-  { sku: 'KPGO 5 LTR TIN Cons. RED', sales: 7840 },
+  { sku: 'KPGO 5 LTR TIN. RED', sales: 7840 },
   { sku: 'KBP GOLD 5 KG BKT', sales: 6510 },
-  { sku: 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED', sales: 5380 },
-  { sku: 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED', sales: 4720 },
+  { sku: 'KPGO 4.5 LTR BOTTLE. RED', sales: 5380 },
+  { sku: 'KPGO 3.0 LTR BOTTLE. RED', sales: 4720 },
   { sku: 'KBP GOLD POUCH (1KG X 5)', sales: 3910 },
   { sku: 'WBP 5 KG BKT', sales: 3280 },
-  { sku: 'KPGO Stand Up Pouch (1LTR x 5)', sales: 2650 },
+  { sku: 'KPGO Stand Up Pouch (1LTR x 5) Carton. RED', sales: 2650 },
   { sku: 'WBP POUCH (1KG X 5)', sales: 1890 },
 ] as const
 

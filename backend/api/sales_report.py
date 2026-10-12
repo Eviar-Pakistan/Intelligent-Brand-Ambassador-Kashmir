@@ -67,12 +67,12 @@ PACK_KG_PER_UNIT: dict[str, float] = {
 }
 
 PACK_KEY_LABELS: dict[str, str] = {
-    'kpgoCan10': 'KPGO 10 LTR CAN Cons. RED',
-    'kpgoBtl3': 'KPGO 3.0 LTR BOTTLE (3LTR X 6) Cons. RED',
-    'kpgoBtl45': 'KPGO 4.5 LTR BOTTLE (4.5LTRX 4) Cons. RED',
-    'kpgoTin5': 'KPGO 5 LTR TIN Cons. RED',
-    'kpgoPouch1x5': 'KPGO POUCH (1LTR x 5) Cons. RED',
-    'kpgoSup1x5': 'KPGO Stand Up Pouch (1LTR x 5)',
+    'kpgoCan10': 'KPGO 10 LTR CAN. RED',
+    'kpgoBtl3': 'KPGO 3.0 LTR BOTTLE. RED',
+    'kpgoBtl45': 'KPGO 4.5 LTR BOTTLE. RED',
+    'kpgoTin5': 'KPGO 5 LTR TIN. RED',
+    'kpgoPouch1x5': 'KPGO POUCH (1LTR x 5) Carton. RED',
+    'kpgoSup1x5': 'KPGO Stand Up Pouch (1LTR x 5) Carton. RED',
     'kpgoPouch1': 'KPGO POUCH 1 LTR',
     'kpgoSup1': 'KPGO Stand Up Pouch 1 LTR',
     'kpgoBkt16': 'KPGO 16 LTR BKT',
@@ -87,7 +87,6 @@ PACK_KEY_LABELS: dict[str, str] = {
     'wbpPouch1x5': 'WBP POUCH (1KG X 5)',
     'wbpPouch1': 'WBP POUCH 1 KG',
     'wbpBkt25': 'WBP 2.5 KG BKT',
-    'wbpBkt16': 'WBP 16 KG BKT',
 }
 
 PACK_LABEL_TO_KEY: dict[str, str] = {label: key for key, label in PACK_KEY_LABELS.items()}

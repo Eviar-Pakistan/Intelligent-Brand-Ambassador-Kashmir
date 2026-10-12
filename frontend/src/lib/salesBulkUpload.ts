@@ -167,7 +167,7 @@ export async function downloadSalesBulkTemplate(opts?: {
       opts?.baSamples?.[0]?.code || 'BA-016',
       '2026-10',
       'Kashmir Cooking Oil',
-      'KPGO 10 LTR CAN Cons. RED, KPGO 5 LTR TIN Cons. RED',
+      'KPGO 10 LTR CAN. RED, KPGO 5 LTR TIN. RED',
       120,
     ],
     [
