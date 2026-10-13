@@ -77,51 +77,19 @@ def ba_month_achievement(ambassador_id: int, month: str | None = None) -> tuple[
 
 
 def _checkout_sales_total(sales) -> float:
-    """Total LTR/KG from a BA checkout daily-sales form payload."""
+    """Total kg from a BA checkout payload: pack units × PACK_KG_PER_UNIT."""
+    from .sales_report import category_sales_from_json
+
+    cats = category_sales_from_json(sales)
+    total = sum(cats.values())
+    if total > 0:
+        return total
     if not isinstance(sales, dict):
         return 0.0
-
-    def _f(val) -> float:
-        try:
-            if val is None or val == '':
-                return 0.0
-            return float(val)
-        except (TypeError, ValueError):
-            return 0.0
-
-    oil_keys = (
-        'kpgoCan10',
-        'kpgoBtl3',
-        'kpgoBtl45',
-        'kpgoTin5',
-        'kpgoPouch1x5',
-        'kpgoSup1x5',
-        'kpgoBkt16',
-        'salesOil',
-    )
-    ghee_keys = (
-        'kbpBkt10',
-        'kbpBkt25',
-        'kbpBkt5',
-        'kbpTin5',
-        'kbpPouch1x5',
-        'kbpBkt16',
-        'salesGhee',
-    )
-    waadi_keys = (
-        'wbpBkt5',
-        'wbpPouch1x5',
-        'wbpBkt25',
-        'wbpBkt16',
-        'salesWaadi',
-    )
-    oil = sum(_f(sales.get(k)) for k in oil_keys)
-    ghee = sum(_f(sales.get(k)) for k in ghee_keys)
-    waadi = sum(_f(sales.get(k)) for k in waadi_keys)
-    sku_sum = oil + ghee + waadi
-    if sku_sum > 0:
-        return sku_sum
-    return _f(sales.get('totalSalesLtrKg'))
+    try:
+        return float(sales.get('totalSalesLtrKg') or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def ba_days_worked(ambassador_id: int, month_start: date | None = None, today: date | None = None) -> int:
