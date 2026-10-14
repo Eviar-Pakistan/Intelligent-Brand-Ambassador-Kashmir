@@ -24,7 +24,6 @@ import {
   colorsForCategories,
   chartGold,
   chartGreen,
-  chartGreenLight,
   chartGrid,
   chartTick,
   defaultChartOptions,
@@ -41,6 +40,29 @@ function EmptyRow({ cols }: { cols: number }) {
   )
 }
 
+function mixHex(from: string, to: string, t: number) {
+  const parse = (hex: string) => {
+    const h = hex.replace('#', '')
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+  }
+  const [r1, g1, b1] = parse(from)
+  const [r2, g2, b2] = parse(to)
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * t)
+  return `rgb(${mix(r1, r2)}, ${mix(g1, g2)}, ${mix(b1, b2)})`
+}
+
+/** Battery meter: shortest bar = red, mid = amber, fullest = green. */
+function batteryBarColor(ratio: number) {
+  const t = Math.max(0, Math.min(1, ratio))
+  if (t < 0.5) return mixHex('#e11d48', '#f9b000', t / 0.5)
+  return mixHex('#f9b000', '#16a34a', (t - 0.5) / 0.5)
+}
+
+const kpiMint =
+  'border-emerald-100/70 bg-gradient-to-r from-[#e7f6ee] via-[#f4fbf7] to-white'
+const kpiCream =
+  'border-amber-100/70 bg-gradient-to-r from-[#fff4dc] via-[#fffaf0] to-white'
+
 function ActiveBasKpiCard({
   value,
   hint,
@@ -56,6 +78,7 @@ function ActiveBasKpiCard({
     <Card
       className={cn(
         'relative overflow-visible',
+        kpiCream,
         open ? 'z-50' : 'z-0 animate-fade-up',
       )}
     >
@@ -712,20 +735,25 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
-  const targetSalesChart = useMemo<ChartData<'bar'>>(
-    () => ({
+  const targetSalesChart = useMemo<ChartData<'bar'>>(() => {
+    const values = [data.townTargetVsSales.target, data.townTargetVsSales.sales]
+    const min = Math.min(...values)
+    const max = Math.max(...values, 1)
+    const span = max - min
+    const colors = values.map((v) => batteryBarColor(span <= 0 ? 1 : (v - min) / span))
+    return {
       labels: ['Target', 'Sales'],
       datasets: [
         {
-          data: [data.townTargetVsSales.target, data.townTargetVsSales.sales],
-          backgroundColor: [chartGreenLight, chartGreen],
+          data: values,
+          backgroundColor: colors,
+          hoverBackgroundColor: colors,
           borderRadius: 4,
           maxBarThickness: 48,
         },
       ],
-    }),
-    [data.townTargetVsSales],
-  )
+    }
+  }, [data.townTargetVsSales])
 
   const targetSalesOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
@@ -800,35 +828,45 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
-  const topStoresChart = useMemo<ChartData<'bar'>>(
-    () => ({
+  const topStoresChart = useMemo<ChartData<'bar'>>(() => {
+    const values = data.topStores.map((s) => s.sales)
+    const min = Math.min(...values)
+    const max = Math.max(...values, 1)
+    const span = max - min
+    const colors = values.map((v) => batteryBarColor(span <= 0 ? 1 : (v - min) / span))
+    return {
       labels: data.topStores.map((s) => s.store),
       datasets: [
         {
-          data: data.topStores.map((s) => s.sales),
-          backgroundColor: chartGreenLight,
+          data: values,
+          backgroundColor: colors,
+          hoverBackgroundColor: colors,
           borderRadius: 3,
           maxBarThickness: 16,
         },
       ],
-    }),
-    [data.topStores],
-  )
+    }
+  }, [data.topStores])
 
-  const topSkusChart = useMemo<ChartData<'bar'>>(
-    () => ({
+  const topSkusChart = useMemo<ChartData<'bar'>>(() => {
+    const values = data.topSkus.map((s) => s.sales)
+    const min = Math.min(...values)
+    const max = Math.max(...values, 1)
+    const span = max - min
+    const colors = values.map((v) => batteryBarColor(span <= 0 ? 1 : (v - min) / span))
+    return {
       labels: data.topSkus.map((s) => s.sku),
       datasets: [
         {
-          data: data.topSkus.map((s) => s.sales),
-          backgroundColor: chartGreenLight,
+          data: values,
+          backgroundColor: colors,
+          hoverBackgroundColor: colors,
           borderRadius: 3,
           maxBarThickness: 16,
         },
       ],
-    }),
-    [data.topSkus],
-  )
+    }
+  }, [data.topSkus])
 
   const horizontalBarOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
@@ -984,33 +1022,70 @@ export function BaPerformanceDashboardPage() {
         )}
       </Card>
 
-      <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4">
-        <KpiCard
-          label="Total BA's"
-          value={
-            cityStatus?.total ??
-            (cityStatus
-              ? cityStatus.active + cityStatus.offline + cityStatus.break
-              : '—')
-          }
-          hint={baStatusHint}
-        />
-        <ActiveBasKpiCard
-          value={cityStatus?.active ?? '—'}
-          hint={baStatusHint}
-          activeBas={cityStatus?.activeBas ?? []}
-        />
-        <KpiCard label="Offline BA's" value={cityStatus?.offline ?? '—'} hint={baStatusHint} />
-        <KpiCard label="On Break BA's" value={cityStatus?.break ?? '—'} hint={baStatusHint} />
-      </div>
+      <div className="space-y-3">
+          <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4">
+            <KpiCard
+              label="Total BA's"
+              value={
+                cityStatus?.total ??
+                (cityStatus
+                  ? cityStatus.active + cityStatus.offline + cityStatus.break
+                  : '—')
+              }
+              hint={baStatusHint}
+              className={kpiMint}
+            />
+            <ActiveBasKpiCard
+              value={cityStatus?.active ?? '—'}
+              hint={baStatusHint}
+              activeBas={cityStatus?.activeBas ?? []}
+            />
+            <KpiCard
+              label="Offline BA's"
+              value={cityStatus?.offline ?? '—'}
+              hint={baStatusHint}
+              className={kpiMint}
+            />
+            <KpiCard
+              label="On Break BA's"
+              value={cityStatus?.break ?? '—'}
+              hint={baStatusHint}
+              className={kpiCream}
+            />
+          </div>
 
-      <div className="relative z-0 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <KpiCard label="Customers Intercepted" value={data.customersIntercepted.toLocaleString()} />
-        <KpiCard label="Productive Calls" value={data.productiveCalls.toLocaleString()} />
-        <KpiCard label="Productive %" value={`${data.productivePct}%`} />
-        <KpiCard label="Target (Ltr/Kg)" value={data.targetLtrKg.toLocaleString()} />
-        <KpiCard label="Sales (Ltr/Kg)" value={data.salesLtrKg.toLocaleString()} />
-        <KpiCard label="Achievement" value={`${data.achievementPct}%`} />
+          <div className="relative z-0 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <KpiCard
+              label="Customers Intercepted"
+              value={data.customersIntercepted.toLocaleString()}
+              className={kpiMint}
+            />
+            <KpiCard
+              label="Productive Calls"
+              value={data.productiveCalls.toLocaleString()}
+              className={kpiCream}
+            />
+            <KpiCard
+              label="Productive %"
+              value={`${data.productivePct}%`}
+              className={kpiMint}
+            />
+            <KpiCard
+              label="Target (Ltr/Kg)"
+              value={data.targetLtrKg.toLocaleString()}
+              className={kpiCream}
+            />
+            <KpiCard
+              label="Sales (Ltr/Kg)"
+              value={data.salesLtrKg.toLocaleString()}
+              className={kpiMint}
+            />
+            <KpiCard
+              label="Achievement"
+              value={`${data.achievementPct}%`}
+              className={kpiCream}
+            />
+          </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:grid-rows-[auto_auto_auto]">
