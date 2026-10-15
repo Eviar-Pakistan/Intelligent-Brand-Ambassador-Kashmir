@@ -63,14 +63,22 @@ const kpiMint =
 const kpiCream =
   'border-amber-100/70 bg-gradient-to-r from-[#fff4dc] via-[#fffaf0] to-white'
 
-function ActiveBasKpiCard({
+function BasListKpiCard({
+  label,
   value,
   hint,
-  activeBas,
+  rows,
+  emptyText,
+  className,
+  showTarget,
 }: {
+  label: string
   value: string | number
   hint?: string
-  activeBas: ActiveBaRow[]
+  rows: ActiveBaRow[]
+  emptyText: string
+  className?: string
+  showTarget?: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -78,7 +86,7 @@ function ActiveBasKpiCard({
     <Card
       className={cn(
         'relative overflow-visible',
-        kpiCream,
+        className,
         open ? 'z-50' : 'z-0 animate-fade-up',
       )}
     >
@@ -90,7 +98,7 @@ function ActiveBasKpiCard({
       >
         <div className="min-w-0">
           <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-            Active BA's
+            {label}
           </div>
           <div className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
           {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
@@ -105,11 +113,11 @@ function ActiveBasKpiCard({
       </button>
       {open && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
-          {activeBas.length === 0 ? (
-            <p className="px-3 py-2.5 text-xs text-slate-400">No active BA's</p>
+          {rows.length === 0 ? (
+            <p className="px-3 py-2.5 text-xs text-slate-400">{emptyText}</p>
           ) : (
             <ul>
-              {activeBas.map((ba) => (
+              {rows.map((ba) => (
                 <li
                   key={ba.id}
                   className="border-b border-slate-50 px-3 py-2 last:border-b-0"
@@ -117,6 +125,18 @@ function ActiveBasKpiCard({
                   <div className="truncate text-sm font-medium text-slate-900">{ba.name}</div>
                   <div className="truncate text-xs text-slate-500">{ba.store}</div>
                   <div className="truncate text-[11px] text-slate-400">{ba.city}</div>
+                  {showTarget && (
+                    <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] tabular-nums text-slate-500">
+                      <span>
+                        Target{' '}
+                        {ba.target == null ? '—' : ba.target.toLocaleString()}
+                      </span>
+                      <span className="font-semibold text-slate-700">
+                        Ach{' '}
+                        {ba.achievement == null ? '—' : `${Math.round(ba.achievement)}%`}
+                      </span>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -354,6 +374,19 @@ function parseDateInput(value: string) {
   return new Date(y, m - 1, d)
 }
 
+/** Elapsed share of the calendar month that `asOf` falls in (0–100). */
+function timeGonePctInMonth(asOf: Date) {
+  const year = asOf.getFullYear()
+  const month = asOf.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const day = Math.min(Math.max(asOf.getDate(), 1), daysInMonth)
+  return {
+    pct: Math.round((day / daysInMonth) * 1000) / 10,
+    day,
+    daysInMonth,
+  }
+}
+
 /** Inclusive start/end dates for a preset; null while a custom range is incomplete or invalid. */
 function dateRangeForPreset(preset: DatePreset, customFrom: string, customTo: string) {
   const now = new Date()
@@ -562,6 +595,28 @@ export function BaPerformanceDashboardPage() {
   const targetVsAchievement = dash?.targetVsAchievement
   const targetRows = targetVsAchievement?.rows ?? []
 
+  const totalBasRows = useMemo(() => {
+    const seen = new Map<number, ActiveBaRow>()
+    for (const ba of [
+      ...(cityStatus?.activeBas ?? []),
+      ...(cityStatus?.offlineBas ?? []),
+      ...(cityStatus?.breakBas ?? []),
+    ]) {
+      if (!seen.has(ba.id)) seen.set(ba.id, ba)
+    }
+    const byId = new Map(targetRows.map((r) => [Number(r.ambassadorId), r]))
+    return [...seen.values()]
+      .map((ba) => {
+        const t = byId.get(ba.id)
+        return {
+          ...ba,
+          target: t?.target ?? null,
+          achievement: t?.achievement ?? null,
+        }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [cityStatus, targetRows])
+
   const targetMonthOptions = useMemo(() => {
     const fromApi = dash?.filters.months ?? []
     const labels = dash?.filters.monthLabels ?? {}
@@ -704,6 +759,11 @@ export function BaPerformanceDashboardPage() {
     data.townTargetVsSales.target > 0
       ? Math.round((data.townTargetVsSales.sales / data.townTargetVsSales.target) * 1000) / 10
       : 0
+
+  const timeGone = useMemo(() => {
+    const asOf = range?.end ?? new Date()
+    return timeGonePctInMonth(asOf)
+  }, [range])
 
   const categoryChart = useMemo<ChartData<'doughnut'>>(
     () => {
@@ -1024,7 +1084,7 @@ export function BaPerformanceDashboardPage() {
 
       <div className="space-y-3">
           <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4">
-            <KpiCard
+            <BasListKpiCard
               label="Total BA's"
               value={
                 cityStatus?.total ??
@@ -1033,23 +1093,33 @@ export function BaPerformanceDashboardPage() {
                   : '—')
               }
               hint={baStatusHint}
+              rows={totalBasRows}
+              emptyText="No BA's"
               className={kpiMint}
+              showTarget
             />
-            <ActiveBasKpiCard
+            <BasListKpiCard
+              label="Active BA's"
               value={cityStatus?.active ?? '—'}
               hint={baStatusHint}
-              activeBas={cityStatus?.activeBas ?? []}
+              rows={cityStatus?.activeBas ?? []}
+              emptyText="No active BA's"
+              className={kpiCream}
             />
-            <KpiCard
+            <BasListKpiCard
               label="Offline BA's"
               value={cityStatus?.offline ?? '—'}
               hint={baStatusHint}
+              rows={cityStatus?.offlineBas ?? []}
+              emptyText="No offline BA's"
               className={kpiMint}
             />
-            <KpiCard
+            <BasListKpiCard
               label="On Break BA's"
               value={cityStatus?.break ?? '—'}
               hint={baStatusHint}
+              rows={cityStatus?.breakBas ?? []}
+              emptyText="No on-break BA's"
               className={kpiCream}
             />
           </div>
@@ -1146,7 +1216,19 @@ export function BaPerformanceDashboardPage() {
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:items-stretch">
-          <ChartCard title="Brand Wise Achievement">
+          <ChartCard
+            title="Brand Wise Achievement"
+            headerRight={
+              <span className="shrink-0 text-right leading-tight">
+                <span className="block text-xs font-semibold tabular-nums text-slate-600">
+                  {timeGone.pct}% time gone
+                </span>
+                <span className="block text-[11px] tabular-nums text-slate-400">
+                  Day {timeGone.day} of {timeGone.daysInMonth}
+                </span>
+              </span>
+            }
+          >
             <Doughnut data={categoryChart} options={categoryOptions} />
           </ChartCard>
 

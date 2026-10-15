@@ -37,6 +37,8 @@ export type ActiveBaRow = {
   name: string
   store: string
   city: string
+  target?: number | null
+  achievement?: number | null
 }
 
 export type BaStatusPayload = {
@@ -48,6 +50,10 @@ export type BaStatusPayload = {
   cities: BaStatusCity[]
   /** Live checked-in BA's (same set as `active` count). */
   activeBas?: ActiveBaRow[]
+  /** Deployed BA's not currently checked in (same set as `offline` count). */
+  offlineBas?: ActiveBaRow[]
+  /** BA's currently on break (same set as `break` count). */
+  breakBas?: ActiveBaRow[]
 }
 
 export type AttendanceRowLive = {

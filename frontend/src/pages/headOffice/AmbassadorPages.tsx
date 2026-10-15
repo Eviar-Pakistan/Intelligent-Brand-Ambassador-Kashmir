@@ -1145,6 +1145,7 @@ export function AmbassadorsPage() {
           <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
             <tr>
+              <th className="px-4 py-3">Number</th>
               <th className="px-4 py-3">BA code</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Location</th>
@@ -1162,15 +1163,16 @@ export function AmbassadorsPage() {
           <tbody>
             {filteredAccounts.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={13} className="px-4 py-10 text-center text-sm text-slate-500">
                   No ambassadors match this filter.
                 </td>
               </tr>
             )}
-            {filteredAccounts.map((a) => {
+            {filteredAccounts.map((a, index) => {
               const totalTarget = targetTotalByBa.get(a.id) ?? 0
               return (
               <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50/70">
+                <td className="px-4 py-3 tabular-nums text-slate-500">{index + 1}</td>
                 <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700">
                   {a.code || '—'}
                 </td>

@@ -834,6 +834,31 @@ def _attendance_block(
     ]
     active_bas.sort(key=lambda r: ((r['city'] or '').lower(), (r['name'] or '').lower()))
 
+    offline_ids = [ba_id for ba_id in ba_city if ba_id not in active_ba_ids]
+    offline_by_id = {
+        ba.id: ba
+        for ba in Ambassador.objects.filter(id__in=offline_ids).select_related('store')
+    }
+    offline_bas = []
+    for ba_id in offline_ids:
+        ba = offline_by_id.get(ba_id)
+        offline_bas.append(
+            {
+                'id': ba_id,
+                'name': ba_names.get(ba_id) or (ba.name if ba else '') or f'BA #{ba_id}',
+                'store': ba_store_label.get(ba_id)
+                or (ba.store.name if ba and ba.store_id else None)
+                or '—',
+                'city': ba_city.get(ba_id)
+                or (ba.store.city if ba and ba.store_id else None)
+                or '—',
+            }
+        )
+    offline_bas.sort(key=lambda r: ((r['city'] or '').lower(), (r['name'] or '').lower()))
+
+    # Live break clock is not tracked yet — list stays empty until BAs can be marked on break.
+    break_bas: list[dict] = []
+
     ba_status = {
         'days': 1,  # live snapshot (not averaged over the filter range)
         'total': active_n + break_n + offline_n,
@@ -842,6 +867,8 @@ def _attendance_block(
         'offline': offline_n,
         'cities': city_rows,
         'activeBas': active_bas,
+        'offlineBas': offline_bas,
+        'breakBas': break_bas,
         'asOf': 'live',
     }
 
