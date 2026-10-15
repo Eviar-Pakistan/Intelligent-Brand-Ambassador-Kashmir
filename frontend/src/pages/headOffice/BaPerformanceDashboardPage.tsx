@@ -250,6 +250,129 @@ function FilterPanel({
   )
 }
 
+type TownStoreFilterPanelProps = {
+  towns: string[]
+  storesByTown: Record<string, string[]>
+  town: string | null
+  store: string | null
+  onSelectTown: (town: string | null) => void
+  onSelectStore: (town: string, store: string) => void
+}
+
+function TownStoreFilterPanel({
+  towns,
+  storesByTown,
+  town,
+  store,
+  onSelectTown,
+  onSelectStore,
+}: TownStoreFilterPanelProps) {
+  const [query, setQuery] = useState('')
+
+  const groups = useMemo(() => {
+    const names = towns.length ? towns : Object.keys(storesByTown).sort((a, b) => a.localeCompare(b))
+    return names.map((t) => ({ town: t, stores: storesByTown[t] ?? [] }))
+  }, [towns, storesByTown])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return groups
+    return groups
+      .map((g) => {
+        const townHit = g.town.toLowerCase().includes(q)
+        const stores = townHit
+          ? g.stores
+          : g.stores.filter((s) => s.toLowerCase().includes(q))
+        if (!townHit && stores.length === 0) return null
+        return { town: g.town, stores }
+      })
+      .filter((g): g is { town: string; stores: string[] } => g !== null)
+  }, [groups, query])
+
+  const allSelected = town === null && store === null
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+        <span className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+          Town / Store
+        </span>
+        <button
+          type="button"
+          title="Clear filter"
+          onClick={() => {
+            onSelectTown(null)
+            setQuery('')
+          }}
+          className="rounded-md p-1 text-slate-400 transition hover:bg-white hover:text-slate-600"
+        >
+          <RotateCcw size={12} />
+        </button>
+      </div>
+      <div className="border-b border-slate-50 px-2 py-1.5">
+        <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1.5">
+          <Search size={12} className="shrink-0 text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search town or store..."
+            className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
+          />
+        </div>
+      </div>
+      <div className="h-44 overflow-y-auto overscroll-contain">
+        <button
+          type="button"
+          onClick={() => onSelectTown(null)}
+          className={`block w-full px-3 py-2 text-left text-xs transition ${
+            allSelected ? 'bg-brand-50/80 text-brand-700' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          All towns
+        </button>
+        {filtered.map((g) => {
+          const townSelected = town === g.town && store === null
+          return (
+            <div key={g.town}>
+              <button
+                type="button"
+                onClick={() => onSelectTown(g.town)}
+                className={`block w-full px-3 py-1.5 text-left text-xs font-semibold tracking-wide uppercase transition ${
+                  townSelected
+                    ? 'bg-brand-50/80 text-brand-700'
+                    : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {g.town}
+              </button>
+              {g.stores.map((s) => {
+                const storeSelected = town === g.town && store === s
+                return (
+                  <button
+                    key={`${g.town}::${s}`}
+                    type="button"
+                    onClick={() => onSelectStore(g.town, s)}
+                    className={`block w-full py-1.5 pr-3 pl-6 text-left text-xs transition ${
+                      storeSelected
+                        ? 'bg-brand-50/80 text-brand-700'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })}
+        {filtered.length === 0 && (
+          <p className="px-3 py-4 text-center text-xs text-slate-400">No matches</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const CHART_HEIGHT = 'h-[220px]'
 const TOP10_CHART_HEIGHT = 'h-[320px]'
 const PERIOD_CHART_HEIGHT = 'h-[260px]'
@@ -691,6 +814,11 @@ export function BaPerformanceDashboardPage() {
   function handleTownChange(next: string | null) {
     setTown(next)
     setStore(null)
+  }
+
+  function handleStoreChange(nextTown: string, nextStore: string) {
+    setTown(nextTown)
+    setStore(nextStore)
   }
 
   function handleCategoryChange(next: string | null) {
@@ -1159,14 +1287,14 @@ export function BaPerformanceDashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:grid-rows-[auto_auto_auto]">
-        <aside className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
-          <FilterPanel
-            title="Town"
-            options={towns}
-            value={town}
-            onChange={handleTownChange}
-            allowAll
-            allLabel="All towns"
+        <aside className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
+          <TownStoreFilterPanel
+            towns={towns}
+            storesByTown={storesByTown}
+            town={town}
+            store={store}
+            onSelectTown={handleTownChange}
+            onSelectStore={handleStoreChange}
           />
           <FilterPanel
             title="Month"
@@ -1175,14 +1303,6 @@ export function BaPerformanceDashboardPage() {
             onChange={handleMonthChange}
             allowAll
             allLabel="All months"
-          />
-          <FilterPanel
-            title="Store"
-            options={storeOptions}
-            value={store}
-            onChange={setStore}
-            allowAll
-            allLabel="All stores"
           />
           <FilterPanel
             title="Brands"
@@ -1199,7 +1319,6 @@ export function BaPerformanceDashboardPage() {
             onChange={setSku}
             allowAll
             allLabel="All SKUs"
-            fill
           />
         </aside>
 
