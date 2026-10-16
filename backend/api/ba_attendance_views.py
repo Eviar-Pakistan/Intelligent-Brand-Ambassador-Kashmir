@@ -347,7 +347,27 @@ def _store_coords(store: Store | None) -> tuple:
 
 def serialize_ba_shift(shift: ShiftAssignment | None, ambassador: Ambassador) -> dict:
     initials = ''.join(p[0] for p in (ambassador.name or 'BA').split() if p)[:2].upper() or 'BA'
-    upcoming_rows = _upcoming_rows(ambassador)
+    upcoming_rows = [] if ambassador.status == Ambassador.Status.ON_LEAVE else _upcoming_rows(ambassador)
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        store = ambassador.store
+        store_lat, store_lng = _store_coords(store)
+        return {
+            'shift': None,
+            'has_shift': False,
+            'message': 'Check-in and check-out are disabled until Head Office activates you.',
+            'ambassador': {
+                'id': ambassador.id,
+                'name': ambassador.name,
+                'initials': initials,
+                'status': ambassador.status,
+                'store_id': store.id if store else None,
+                'store_name': store.name if store else None,
+                'city': store.city if store else (ambassador.city or None),
+                'storeLat': store_lat,
+                'storeLng': store_lng,
+            },
+            'upcoming': [],
+        }
     if not shift:
         store = ambassador.store
         store_lat, store_lng = _store_coords(store)
@@ -428,6 +448,8 @@ def ba_today_shift(request):
     ambassador = _ambassador_from_token(request.query_params.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        return Response(serialize_ba_shift(None, ambassador))
     shift = _ensure_today_shift(ambassador)
     # Reload in case ensure updated ambassador.store / status
     ambassador.refresh_from_db()
@@ -729,6 +751,11 @@ def ba_check_in(request):
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        return Response(
+            {'detail': 'Check-in and check-out are disabled until Head Office activates you.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     raw_type = str(
         request.data.get('attendance_type')
@@ -787,6 +814,11 @@ def ba_check_out(request):
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        return Response(
+            {'detail': 'Check-in and check-out are disabled until Head Office activates you.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     # Prefer an open check-in (may still be yesterday's row if they crossed midnight).
     shift = (

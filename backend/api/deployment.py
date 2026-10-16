@@ -61,6 +61,9 @@ def reconcile_ambassador_deployments() -> dict:
     touched_stores: set[int] = set()
 
     for ba in Ambassador.objects.all():
+        # HO leave: keep store + shifts; do not force Deployed or clear assignment.
+        if ba.status == Ambassador.Status.ON_LEAVE:
+            continue
         if ba.id in assigned_ids:
             want_store = home_store.get(ba.id)
             changed = False

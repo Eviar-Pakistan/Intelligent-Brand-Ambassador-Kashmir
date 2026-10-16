@@ -214,9 +214,11 @@ def ensure_shift_for_day(ambassador: 'Ambassador', day: date | None = None) -> '
     Ensure the BA has a shift row for the given calendar day (local TZ default: today).
     Clones from month/template if needed; never clears clocks on older shifts.
     """
-    from .models import ShiftAssignment
+    from .models import Ambassador, ShiftAssignment
 
     day = day or timezone.localdate()
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        return None
     exact = (
         ShiftAssignment.objects.filter(
             ambassador=ambassador,

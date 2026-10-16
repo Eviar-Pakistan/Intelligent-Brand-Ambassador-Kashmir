@@ -359,6 +359,7 @@ class Ambassador(models.Model):
         CERTIFIED = 'Certified', 'Certified'
         REJECTED = 'Rejected', 'Rejected'
         DEPLOYED = 'Deployed', 'Deployed'
+        ON_LEAVE = 'Disabled', 'Disabled'
 
     code = models.CharField(
         max_length=16,

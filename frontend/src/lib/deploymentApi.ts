@@ -151,6 +151,22 @@ export async function undeployAmbassador(ambassadorId: string | number) {
   })
 }
 
+/** Pause BA (On leave): keep store, shifts, and reports. Blocks check-in. */
+export async function deactivateAmbassador(ambassadorId: string | number) {
+  return apiRequest(`/api/ambassadors/${ambassadorId}/deactivate/`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+/** Return an On-leave BA to Deployed. */
+export async function activateAmbassador(ambassadorId: string | number) {
+  return apiRequest(`/api/ambassadors/${ambassadorId}/activate/`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
 export async function createShift(input: {
   storeId: number
   ambassadorId: string | number | null

@@ -9,7 +9,7 @@ import { allocateBaCode, baCodeForId } from './baCodes'
  * Roster syncs from Django when HO is logged in; progress also caches in localStorage.
  */
 
-export type BaStatus = 'Invited' | 'Training' | 'Certified' | 'Deployed'
+export type BaStatus = 'Invited' | 'Training' | 'Certified' | 'Deployed' | 'Disabled'
 
 export type BaAccount = {
   id: string
@@ -37,7 +37,7 @@ export type BaAccount = {
 
 /** True when BA has finished certification (may also be deployed). */
 export function isBaCertified(status: BaStatus) {
-  return status === 'Certified' || status === 'Deployed'
+  return status === 'Certified' || status === 'Deployed' || status === 'Disabled'
 }
 
 /** Placeholder / closed roster names that should not appear in exports or the HO list. */
@@ -304,6 +304,7 @@ type ApiAmbassador = {
 
 function mapApiBaStatus(status?: string): BaStatus {
   if (status === 'Deployed') return 'Deployed'
+  if (status === 'Disabled' || status === 'On leave') return 'Disabled'
   if (status === 'Certified') return 'Certified'
   if (status === 'Training' || status === 'Assessed') return 'Training'
   return 'Invited'
@@ -316,6 +317,7 @@ function mergeBaStatus(
   result?: BaAccount['result'],
 ): BaStatus {
   if (apiStatus === 'Deployed') return 'Deployed'
+  if (apiStatus === 'Disabled') return 'Disabled'
   if (apiStatus === 'Certified') return 'Certified'
   if (existing?.status === 'Certified' || existing?.result?.certified || result?.certified) {
     return 'Certified'

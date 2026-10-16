@@ -253,6 +253,7 @@ function lifecycleFromAccount(
   const certified =
     account.status === 'Certified' ||
     account.status === 'Deployed' ||
+    account.status === 'Disabled' ||
     Boolean(account.result?.certified)
   if (certified) {
     reached.push('Certified')

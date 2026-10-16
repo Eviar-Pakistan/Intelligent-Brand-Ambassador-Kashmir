@@ -233,7 +233,11 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
             if new_status == Ambassador.Status.CERTIFIED and not ambassador.certified_at:
                 ambassador.certified_at = timezone.now()
                 ambassador.save(update_fields=['status', 'certified_at', 'updated_at'])
-            elif new_status != Ambassador.Status.CERTIFIED:
+            elif new_status not in (
+                Ambassador.Status.CERTIFIED,
+                Ambassador.Status.DEPLOYED,
+                Ambassador.Status.ON_LEAVE,
+            ):
                 ambassador.certified_at = None
                 ambassador.save(update_fields=['status', 'certified_at', 'updated_at'])
             else:
@@ -309,6 +313,82 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
 
         reconcile_ambassador_deployments()
         ambassador.refresh_from_db()
+        return Response(AmbassadorSerializer(ambassador, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        """
+        Pause a BA (On leave): keep store, shifts, reports, and targets.
+        Blocks check-in/out and hides them from the supervisor roster.
+        """
+        from .ba_attendance_views import upsert_attendance_from_shift
+        from .models import ShiftAssignment
+
+        ambassador = self.get_object()
+        if ambassador.status == Ambassador.Status.REJECTED:
+            return Response(
+                {'detail': 'Rejected ambassadors cannot be put on leave.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if ambassador.status == Ambassador.Status.ON_LEAVE:
+            return Response(AmbassadorSerializer(ambassador, context={'request': request}).data)
+
+        now = timezone.now()
+        open_shifts = ShiftAssignment.objects.filter(
+            ambassador=ambassador,
+            checked_in_at__isnull=False,
+            checked_out_at__isnull=True,
+        )
+        for shift in open_shifts:
+            shift.checked_out_at = now
+            shift.save(update_fields=['checked_out_at', 'updated_at'])
+            upsert_attendance_from_shift(shift)
+
+        ambassador.status = Ambassador.Status.ON_LEAVE
+        ambassador.save(update_fields=['status', 'updated_at'])
+
+        if ambassador.store_id:
+            store = Store.objects.filter(pk=ambassador.store_id).first()
+            if store:
+                store.bas = Ambassador.objects.filter(
+                    store_id=store.id,
+                    status=Ambassador.Status.DEPLOYED,
+                ).count()
+                store.save(update_fields=['bas', 'updated_at'])
+
+        return Response(AmbassadorSerializer(ambassador, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='activate')
+    def activate(self, request, pk=None):
+        """Return an On-leave BA to Deployed. Store and history stay as they were."""
+        from .shifts import ensure_today_and_tomorrow
+
+        ambassador = self.get_object()
+        if ambassador.status == Ambassador.Status.REJECTED:
+            return Response(
+                {'detail': 'Rejected ambassadors cannot be activated.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not ambassador.store_id:
+            return Response(
+                {'detail': 'Assign this BA to a store before activating.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ambassador.status = Ambassador.Status.DEPLOYED
+        if not ambassador.deployed_at:
+            ambassador.deployed_at = timezone.now()
+        ambassador.save(update_fields=['status', 'deployed_at', 'updated_at'])
+        ensure_today_and_tomorrow(ambassador)
+
+        store = Store.objects.filter(pk=ambassador.store_id).first()
+        if store:
+            store.bas = Ambassador.objects.filter(
+                store_id=store.id,
+                status=Ambassador.Status.DEPLOYED,
+            ).count()
+            store.save(update_fields=['bas', 'updated_at'])
+
         return Response(AmbassadorSerializer(ambassador, context={'request': request}).data)
 
     @action(detail=True, methods=['get'], url_path='attendance')

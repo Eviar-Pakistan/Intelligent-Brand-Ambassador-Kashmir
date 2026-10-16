@@ -49,9 +49,11 @@ export function BaShell() {
                 {account.name} ·{' '}
                 {account.status === 'Deployed'
                   ? 'Deployed'
-                  : isBaCertified(account.status)
-                    ? 'Certified'
-                    : account.status}
+                  : account.status === 'Disabled'
+                    ? 'Disabled'
+                    : isBaCertified(account.status)
+                      ? 'Certified'
+                      : account.status}
               </div>
             </div>
           </div>

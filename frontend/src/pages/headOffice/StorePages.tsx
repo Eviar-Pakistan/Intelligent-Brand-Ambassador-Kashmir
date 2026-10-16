@@ -32,8 +32,10 @@ import {
   type BulkShiftParseResult,
 } from '../../lib/bulkShiftUpload'
 import {
+  activateAmbassador,
   assignBaToStoreShift,
   createShift,
+  deactivateAmbassador,
   deleteShift,
   deployAmbassador,
   toIsoDate,
@@ -333,7 +335,11 @@ export function StoreDetailPage() {
     })
 
   const assignedFromShifts: AssignedRow[] = schedule
-    .filter((s) => s.storeId === store.id && s.baId && s.baName)
+    .filter((s) => {
+      if (!(s.storeId === store.id && s.baId && s.baName)) return false
+      const ba = accounts.find((a) => a.id === String(s.baId))
+      return ba?.status !== 'Disabled'
+    })
     .map((s) => {
       const ba = accounts.find((a) => a.id === String(s.baId))
       return {
@@ -624,6 +630,7 @@ function SchedulerPanel() {
   const [toast, setToast] = useState<string | null>(null)
   const [conflictNotice, setConflictNotice] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkFileName, setBulkFileName] = useState('')
   const [bulkResult, setBulkResult] = useState<BulkShiftParseResult | null>(null)
@@ -945,6 +952,28 @@ function SchedulerPanel() {
     }
   }
 
+  async function toggleBaActive(slotId: string, baId: string, onLeave: boolean) {
+    if (!isApiAuthenticated()) {
+      showToast('Sign in to Head Office to change BA status')
+      return
+    }
+    setTogglingId(slotId)
+    try {
+      if (onLeave) {
+        await activateAmbassador(baId)
+        showToast('BA activated')
+      } else {
+        await deactivateAmbassador(baId)
+        showToast('BA deactivated (on leave)')
+      }
+      await Promise.all([refreshSchedule(monthYm), syncAmbassadorsFromApi().catch(() => {})])
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not update BA')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   async function removeSlot(id: string) {
     if (!isApiAuthenticated()) {
       showToast('Sign in to delete shifts')
@@ -953,7 +982,10 @@ function SchedulerPanel() {
     try {
       const slot = schedule.find((s) => s.id === id)
       await deleteShift(id)
-      if (slot?.baId) await undeployAmbassador(slot.baId).catch(() => {})
+      const ba = slot?.baId ? accounts.find((a) => a.id === slot.baId) : null
+      if (slot?.baId && ba?.status !== 'Disabled') {
+        await undeployAmbassador(slot.baId).catch(() => {})
+      }
       await refreshSchedule(monthYm)
       showToast('Shift deleted')
     } catch (err) {
@@ -1055,12 +1087,15 @@ function SchedulerPanel() {
                 {filtered.map((slot) => {
                   const storeMeta = storeOptions.find((s) => s.id === slot.storeId)
                   const ba = accounts.find((a) => a.id === slot.baId)
+                  const onLeave = ba?.status === 'Disabled'
                   const statusLabel =
                     slot.status === 'Conflict'
                       ? 'Conflict'
-                      : slot.baId
-                        ? 'Scheduled'
-                        : 'Open'
+                      : onLeave
+                        ? 'Disabled'
+                        : slot.baId
+                          ? 'Scheduled'
+                          : 'Open'
                   return (
                     <tr key={slot.id} className="border-t border-slate-100">
                       <td className="px-4 py-3">
@@ -1111,6 +1146,24 @@ function SchedulerPanel() {
                           >
                             Edit
                           </button>
+                          {slot.baId ? (
+                            <button
+                              type="button"
+                              disabled={togglingId === slot.id}
+                              className={
+                                onLeave
+                                  ? 'text-emerald-700 hover:underline disabled:opacity-50'
+                                  : 'text-amber-700 hover:underline disabled:opacity-50'
+                              }
+                              onClick={() => void toggleBaActive(slot.id, slot.baId as string, onLeave)}
+                            >
+                              {togglingId === slot.id
+                                ? 'Saving…'
+                                : onLeave
+                                  ? 'Activate'
+                                  : 'Deactivate'}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="text-rose-600 hover:underline"

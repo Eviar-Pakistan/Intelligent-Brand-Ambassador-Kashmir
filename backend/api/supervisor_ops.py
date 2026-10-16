@@ -25,12 +25,17 @@ def supervisor_ambassador_ids(supervisor: Supervisor) -> set[int]:
             status__in=(Ambassador.Status.CERTIFIED, Ambassador.Status.DEPLOYED),
         ).values_list('id', flat=True)
     )
+    on_leave = set(
+        Ambassador.objects.filter(status=Ambassador.Status.ON_LEAVE).values_list('id', flat=True)
+    )
     shift = set(
         ShiftAssignment.objects.filter(
             store_id__in=store_ids,
             ambassador_id__isnull=False,
             status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
-        ).values_list('ambassador_id', flat=True)
+        )
+        .exclude(ambassador_id__in=on_leave)
+        .values_list('ambassador_id', flat=True)
     )
     return home | {ba_id for ba_id in shift if ba_id}
 
@@ -221,12 +226,17 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
             status__in=(Ambassador.Status.CERTIFIED, Ambassador.Status.DEPLOYED),
         ).select_related('store')
     )
+    on_leave_ids = set(
+        Ambassador.objects.filter(status=Ambassador.Status.ON_LEAVE).values_list('id', flat=True)
+    )
     shift_ba_ids = set(
         ShiftAssignment.objects.filter(
             store_id__in=store_ids,
             ambassador_id__isnull=False,
             status__in=(ShiftAssignment.Status.SCHEDULED, ShiftAssignment.Status.CONFLICT),
-        ).values_list('ambassador_id', flat=True)
+        )
+        .exclude(ambassador_id__in=on_leave_ids)
+        .values_list('ambassador_id', flat=True)
     )
     # Soonest upcoming shift store, else latest past — for BAs without home store FK.
     future_pick: dict[int, tuple[int, object]] = {}
