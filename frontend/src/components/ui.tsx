@@ -202,11 +202,11 @@ export function KpiCard({
   className?: string
 }) {
   return (
-    <Card className={cn('animate-fade-up', className)}>
-      <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</div>
+    <Card className={cn('flex flex-col justify-center animate-fade-up', className)}>
+      <div className="text-xs font-medium tracking-wide text-slate-600 uppercase">{label}</div>
       <div className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
       {delta && <div className="mt-1 text-xs font-medium text-success">{delta}</div>}
-      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </Card>
   )
 }

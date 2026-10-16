@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bar, Doughnut } from 'react-chartjs-2'
 import { ChevronDown, Download, RotateCcw, Search } from 'lucide-react'
-import { Button, Card, CardHeader, cn, KpiCard, StatusBadge, TableScroll } from '../../components/ui'
+import { Button, Card, CardHeader, cn, StatusBadge, TableScroll } from '../../components/ui'
 import {
   MONTH_ORDER,
   baPerformanceCategories,
@@ -58,10 +58,76 @@ function batteryBarColor(ratio: number) {
   return mixHex('#f9b000', '#16a34a', (t - 0.5) / 0.5)
 }
 
-const kpiMint =
-  'border-emerald-100/70 bg-gradient-to-r from-[#e7f6ee] via-[#f4fbf7] to-white'
-const kpiCream =
-  'border-amber-100/70 bg-gradient-to-r from-[#fff4dc] via-[#fffaf0] to-white'
+type KpiTone = 'forest' | 'gold' | 'cream' | 'sage'
+
+const KPI_TONES: Record<
+  KpiTone,
+  { card: string; label: string; value: string; hint: string; chevron: string }
+> = {
+  forest: {
+    card: 'bg-gradient-to-r from-[#143528] via-[#1e5540] to-[#2a6b4e] text-white shadow-[0_10px_28px_rgba(20,53,40,0.28)]',
+    label: 'text-white/70',
+    value: 'text-white',
+    hint: 'text-emerald-100/70',
+    chevron: 'text-white/45',
+  },
+  gold: {
+    card: 'bg-gradient-to-r from-[#c4921c] via-[#e0b43a] to-[#f3cc55] text-[#16382b] shadow-[0_10px_28px_rgba(180,130,20,0.22)]',
+    label: 'text-[#16382b]/70',
+    value: 'text-[#16382b]',
+    hint: 'text-[#16382b]/55',
+    chevron: 'text-[#16382b]/40',
+  },
+  cream: {
+    card: 'bg-gradient-to-r from-[#efe4d0] to-[#faf6ee] text-[#16382b] shadow-[0_6px_18px_rgba(60,50,30,0.08)] ring-1 ring-[#e6d9c4]',
+    label: 'text-[#16382b]/65',
+    value: 'text-[#16382b]',
+    hint: 'text-[#16382b]/50',
+    chevron: 'text-[#16382b]/35',
+  },
+  sage: {
+    card: 'bg-gradient-to-r from-[#d4e8d0] to-[#eef6ec] text-[#16382b] shadow-[0_6px_18px_rgba(40,70,40,0.08)] ring-1 ring-[#cfe0cb]',
+    label: 'text-[#16382b]/65',
+    value: 'text-[#16382b]',
+    hint: 'text-[#16382b]/50',
+    chevron: 'text-[#16382b]/35',
+  },
+}
+
+function PremiumKpiCard({
+  label,
+  value,
+  hint,
+  tone,
+  className,
+}: {
+  label: string
+  value: string | number
+  hint?: string
+  tone: KpiTone
+  className?: string
+}) {
+  const t = KPI_TONES[tone]
+  return (
+    <div
+      className={cn(
+        'relative flex h-full items-center justify-center overflow-hidden rounded-3xl px-4 py-4 text-center animate-fade-up',
+        t.card,
+        className,
+      )}
+    >
+      <div className="min-w-0">
+        <div className={cn('text-[10px] font-semibold tracking-[0.14em] uppercase', t.label)}>
+          {label}
+        </div>
+        <div className={cn('mt-0.5 text-2xl font-bold tabular-nums leading-none sm:text-[1.7rem]', t.value)}>
+          {value}
+        </div>
+        {hint && <div className={cn('mt-1.5 text-[11px]', t.hint)}>{hint}</div>}
+      </div>
+    </div>
+  )
+}
 
 function BasListKpiCard({
   label,
@@ -69,44 +135,44 @@ function BasListKpiCard({
   hint,
   rows,
   emptyText,
-  className,
   showTarget,
+  tone,
 }: {
   label: string
   value: string | number
   hint?: string
   rows: ActiveBaRow[]
   emptyText: string
-  className?: string
   showTarget?: boolean
+  tone: KpiTone
 }) {
   const [open, setOpen] = useState(false)
+  const t = KPI_TONES[tone]
 
   return (
-    <Card
-      className={cn(
-        'relative overflow-visible',
-        className,
-        open ? 'z-50' : 'z-0 animate-fade-up',
-      )}
-    >
+    <div className={cn('relative h-full', open ? 'z-50' : 'z-0')}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-start justify-between gap-2 text-left"
+        className={cn(
+          'relative flex h-full w-full items-center justify-center overflow-hidden rounded-3xl px-4 py-4 text-center animate-fade-up',
+          t.card,
+        )}
         aria-expanded={open}
       >
         <div className="min-w-0">
-          <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+          <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-white/75">
             {label}
           </div>
-          <div className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
-          {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+          <div className="mt-0.5 text-2xl font-bold tabular-nums leading-none text-white sm:text-[1.7rem]">
+            {value}
+          </div>
+          {hint && <div className="mt-1.5 text-[11px] text-white/70">{hint}</div>}
         </div>
         <ChevronDown
           size={16}
           className={cn(
-            'mt-0.5 shrink-0 text-slate-400 transition-transform',
+            'absolute top-1/2 right-3 shrink-0 -translate-y-1/2 text-white/55 transition-transform',
             open && 'rotate-180',
           )}
         />
@@ -143,7 +209,7 @@ function BasListKpiCard({
           )}
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -1213,7 +1279,7 @@ export function BaPerformanceDashboardPage() {
       <div className="space-y-3">
           <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4">
             <BasListKpiCard
-              label="Total BA's"
+              label="Total Deployed BA's"
               value={
                 cityStatus?.total ??
                 (cityStatus
@@ -1223,7 +1289,7 @@ export function BaPerformanceDashboardPage() {
               hint={baStatusHint}
               rows={totalBasRows}
               emptyText="No BA's"
-              className={kpiMint}
+              tone="forest"
               showTarget
             />
             <BasListKpiCard
@@ -1232,7 +1298,7 @@ export function BaPerformanceDashboardPage() {
               hint={baStatusHint}
               rows={cityStatus?.activeBas ?? []}
               emptyText="No active BA's"
-              className={kpiCream}
+              tone="gold"
             />
             <BasListKpiCard
               label="Offline BA's"
@@ -1240,7 +1306,7 @@ export function BaPerformanceDashboardPage() {
               hint={baStatusHint}
               rows={cityStatus?.offlineBas ?? []}
               emptyText="No offline BA's"
-              className={kpiMint}
+              tone="forest"
             />
             <BasListKpiCard
               label="On Break BA's"
@@ -1248,40 +1314,40 @@ export function BaPerformanceDashboardPage() {
               hint={baStatusHint}
               rows={cityStatus?.breakBas ?? []}
               emptyText="No on-break BA's"
-              className={kpiCream}
+              tone="gold"
             />
           </div>
 
           <div className="relative z-0 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-            <KpiCard
+            <PremiumKpiCard
               label="Customers Intercepted"
               value={data.customersIntercepted.toLocaleString()}
-              className={kpiMint}
+              tone="cream"
             />
-            <KpiCard
+            <PremiumKpiCard
               label="Productive Calls"
               value={data.productiveCalls.toLocaleString()}
-              className={kpiCream}
+              tone="sage"
             />
-            <KpiCard
+            <PremiumKpiCard
               label="Productive %"
               value={`${data.productivePct}%`}
-              className={kpiMint}
+              tone="cream"
             />
-            <KpiCard
+            <PremiumKpiCard
               label="Target (Ltr/Kg)"
               value={data.targetLtrKg.toLocaleString()}
-              className={kpiCream}
+              tone="sage"
             />
-            <KpiCard
+            <PremiumKpiCard
               label="Sales (Ltr/Kg)"
               value={data.salesLtrKg.toLocaleString()}
-              className={kpiMint}
+              tone="cream"
             />
-            <KpiCard
+            <PremiumKpiCard
               label="Achievement"
               value={`${data.achievementPct}%`}
-              className={kpiCream}
+              tone="sage"
             />
           </div>
       </div>

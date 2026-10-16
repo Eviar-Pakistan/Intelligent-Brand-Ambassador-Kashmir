@@ -164,7 +164,7 @@ export async function downloadBaPerformanceExcel(
     { Field: 'Category', Value: meta.category || 'All' },
     { Field: 'SKU', Value: meta.sku || 'All' },
     { Field: 'Target month', Value: meta.targetMonth || dash.targetVsAchievement?.month || '—' },
-    { Field: "Total BA's", Value: dash.baStatus?.total ?? 0 },
+    { Field: "Total Deployed BA's", Value: dash.baStatus?.total ?? 0 },
     { Field: "Active BA's", Value: dash.baStatus?.active ?? 0 },
     { Field: "Offline BA's", Value: dash.baStatus?.offline ?? 0 },
     { Field: "On Break BA's", Value: dash.baStatus?.break ?? 0 },
