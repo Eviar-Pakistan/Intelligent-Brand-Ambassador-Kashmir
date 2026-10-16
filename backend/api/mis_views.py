@@ -6,7 +6,7 @@ import re
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
@@ -14,6 +14,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .ba_revamp import apply_revamp, parse_revamp_dates, plan_revamp
 from .mis_audit import is_ho_or_admin, is_mis_user, log_mis_action, require_mis
 from .models import Ambassador, BaAttendanceDay, BaDailyReport, MisAuditLog, ShiftAssignment, Store, Supervisor
 from .sales_report import normalize_sales_json
@@ -813,3 +814,134 @@ def mis_swap_bas(request):
             'summary': after,
         }
     )
+
+
+def _public_revamp_plan(plan: dict) -> dict:
+    return {
+        'ok': plan.get('ok', False),
+        'errors': plan.get('errors') or [],
+        'collisions': plan.get('collisions') or {},
+        'collisionMessage': plan.get('collisionMessage') or '',
+        'counts': plan.get('counts') or {},
+        'old': plan.get('old'),
+        'new': plan.get('new'),
+        'fromDate': plan.get('fromDate'),
+        'toDate': plan.get('toDate'),
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def mis_revamp_candidates(request):
+    """GET /api/mis/revamp-candidates/ — BAs for Revamp dropdowns."""
+    err = require_mis(request)
+    if err:
+        return err
+    rows = (
+        Ambassador.objects.exclude(status=Ambassador.Status.REJECTED)
+        .select_related('store')
+        .order_by('name', 'code', 'id')
+    )
+    results = []
+    for ba in rows:
+        store_name = ba.store.name if ba.store_id and ba.store else ''
+        code = ba.code or ''
+        label = f'{code} · {ba.name}'.strip(' ·') if code else (ba.name or f'BA #{ba.id}')
+        if store_name:
+            label = f'{label} · {store_name}'
+        results.append(
+            {
+                'id': ba.id,
+                'name': ba.name or '',
+                'code': code,
+                'city': ba.city or '',
+                'status': ba.status or '',
+                'storeId': ba.store_id,
+                'storeName': store_name,
+                'label': label,
+            }
+        )
+    return Response({'results': results})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mis_revamp_bas(request):
+    """
+    POST /api/mis/revamp-bas/
+    Body: { oldAmbassadorId, newAmbassadorId, fromDate?, toDate?, confirm? }
+    confirm=false (default) returns a preview. confirm=true applies the cut-over.
+    """
+    err = require_mis(request)
+    if err:
+        return err
+
+    old_id = request.data.get('oldAmbassadorId', request.data.get('old_ambassador_id'))
+    new_id = request.data.get('newAmbassadorId', request.data.get('new_ambassador_id'))
+    try:
+        old_id = int(old_id)
+        new_id = int(new_id)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': 'oldAmbassadorId and newAmbassadorId are required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from_date, to_date, date_err = parse_revamp_dates(request.data)
+    if date_err:
+        return Response({'detail': date_err}, status=status.HTTP_400_BAD_REQUEST)
+
+    plan = plan_revamp(old_id=old_id, new_id=new_id, from_date=from_date, to_date=to_date)
+    public = _public_revamp_plan(plan)
+    confirm = request.data.get('confirm', False)
+    if isinstance(confirm, str):
+        confirm = confirm.strip().lower() in ('1', 'true', 'yes')
+
+    if plan.get('errors'):
+        return Response(
+            {'detail': plan['errors'][0], **public},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not confirm:
+        return Response(public)
+
+    if not plan.get('ok'):
+        return Response(
+            {'detail': plan.get('collisionMessage') or 'Revamp did not run.', **public},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        result = apply_revamp(plan)
+    except IntegrityError:
+        return Response(
+            {
+                'detail': 'Revamp did not run because records collide.',
+                **public,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    old_obj = Ambassador.objects.filter(pk=old_id).first()
+    new_obj = Ambassador.objects.filter(pk=new_id).first()
+    store = new_obj.store if new_obj else None
+    moved = result.get('moved') or {}
+    range_label = 'all history'
+    if result.get('fromDate') or result.get('toDate'):
+        range_label = f'{result.get("fromDate") or "…"} → {result.get("toDate") or "…"}'
+    log_mis_action(
+        user=request.user,
+        action=MisAuditLog.Action.REVAMP_BAS,
+        summary=(
+            f'Revamped {old_obj.name if old_obj else old_id} → '
+            f'{new_obj.name if new_obj else new_id} ({range_label}); '
+            f'{moved.get("reports", 0)} reports, {moved.get("targets", 0)} targets.'
+        ),
+        before=result.get('before') or {},
+        after={'moved': moved, 'old': result.get('old'), 'new': result.get('new')},
+        ambassador=new_obj,
+        store=store,
+    )
+    return Response(result)
+

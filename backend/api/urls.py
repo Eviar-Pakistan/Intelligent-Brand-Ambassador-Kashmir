@@ -53,6 +53,8 @@ from .mis_views import (
     mis_patch_daily_report,
     mis_patch_store,
     mis_patch_supervisor_stores,
+    mis_revamp_bas,
+    mis_revamp_candidates,
     mis_swap_bas,
     mis_swap_candidates,
 )
@@ -155,6 +157,8 @@ urlpatterns = [
     ),
     path('mis/swap-candidates/', mis_swap_candidates, name='mis-swap-candidates'),
     path('mis/swap-bas/', mis_swap_bas, name='mis-swap-bas'),
+    path('mis/revamp-candidates/', mis_revamp_candidates, name='mis-revamp-candidates'),
+    path('mis/revamp-bas/', mis_revamp_bas, name='mis-revamp-bas'),
     path('stock-matrix/', stock_matrix, name='stock-matrix'),
     path('ba/training/video/', ba_training_video, name='ba-training-video'),
     path('ba/sessions/', ba_create_session, name='ba-create-session'),

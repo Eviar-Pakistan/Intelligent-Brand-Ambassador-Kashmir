@@ -37,7 +37,8 @@ const ACTION_FILTERS: { id: string; label: string }[] = [
   { id: 'edit_ambassador', label: 'Ambassadors' },
   { id: 'edit_store', label: 'Stores' },
   { id: 'edit_supervisor_stores', label: 'Supervisors' },
-  { id: 'swap_bas', label: 'Deployment' },
+  { id: 'swap_bas', label: 'Swap BAs' },
+  { id: 'revamp_bas', label: 'Revamp BAs' },
 ]
 
 export function MisAuditLogPage() {

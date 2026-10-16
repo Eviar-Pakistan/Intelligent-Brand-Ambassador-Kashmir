@@ -173,3 +173,66 @@ export async function misSwapBas(firstShiftId: number, secondShiftId: number) {
     },
   )
 }
+
+export type MisRevampCandidate = {
+  id: number
+  name: string
+  code: string
+  city: string
+  status: string
+  storeId: number | null
+  storeName: string
+  label: string
+}
+
+export type MisRevampPlan = {
+  ok: boolean
+  errors?: string[]
+  collisions: {
+    reports: string[]
+    attendance: string[]
+    shifts: string[]
+    targets: string[]
+    incentives: string[]
+  }
+  collisionMessage: string
+  counts: {
+    reports: number
+    targets: number
+    attendance: number
+    shifts: number
+    interceptions: number
+    complaints: number
+    incentives: number
+  }
+  old: { id: number; name: string; code: string; status: string; storeId: number | null; storeName: string } | null
+  new: { id: number; name: string; code: string; status: string; storeId: number | null; storeName: string } | null
+  fromDate: string | null
+  toDate: string | null
+  detail?: string
+}
+
+export async function fetchMisRevampCandidates(): Promise<MisRevampCandidate[]> {
+  if (!isApiAuthenticated()) return []
+  const data = await apiRequest<{ results: MisRevampCandidate[] }>('/api/mis/revamp-candidates/')
+  return data.results ?? []
+}
+
+export async function misRevampBas(body: {
+  oldAmbassadorId: number
+  newAmbassadorId: number
+  fromDate?: string
+  toDate?: string
+  confirm?: boolean
+}): Promise<MisRevampPlan> {
+  return apiRequest<MisRevampPlan>('/api/mis/revamp-bas/', {
+    method: 'POST',
+    body: {
+      oldAmbassadorId: body.oldAmbassadorId,
+      newAmbassadorId: body.newAmbassadorId,
+      fromDate: body.fromDate || undefined,
+      toDate: body.toDate || undefined,
+      confirm: Boolean(body.confirm),
+    },
+  })
+}

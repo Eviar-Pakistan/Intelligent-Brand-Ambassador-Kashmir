@@ -12,7 +12,7 @@ import {
   StatusBadge,
   TableScroll,
 } from '../../components/ui'
-import { ArrowLeftRight, CalendarClock, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, Download, FileSpreadsheet, Plus, RefreshCw, Upload } from 'lucide-react'
 import { parseShiftLabelTimes, shiftLabelFromTimes, useSchedule } from '../../context/ScheduleContext'
 import { StoreQrCard } from '../../components/StoreQrCard'
 import { findCreatedStore, shopperPath, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
@@ -42,11 +42,15 @@ import {
   undeployAmbassador,
   updateShift,
 } from '../../lib/deploymentApi'
-import { isApiAuthenticated } from '../../lib/api'
+import { ApiError, isApiAuthenticated } from '../../lib/api'
 import {
+  fetchMisRevampCandidates,
   fetchMisSwapCandidates,
   misPatchStore,
+  misRevampBas,
   misSwapBas,
+  type MisRevampCandidate,
+  type MisRevampPlan,
   type MisSwapCandidate,
 } from '../../lib/misApi'
 
@@ -613,6 +617,216 @@ function SwapBasModal({
   )
 }
 
+function lastDayOfMonthIso(monthYm: string) {
+  const [y, m] = monthYm.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()
+  return `${monthYm}-${String(last).padStart(2, '0')}`
+}
+
+function RevampBasModal({
+  open,
+  monthYm,
+  todayIso,
+  onClose,
+  onDone,
+}: {
+  open: boolean
+  monthYm: string
+  todayIso: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [candidates, setCandidates] = useState<MisRevampCandidate[]>([])
+  const [oldId, setOldId] = useState('')
+  const [newId, setNewId] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [plan, setPlan] = useState<MisRevampPlan | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setOldId('')
+    setNewId('')
+    setPlan(null)
+    setError(null)
+    const monthStart = `${monthYm}-01`
+    const monthEnd = lastDayOfMonthIso(monthYm)
+    const inMonth = todayIso >= monthStart && todayIso <= monthEnd
+    setFromDate(monthStart)
+    setToDate(inMonth ? todayIso : monthEnd)
+    setLoading(true)
+    void fetchMisRevampCandidates()
+      .then(setCandidates)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load BAs'))
+      .finally(() => setLoading(false))
+  }, [open, monthYm, todayIso])
+
+  useEffect(() => {
+    if (!open || !oldId || !newId) {
+      setPlan(null)
+      return
+    }
+    let cancelled = false
+    setPreviewing(true)
+    setError(null)
+    const timer = window.setTimeout(() => {
+      void misRevampBas({
+        oldAmbassadorId: Number(oldId),
+        newAmbassadorId: Number(newId),
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        confirm: false,
+      })
+        .then((next) => {
+          if (cancelled) return
+          setPlan(next)
+          if (next.collisionMessage) setError(next.collisionMessage)
+        })
+        .catch((e) => {
+          if (cancelled) return
+          if (e instanceof ApiError && e.body && typeof e.body === 'object') {
+            const body = e.body as MisRevampPlan
+            setPlan(typeof body.counts?.reports === 'number' ? body : null)
+          } else {
+            setPlan(null)
+          }
+          setError(e instanceof Error ? e.message : 'Could not preview revamp')
+        })
+        .finally(() => {
+          if (!cancelled) setPreviewing(false)
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [open, oldId, newId, fromDate, toDate])
+
+  async function confirm() {
+    if (!oldId || !newId || !plan?.ok) return
+    setBusy(true)
+    setError(null)
+    try {
+      await misRevampBas({
+        oldAmbassadorId: Number(oldId),
+        newAmbassadorId: Number(newId),
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        confirm: true,
+      })
+      onDone()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Revamp failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const counts = plan?.counts
+  const canConfirm = Boolean(plan?.ok && oldId && newId && !previewing && !busy)
+
+  return (
+    <Modal open={open} onClose={onClose} title="Revamp BAs">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Cut the old BA’s sales, targets, attendance, and other field history and attach them to
+          the new BA. If both already have a report on the same date, nothing is moved.
+        </p>
+        {loading ? (
+          <p className="text-sm text-slate-400">Loading BAs…</p>
+        ) : (
+          <>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold text-slate-800">Old BA (leaving)</span>
+              <select
+                value={oldId}
+                onChange={(e) => setOldId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">Choose the BA whose data will be moved…</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id} disabled={String(c.id) === newId}>
+                    {c.label} · {c.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold text-slate-800">New BA (incoming)</span>
+              <select
+                value={newId}
+                onChange={(e) => setNewId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">Choose the BA who will receive that data…</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id} disabled={String(c.id) === oldId}>
+                    {c.label} · {c.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="mb-1.5 block font-semibold text-slate-800">From date</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1.5 block font-semibold text-slate-800">To date</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                />
+              </label>
+            </div>
+            <p className="text-xs text-slate-400">
+              Defaults to this month. Clear both dates to move all history.
+            </p>
+          </>
+        )}
+        {previewing && <p className="text-sm text-slate-400">Checking for colliding dates…</p>}
+        {typeof counts?.reports === 'number' && !previewing && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+            <p className="font-semibold text-slate-800">Will move</p>
+            <p className="mt-1">
+              {counts.reports} reports · {counts.targets} targets · {counts.attendance} attendance
+              days · {counts.shifts} shifts
+            </p>
+            <p className="text-xs text-slate-500">
+              {counts.interceptions} interceptions · {counts.complaints} complaints ·{' '}
+              {counts.incentives} incentive weeks
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Old BA will be Disabled. New BA takes the store if the old BA had one.
+            </p>
+          </div>
+        )}
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void confirm()} disabled={!canConfirm}>
+            {busy ? 'Revamping…' : 'Confirm revamp'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function SchedulerPanel() {
   const { pathname } = useLocation()
   const isMis = pathname.startsWith('/mis')
@@ -624,6 +838,7 @@ function SchedulerPanel() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [swapOpen, setSwapOpen] = useState(false)
+  const [revampOpen, setRevampOpen] = useState(false)
   const [createTab, setCreateTab] = useState<'individual' | 'bulk'>('individual')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [previousBaId, setPreviousBaId] = useState<string | null>(null)
@@ -1042,9 +1257,14 @@ function SchedulerPanel() {
               Today · {todayLabel}
             </div>
             {isMis && (
-              <Button size="sm" variant="secondary" onClick={() => setSwapOpen(true)}>
-                <ArrowLeftRight size={14} /> Swap BAs
-              </Button>
+              <>
+                <Button size="sm" variant="secondary" onClick={() => setSwapOpen(true)}>
+                  <ArrowLeftRight size={14} /> Swap BAs
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setRevampOpen(true)}>
+                  <RefreshCw size={14} /> Revamp BAs
+                </Button>
+              </>
             )}
             <Button size="sm" onClick={() => openCreate()} disabled={!storeOptions.length}>
               <Plus size={14} /> Add shift
@@ -1429,6 +1649,18 @@ function SchedulerPanel() {
         onDone={() => {
           void refreshSchedule(monthYm)
           setToast('BA stores swapped')
+          setTimeout(() => setToast(null), 3000)
+        }}
+      />
+      <RevampBasModal
+        open={revampOpen}
+        monthYm={monthYm}
+        todayIso={todayIso}
+        onClose={() => setRevampOpen(false)}
+        onDone={() => {
+          void syncAmbassadorsFromApi()
+          void refreshSchedule(monthYm)
+          setToast('BA data revamped')
           setTimeout(() => setToast(null), 3000)
         }}
       />

@@ -1059,6 +1059,7 @@ class MisAuditLog(models.Model):
         EDIT_STORE = 'edit_store', 'Edit store'
         EDIT_SUPERVISOR_STORES = 'edit_supervisor_stores', 'Edit supervisor stores'
         SWAP_BAS = 'swap_bas', 'Swap BAs'
+        REVAMP_BAS = 'revamp_bas', 'Revamp BAs'
 
     mis_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
