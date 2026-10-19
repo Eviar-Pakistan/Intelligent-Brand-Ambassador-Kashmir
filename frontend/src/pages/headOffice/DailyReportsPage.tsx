@@ -15,6 +15,7 @@ import {
   type DailyReportBaCard,
   type DailyReportRow,
 } from '../../lib/earlyCheckoutApi'
+import { peekDailyReportsCache, setDailyReportsCache } from '../../lib/hoDataCache'
 import {
   competitiveFields,
   DEFAULT_OTHER_BRANDS,
@@ -829,24 +830,41 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
   const [downloadError, setDownloadError] = useState<string | null>(null)
 
   async function load(opts?: { silent?: boolean }) {
-    if (!opts?.silent) {
-      setLoading(true)
-      setError(null)
+    let silent = !!opts?.silent
+    if (!silent) {
+      const cached = peekDailyReportsCache()
+      if (cached) {
+        setCards(cached)
+        setLoading(false)
+        silent = true
+      } else {
+        setLoading(true)
+        setError(null)
+      }
     }
     try {
-      setCards(await fetchDailyReports())
-      if (!opts?.silent) setError(null)
+      const next = await fetchDailyReports()
+      setCards(next)
+      setDailyReportsCache(next)
+      if (!silent) setError(null)
     } catch (err) {
-      if (!opts?.silent) {
+      if (!silent) {
         setError(err instanceof Error ? err.message : 'Could not load daily reports')
         setCards([])
       }
     } finally {
-      if (!opts?.silent) setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
+    const cached = peekDailyReportsCache()
+    if (cached) {
+      setCards(cached)
+      setLoading(false)
+      void load({ silent: true })
+      return
+    }
     void load()
   }, [])
 

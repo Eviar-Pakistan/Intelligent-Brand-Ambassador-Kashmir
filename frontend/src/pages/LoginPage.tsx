@@ -17,6 +17,7 @@ import { baEmailInUse, baSignOut, syncAmbassadorsFromApi } from '../lib/baAccoun
 import { loginWithEmail, logoutApi } from '../lib/auth'
 import { ApiError } from '../lib/api'
 import { USER_TYPE_MIS } from '../lib/misApi'
+import { clearHoDataCache } from '../lib/hoDataCache'
 import { syncStoresFromApi } from '../lib/storeRegistry'
 
 type LoginMode = 'headOffice' | 'supervisor'
@@ -154,43 +155,48 @@ export function LoginPage() {
         return
       }
 
-      // If they typed a supervisor email on HO tab, still route correctly
-      try {
-        const supervisor = await loginSupervisorWithApi(email, password)
-        if (supervisor) {
+      // Only hit supervisor login when this email looks like a supervisor
+      const emailNorm = email.trim().toLowerCase()
+      const mightBeSupervisor =
+        emailInUse(email) ||
+        supervisorOptions.some((s) => s.email.trim().toLowerCase() === emailNorm)
+
+      if (mightBeSupervisor) {
+        try {
+          const supervisor = await loginSupervisorWithApi(email, password)
+          if (supervisor) {
+            setRole('supervisor')
+            navigate(roleMeta.supervisor.home)
+            return
+          }
+        } catch {
+          // continue to HO / local supervisor fallback
+        }
+
+        if (emailInUse(email)) {
+          const supervisor = authenticate(email, password)
+          if (!supervisor) {
+            setError('Incorrect email or password.')
+            return
+          }
+          logoutApi()
           setRole('supervisor')
+          signIn(supervisor.id)
           navigate(roleMeta.supervisor.home)
           return
         }
-      } catch {
-        // continue to HO
-      }
-
-      if (emailInUse(email)) {
-        const supervisor = authenticate(email, password)
-        if (!supervisor) {
-          setError('Incorrect email or password.')
-          return
-        }
-        logoutApi()
-        setRole('supervisor')
-        signIn(supervisor.id)
-        navigate(roleMeta.supervisor.home)
-        return
       }
 
       const { user } = await loginWithEmail(email, password)
       signOut()
       baSignOut()
-      try {
-        await Promise.all([
-          syncStoresFromApi(),
-          syncAmbassadorsFromApi(),
-          syncSupervisorsFromApi(),
-        ])
-      } catch {
-        // best-effort
-      }
+      clearHoDataCache()
+      // Do not block entering the app on roster sync — pages refresh on mount.
+      void Promise.all([
+        syncStoresFromApi(),
+        syncAmbassadorsFromApi(),
+        syncSupervisorsFromApi(),
+      ]).catch(() => {})
       if (user?.user_type === USER_TYPE_MIS) {
         enter('mis')
         return

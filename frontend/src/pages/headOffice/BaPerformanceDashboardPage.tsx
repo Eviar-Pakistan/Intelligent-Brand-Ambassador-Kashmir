@@ -21,6 +21,11 @@ import {
   type BaPerformanceDashboard,
 } from '../../lib/baPerformanceApi'
 import {
+  dashboardCacheKey,
+  peekDashboardCache,
+  setDashboardCache,
+} from '../../lib/hoDataCache'
+import {
   colorsForCategories,
   chartGold,
   chartGreen,
@@ -626,48 +631,61 @@ export function BaPerformanceDashboardPage() {
   )
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!opts?.silent) {
-      setLoading(true)
-      setError(null)
-    }
-    try {
-      const from = range ? dateInputValue(range.start) : customFrom || null
-      const to = range ? dateInputValue(range.end) : customTo || null
-      const apiPeriod = salesPeriod === 'yoy' ? 'ytd' : salesPeriod
-      let monthParam: string | null = null
-      if (month) {
-        const idx = MONTH_ORDER.indexOf(month)
-        if (idx >= 0) {
-          monthParam = `${new Date().getFullYear()}-${String(idx + 1).padStart(2, '0')}`
-        } else {
-          monthParam = month
-        }
+    const from = range ? dateInputValue(range.start) : customFrom || null
+    const to = range ? dateInputValue(range.end) : customTo || null
+    const apiPeriod = salesPeriod === 'yoy' ? 'ytd' : salesPeriod
+    let monthParam: string | null = null
+    if (month) {
+      const idx = MONTH_ORDER.indexOf(month)
+      if (idx >= 0) {
+        monthParam = `${new Date().getFullYear()}-${String(idx + 1).padStart(2, '0')}`
+      } else {
+        monthParam = month
       }
-      const data = await fetchBaPerformanceDashboard({
-        town,
-        store,
-        month: from && to ? null : monthParam,
-        from: from && to ? from : null,
-        to: from && to ? to : null,
-        category,
-        sku,
-        salesPeriod: apiPeriod,
-        targetMonth,
-      })
+    }
+    const params = {
+      town,
+      store,
+      month: from && to ? null : monthParam,
+      from: from && to ? from : null,
+      to: from && to ? to : null,
+      category,
+      sku,
+      salesPeriod: apiPeriod as 'wow' | 'mom' | 'ytd',
+      targetMonth,
+    }
+    const cacheKey = dashboardCacheKey(params)
+
+    let silent = !!opts?.silent
+    if (!silent) {
+      const cached = peekDashboardCache(cacheKey)
+      if (cached) {
+        setDash(cached)
+        setLoading(false)
+        silent = true
+      } else {
+        setLoading(true)
+        setError(null)
+      }
+    }
+
+    try {
+      const data = await fetchBaPerformanceDashboard(params)
       if (!data) {
-        if (!opts?.silent) setError('Sign in to load live dashboard data.')
-        setDash(null)
+        if (!silent) setError('Sign in to load live dashboard data.')
+        if (!silent) setDash(null)
       } else {
         setDash(data)
-        if (!opts?.silent) setError(null)
+        setDashboardCache(cacheKey, data)
+        if (!silent) setError(null)
       }
     } catch (err) {
-      if (!opts?.silent) {
+      if (!silent) {
         setError(err instanceof Error ? err.message : 'Could not load dashboard')
         setDash(null)
       }
     } finally {
-      if (!opts?.silent) setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [town, store, month, category, sku, salesPeriod, range, customFrom, customTo, targetMonth])
 
