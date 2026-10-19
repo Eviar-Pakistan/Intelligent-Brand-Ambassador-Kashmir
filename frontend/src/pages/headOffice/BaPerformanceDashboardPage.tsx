@@ -1565,8 +1565,8 @@ export function BaPerformanceDashboardPage() {
               <tr>
                 <th className="px-4 py-3">Ambassador</th>
                 <th className="px-4 py-3">Store</th>
-                <th className="px-4 py-3">Target (units)</th>
-                <th className="px-4 py-3">Sales (units)</th>
+                <th className="px-4 py-3">Target KG</th>
+                <th className="px-4 py-3">Sales KG</th>
                 <th className="px-4 py-3">Achievement</th>
               </tr>
             </thead>
