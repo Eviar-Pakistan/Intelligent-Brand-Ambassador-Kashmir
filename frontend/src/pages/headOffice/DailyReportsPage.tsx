@@ -868,12 +868,13 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
     const rows = flattenCards(cards)
     const q = search.trim().toLowerCase()
     if (!q) return rows
-    return rows.filter(
-      (r) =>
-        r.baName.toLowerCase().includes(q) ||
-        r.baCode.toLowerCase().includes(q) ||
-        r.storeName.toLowerCase().includes(q),
-    )
+    return rows.filter((r) => {
+      const hay = [r.baName, r.baCode, r.storeName, r.baCity, r.city]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(q)
+    })
   }, [cards, search])
 
   // Auto-expand once when reports first load — do not re-open after the user hides.
@@ -974,16 +975,15 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
         }
       />
 
-      {misEditable && (
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by BA name…"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-          />
-        </div>
-      )}
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter by BA name, code, or store…"
+          className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+          aria-label="Filter daily reports"
+        />
+      </div>
 
       {error && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -999,9 +999,13 @@ export function DailyReportsPage({ misEditable = false }: { misEditable?: boolea
         <Card>
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <FileClock className="text-slate-300" size={40} strokeWidth={1.5} />
-            <p className="mt-3 text-sm font-medium text-slate-700">No reports yet</p>
+            <p className="mt-3 text-sm font-medium text-slate-700">
+              {search.trim() ? 'No matching reports' : 'No reports yet'}
+            </p>
             <p className="mt-1 max-w-md text-xs text-slate-500">
-              When a BA checks out, all reports are shown here.
+              {search.trim()
+                ? 'Try another BA name, code, or store name.'
+                : 'When a BA checks out, all reports are shown here.'}
             </p>
           </div>
         </Card>
