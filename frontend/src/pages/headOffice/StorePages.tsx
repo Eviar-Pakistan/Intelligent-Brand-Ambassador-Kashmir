@@ -914,36 +914,53 @@ function SchedulerPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeOptions.length])
 
-  // Deployment board: only ShiftAssignment rows for today.
+  // Today's shifts, with Disabled BAs pulled out into the deactivated list below.
   const todaySchedule = useMemo(
     () => schedule.filter((s) => (s.dateIso || '') === todayIso),
     [schedule, todayIso],
   )
 
-  const conflictCount = todaySchedule.filter((s) => s.status === 'Conflict').length
-  const openCount = todaySchedule.filter((s) => s.status === 'Open' || !s.baId).length
-  const filledCount = todaySchedule.filter((s) => s.status === 'Scheduled' && s.baId).length
+  const disabledAccounts = useMemo(() => {
+    return accounts
+      .filter((a) => {
+        if (a.status !== 'Disabled') return false
+        if (isDemoBa(a.id) || isPlaceholderBaName(a.name)) return false
+        return true
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [accounts])
+
+  const disabledIds = useMemo(
+    () => new Set(disabledAccounts.map((a) => a.id)),
+    [disabledAccounts],
+  )
+
+  const activeToday = useMemo(
+    () => todaySchedule.filter((s) => !s.baId || !disabledIds.has(s.baId)),
+    [todaySchedule, disabledIds],
+  )
+
+  const conflictCount = activeToday.filter((s) => s.status === 'Conflict').length
+  const openCount = activeToday.filter((s) => s.status === 'Open' || !s.baId).length
+  const filledCount = activeToday.filter((s) => s.status === 'Scheduled' && s.baId).length
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return todaySchedule
-    return todaySchedule.filter((slot) => {
+    const match = (parts: Array<string | null | undefined>) => {
+      if (!q) return true
+      return parts.filter(Boolean).join(' ').toLowerCase().includes(q)
+    }
+    const shifts = activeToday.filter((slot) => {
       const storeMeta = storeOptions.find((s) => s.id === slot.storeId)
       const ba = accounts.find((a) => a.id === slot.baId)
-      const hay = [
-        slot.storeName,
-        slot.city,
-        storeMeta?.code,
-        slot.baName,
-        ba?.code,
-        slot.shift,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return hay.includes(q)
+      return match([slot.storeName, slot.city, storeMeta?.code, slot.baName, ba?.code, slot.shift])
     })
-  }, [todaySchedule, search, storeOptions, accounts])
+    const disabled = disabledAccounts.filter((ba) => {
+      const storeMeta = ba.storeId != null ? storeOptions.find((s) => s.id === ba.storeId) : undefined
+      return match([storeMeta?.name, ba.storeName, storeMeta?.city, ba.city, storeMeta?.code, ba.name, ba.code])
+    })
+    return { shifts, disabled }
+  }, [activeToday, disabledAccounts, search, storeOptions, accounts])
 
   function showToast(msg: string) {
     setToast(msg)
@@ -1216,7 +1233,7 @@ function SchedulerPanel() {
     <div className="space-y-5">
       <PageHeader
         title="Intelligent Store Deployment"
-        description="Shows today's BA store assignments only (updates with the calendar day)"
+        description="Today's store assignments, plus deactivated BAs so they can be activated again"
         actions={
           <Button onClick={() => openCreate()} disabled={!storeOptions.length}>
             <CalendarClock size={15} /> Create shifts
@@ -1233,7 +1250,7 @@ function SchedulerPanel() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <div className="text-xs text-slate-500">Today&apos;s shifts</div>
-          <div className="text-2xl font-bold">{todaySchedule.length}</div>
+          <div className="text-2xl font-bold">{activeToday.length}</div>
         </Card>
         <Card>
           <div className="text-xs text-slate-500">Scheduled</div>
@@ -1284,9 +1301,9 @@ function SchedulerPanel() {
 
         {loading && <p className="mb-3 text-xs text-slate-400">Loading shifts…</p>}
 
-        {filtered.length === 0 ? (
+        {filtered.shifts.length === 0 && filtered.disabled.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-500">
-            No shifts for today ({todayLabel}).{' '}
+            No shifts for today ({todayLabel}) and no deactivated BAs.{' '}
             <button type="button" className="font-semibold text-brand-600" onClick={() => openCreate()}>
               Add one
             </button>
@@ -1304,7 +1321,7 @@ function SchedulerPanel() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((slot) => {
+                {filtered.shifts.map((slot) => {
                   const storeMeta = storeOptions.find((s) => s.id === slot.storeId)
                   const ba = accounts.find((a) => a.id === slot.baId)
                   const onLeave = ba?.status === 'Disabled'
@@ -1392,6 +1409,49 @@ function SchedulerPanel() {
                             Delete
                           </button>
                         </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {filtered.disabled.map((ba) => {
+                  const storeMeta = ba.storeId != null ? storeOptions.find((s) => s.id === ba.storeId) : undefined
+                  const rowId = `disabled-${ba.id}`
+                  return (
+                    <tr key={rowId} className="border-t border-slate-100 bg-slate-50/60">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900">
+                          {storeMeta?.name || ba.storeName || 'No store'}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {storeMeta?.code || (ba.storeId != null ? storeCodeLabel(ba.storeId) : '—')} ·{' '}
+                          {storeMeta?.city || ba.city || '—'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={ba.name} size="sm" />
+                          <div>
+                            <div className="font-medium">{ba.name}</div>
+                            {ba.code && <div className="text-xs text-slate-400">{ba.code}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-500">Not scheduled today</div>
+                        <div className="text-xs text-slate-400">{todayLabel}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status="Disabled" />
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          disabled={togglingId === rowId}
+                          className="text-sm font-semibold text-emerald-700 hover:underline disabled:opacity-50"
+                          onClick={() => void toggleBaActive(rowId, ba.id, true)}
+                        >
+                          {togglingId === rowId ? 'Saving…' : 'Activate'}
+                        </button>
                       </td>
                     </tr>
                   )
