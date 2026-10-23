@@ -871,3 +871,66 @@ export async function downloadBaLinks(
   XLSX.utils.book_append_sheet(wb, sheet, 'BA links')
   XLSX.writeFile(wb, 'Kashmir_BA_Profile_Links.xlsx')
 }
+
+export type BaMasterRow = {
+  code?: string
+  name: string
+  phone?: string
+  email?: string
+  city?: string
+  storeName?: string
+  status?: string
+  inactiveReason?: string
+  shiftTimings?: string
+  profileUrl?: string
+}
+
+/** BA Master roster Excel (fields available in the system — no CNIC / weekly off / break). */
+export async function downloadBaMaster(list: BaMasterRow[]) {
+  const rows = list.filter((a) => !isPlaceholderBaName(a.name))
+  const XLSX = await import('xlsx')
+  const sheet = XLSX.utils.aoa_to_sheet([
+    [
+      'S.No',
+      'BA Code',
+      'Name',
+      'Contact Number',
+      'Email',
+      'City',
+      'Store',
+      'Status',
+      'Inactive Reason',
+      'Shift Timings',
+      'Profile Link',
+    ],
+    ...rows.map((a, i) => [
+      i + 1,
+      a.code || '',
+      a.name,
+      a.phone || '',
+      a.email || '',
+      a.city || '',
+      a.storeName || '',
+      a.status || '',
+      a.status === 'Disabled' ? a.inactiveReason || '' : '',
+      a.shiftTimings || '',
+      a.profileUrl || '',
+    ]),
+  ])
+  sheet['!cols'] = [
+    { wch: 6 },
+    { wch: 10 },
+    { wch: 28 },
+    { wch: 16 },
+    { wch: 28 },
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 12 },
+    { wch: 28 },
+    { wch: 22 },
+    { wch: 72 },
+  ]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, sheet, 'BA Master')
+  XLSX.writeFile(wb, 'Kashmir_BA_Master.xlsx')
+}

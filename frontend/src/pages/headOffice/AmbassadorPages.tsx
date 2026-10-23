@@ -22,6 +22,7 @@ import {
   createBaAccountsAsync,
   downloadAmbassadorTemplate,
   downloadBaLinks,
+  downloadBaMaster,
   generateBaEmail,
   getBaAccounts,
   isDemoBa,
@@ -42,6 +43,8 @@ import {
   deployAmbassador,
   fetchAmbassadorAttendance,
   fetchAmbassadorShifts,
+  fetchMonthShifts,
+  toIsoDate,
   type ApiShift,
   type AttendanceDayRow,
 } from '../../lib/deploymentApi'
@@ -1054,6 +1057,53 @@ export function AmbassadorsPage() {
   const [bulkCreated, setBulkCreated] = useState<BaAccount[] | null>(null)
   const [bulkToast, setBulkToast] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [masterDownloading, setMasterDownloading] = useState(false)
+
+  async function handleDownloadBaMaster() {
+    if (filteredAccounts.length === 0 || masterDownloading) return
+    setMasterDownloading(true)
+    try {
+      const todayIso = toIsoDate(new Date())
+      const monthYm = todayIso.slice(0, 7)
+      const shiftByBa = new Map<string, string>()
+      if (isApiAuthenticated()) {
+        try {
+          const month = await fetchMonthShifts(monthYm)
+          for (const s of month.results ?? []) {
+            if (!s.baId || s.dateIso !== todayIso) continue
+            if (!(s.shift || '').trim()) continue
+            if (!shiftByBa.has(s.baId)) shiftByBa.set(s.baId, s.shift)
+          }
+        } catch {
+          // Shift enrichment is optional — still export master without timings.
+        }
+      }
+      await downloadBaMaster(
+        filteredAccounts.map((a) => {
+          const store = a.storeId != null ? findCreatedStore(a.storeId) : undefined
+          return {
+            code: a.code,
+            name: a.name,
+            phone: a.phone,
+            email: a.email,
+            city: store?.city || a.city || '',
+            storeName: a.storeName || store?.name || '',
+            status: a.status,
+            inactiveReason: a.inactiveReason,
+            shiftTimings: shiftByBa.get(a.id) || '',
+            profileUrl: baAccessUrl(a),
+          }
+        }),
+      )
+      setBulkToast('BA Master Excel downloaded')
+      setTimeout(() => setBulkToast(null), 2800)
+    } catch (err) {
+      setBulkToast(err instanceof Error ? err.message : 'Could not download BA Master')
+      setTimeout(() => setBulkToast(null), 3200)
+    } finally {
+      setMasterDownloading(false)
+    }
+  }
 
   useEffect(() => {
     void syncAmbassadorsFromApi().catch(() => {})
@@ -1145,6 +1195,14 @@ export function AmbassadorsPage() {
               }
             >
               <Download size={15} /> Download BA links
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={filteredAccounts.length === 0 || masterDownloading}
+              onClick={() => void handleDownloadBaMaster()}
+            >
+              <Download size={15} />
+              {masterDownloading ? 'Preparing…' : 'Download BA Master'}
             </Button>
             <Button variant="secondary" onClick={() => setUploadTargetsOpen(true)}>
               <FileSpreadsheet size={15} /> Upload targets
