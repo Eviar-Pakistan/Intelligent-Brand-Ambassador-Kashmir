@@ -1069,20 +1069,38 @@ export function AmbassadorsPage() {
     }
   }, [])
 
-  const filteredAccounts = accounts.filter((a) => {
-    if (isDemoBa(a.id)) return false
-    if (isPlaceholderBaName(a.name)) return false
-    const matchTab =
-      tab === 'All' ||
-      (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
-    const qLower = q.toLowerCase()
-    const matchQ =
-      !qLower ||
-      a.name.toLowerCase().includes(qLower) ||
-      (a.code || '').toLowerCase().includes(qLower) ||
-      (a.email || '').toLowerCase().includes(qLower)
-    return matchTab && matchQ
-  })
+  const filteredAccounts = useMemo(() => {
+    const cityOf = (a: BaAccount) => {
+      const fromStore =
+        a.storeId != null ? findCreatedStore(a.storeId)?.city?.trim() : ''
+      return (fromStore || a.city || '').trim()
+    }
+    return accounts
+      .filter((a) => {
+        if (isDemoBa(a.id)) return false
+        if (isPlaceholderBaName(a.name)) return false
+        const matchTab =
+          tab === 'All' ||
+          (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
+        const qLower = q.toLowerCase()
+        const matchQ =
+          !qLower ||
+          a.name.toLowerCase().includes(qLower) ||
+          (a.code || '').toLowerCase().includes(qLower) ||
+          (a.email || '').toLowerCase().includes(qLower) ||
+          cityOf(a).toLowerCase().includes(qLower)
+        return matchTab && matchQ
+      })
+      .sort((a, b) => {
+        const ca = cityOf(a)
+        const cb = cityOf(b)
+        if (!ca && cb) return 1
+        if (ca && !cb) return -1
+        const byCity = ca.localeCompare(cb, undefined, { sensitivity: 'base' })
+        if (byCity !== 0) return byCity
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      })
+  }, [accounts, tab, q])
 
   const targetTotalByBa = useMemo(() => {
     const map = new Map<string, number>()

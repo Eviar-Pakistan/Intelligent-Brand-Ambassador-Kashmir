@@ -1600,6 +1600,7 @@ export function BaPerformanceDashboardPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
+                <th className="px-4 py-3">S.No</th>
                 <th className="px-4 py-3">City</th>
                 <th className="px-4 py-3">Stores</th>
                 <th className="px-4 py-3">Active</th>
@@ -1609,8 +1610,9 @@ export function BaPerformanceDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {(cityStatus?.cities ?? []).map((row) => (
+              {(cityStatus?.cities ?? []).map((row, index) => (
                 <tr key={row.city} className="border-t border-slate-100">
+                  <td className="px-4 py-3 tabular-nums text-slate-500">{index + 1}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{row.city}</td>
                   <td className="px-4 py-3 text-slate-600">{row.stores}</td>
                   <td className="px-4 py-3 font-semibold text-emerald-600">{row.active}</td>
@@ -1619,7 +1621,7 @@ export function BaPerformanceDashboardPage() {
                   <td className="px-4 py-3 font-semibold text-slate-900">{row.total}</td>
                 </tr>
               ))}
-              {!cityStatus && <EmptyRow cols={6} />}
+              {!cityStatus && <EmptyRow cols={7} />}
             </tbody>
           </table>
         </TableScroll>
