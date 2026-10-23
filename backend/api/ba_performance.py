@@ -943,16 +943,40 @@ def _attendance_block(
     # Live break clock is not tracked yet — list stays empty until BAs can be marked on break.
     break_bas: list[dict] = []
 
+    # Disabled / inactive BAs (separate from live Offline) — with inactivity reason.
+    inactive_qs = Ambassador.objects.filter(status=Ambassador.Status.ON_LEAVE).select_related(
+        'store'
+    )
+    if store_ids is not None:
+        inactive_qs = inactive_qs.filter(store_id__in=store_ids)
+    elif town:
+        inactive_qs = inactive_qs.filter(store__city__iexact=town)
+    if store_name:
+        inactive_qs = inactive_qs.filter(store__name__iexact=store_name)
+    inactive_bas = [
+        {
+            'id': ba.id,
+            'name': ba.name or f'BA #{ba.id}',
+            'store': ba.store.name if ba.store_id else '—',
+            'city': (ba.store.city if ba.store_id else None) or ba.city or '—',
+            'reason': (ba.inactive_reason or '').strip() or '—',
+        }
+        for ba in inactive_qs.order_by('name')
+    ]
+    inactive_n = len(inactive_bas)
+
     ba_status = {
         'days': 1,  # live snapshot (not averaged over the filter range)
         'total': active_n + break_n + offline_n,
         'active': active_n,
         'break': break_n,
         'offline': offline_n,
+        'inactive': inactive_n,
         'cities': city_rows,
         'activeBas': active_bas,
         'offlineBas': offline_bas,
         'breakBas': break_bas,
+        'inactiveBas': inactive_bas,
         'asOf': 'live',
     }
 

@@ -318,7 +318,8 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='deactivate')
     def deactivate(self, request, pk=None):
         """
-        Pause a BA (On leave): keep store, shifts, reports, and targets.
+        Pause a BA (Disabled): keep store, shifts, reports, and targets.
+        Requires inactive_reason (e.g. Weekly Off, Sick Leave).
         Blocks check-in/out and hides them from the supervisor roster.
         """
         from .ba_attendance_views import upsert_attendance_from_shift
@@ -330,7 +331,25 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
                 {'detail': 'Rejected ambassadors cannot be put on leave.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        reason = (
+            request.data.get('inactive_reason')
+            or request.data.get('inactiveReason')
+            or request.data.get('reason')
+            or ''
+        )
+        reason = str(reason).strip()
+        if not reason:
+            return Response(
+                {'detail': 'inactive_reason is required (e.g. Weekly Off, Sick Leave).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(reason) > 120:
+            reason = reason[:120]
+
         if ambassador.status == Ambassador.Status.ON_LEAVE:
+            ambassador.inactive_reason = reason
+            ambassador.save(update_fields=['inactive_reason', 'updated_at'])
             return Response(AmbassadorSerializer(ambassador, context={'request': request}).data)
 
         now = timezone.now()
@@ -345,7 +364,8 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
             upsert_attendance_from_shift(shift)
 
         ambassador.status = Ambassador.Status.ON_LEAVE
-        ambassador.save(update_fields=['status', 'updated_at'])
+        ambassador.inactive_reason = reason
+        ambassador.save(update_fields=['status', 'inactive_reason', 'updated_at'])
 
         if ambassador.store_id:
             store = Store.objects.filter(pk=ambassador.store_id).first()
@@ -360,7 +380,7 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='activate')
     def activate(self, request, pk=None):
-        """Return an On-leave BA to Deployed. Store and history stay as they were."""
+        """Return a Disabled BA to Deployed and clear inactive_reason."""
         from .shifts import ensure_today_and_tomorrow
 
         ambassador = self.get_object()
@@ -376,9 +396,10 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
             )
 
         ambassador.status = Ambassador.Status.DEPLOYED
+        ambassador.inactive_reason = ''
         if not ambassador.deployed_at:
             ambassador.deployed_at = timezone.now()
-        ambassador.save(update_fields=['status', 'deployed_at', 'updated_at'])
+        ambassador.save(update_fields=['status', 'inactive_reason', 'deployed_at', 'updated_at'])
         ensure_today_and_tomorrow(ambassador)
 
         store = Store.objects.filter(pk=ambassador.store_id).first()

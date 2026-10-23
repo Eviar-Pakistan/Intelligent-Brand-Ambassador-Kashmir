@@ -30,6 +30,8 @@ export type BaAccount = {
   /** Deployed home store (from Django). */
   storeId: number | null
   storeName: string
+  /** Reason when status is Disabled (Weekly Off, Sick Leave, …). */
+  inactiveReason?: string
   /** Today's shift attendance clocks (filled when HO syncs shifts). */
   checkIn: string | null
   checkOut: string | null
@@ -299,6 +301,7 @@ type ApiAmbassador = {
   store?: number | null
   store_name?: string | null
   store_city?: string | null
+  inactive_reason?: string | null
   created_at?: string
 }
 
@@ -403,6 +406,7 @@ function apiAmbassadorToAccount(a: ApiAmbassador, existing?: BaAccount | null): 
     accessToken: a.invite_token || existing?.accessToken || newAccessToken(),
     storeId,
     storeName,
+    inactiveReason: (a.inactive_reason || '').trim() || undefined,
     checkIn: existing?.checkIn ?? null,
     checkOut: existing?.checkOut ?? null,
   }

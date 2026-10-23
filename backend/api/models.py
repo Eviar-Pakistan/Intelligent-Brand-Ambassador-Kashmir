@@ -377,6 +377,12 @@ class Ambassador(models.Model):
         choices=Status.choices,
         default=Status.PENDING,
     )
+    inactive_reason = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        help_text='Reason when status is Disabled (e.g. Weekly Off, Sick Leave).',
+    )
     invite_token = models.CharField(max_length=64, unique=True, blank=True)
     overall_score = models.FloatField(null=True, blank=True)
     report_json = models.JSONField(default=dict, blank=True)

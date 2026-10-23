@@ -43,6 +43,33 @@ export function colorsForCategories(names: string[]): string[] {
   return names.map((name) => CATEGORY_COLOR_BY_NAME[name] ?? chartGreen)
 }
 
+/** Brand color for a pack / SKU label (KCO red · KBP yellow · WBP orange). */
+export function colorForSkuLabel(sku: string): string {
+  const s = (sku || '').toLowerCase()
+  if (s.includes('uncategor') || s.includes('total sales')) {
+    return CATEGORY_COLOR_BY_NAME['Total Sales (uncategorized)']
+  }
+  if (s.includes('waadi') || s.startsWith('wbp') || s.includes(' wbp')) {
+    return CATEGORY_COLOR_BY_NAME['Waadi Banaspati']
+  }
+  if (s.includes('banaspati') || s.startsWith('kbp') || s.includes(' kbp') || s.includes('ghee')) {
+    return CATEGORY_COLOR_BY_NAME['Kashmir Banaspati']
+  }
+  if (
+    s.includes('cooking oil') ||
+    s.startsWith('kpgo') ||
+    s.includes(' kpgo') ||
+    s.includes('oil')
+  ) {
+    return CATEGORY_COLOR_BY_NAME['Kashmir Cooking Oil']
+  }
+  return chartGreen
+}
+
+export function colorsForSkuLabels(skus: string[]): string[] {
+  return skus.map(colorForSkuLabel)
+}
+
 /** @deprecated Prefer colorsForCategories — kept for any index-based callers */
 export const categoryColors = [
   CATEGORY_COLOR_BY_NAME['Kashmir Cooking Oil'],

@@ -31,6 +31,7 @@ import {
   chartGreen,
   chartGrid,
   chartTick,
+  colorsForSkuLabels,
   defaultChartOptions,
 } from '../../lib/chartjs'
 import type { ChartData, ChartOptions } from 'chart.js'
@@ -208,6 +209,11 @@ function BasListKpiCard({
                       </span>
                     </div>
                   )}
+                  {ba.reason ? (
+                    <div className="mt-1 text-[11px] font-medium text-amber-700">
+                      {ba.reason}
+                    </div>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -1178,13 +1184,11 @@ export function BaPerformanceDashboardPage() {
   }, [data.topStores])
 
   const topSkusChart = useMemo<ChartData<'bar'>>(() => {
+    const labels = data.topSkus.map((s) => s.sku)
     const values = data.topSkus.map((s) => s.sales)
-    const min = Math.min(...values)
-    const max = Math.max(...values, 1)
-    const span = max - min
-    const colors = values.map((v) => batteryBarColor(span <= 0 ? 1 : (v - min) / span))
+    const colors = colorsForSkuLabels(labels)
     return {
-      labels: data.topSkus.map((s) => s.sku),
+      labels,
       datasets: [
         {
           data: values,
@@ -1382,7 +1386,7 @@ export function BaPerformanceDashboardPage() {
       </Card>
 
       <div className="space-y-3">
-          <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4">
+          <div className="relative z-10 grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-3 xl:grid-cols-5">
             <BasListKpiCard
               label="Total Deployed BA's"
               value={
@@ -1420,6 +1424,14 @@ export function BaPerformanceDashboardPage() {
               rows={cityStatus?.breakBas ?? []}
               emptyText="No on-break BA's"
               tone="gold"
+            />
+            <BasListKpiCard
+              label="Inactive BA's"
+              value={cityStatus?.inactive ?? cityStatus?.inactiveBas?.length ?? '—'}
+              hint="Disabled · with reason"
+              rows={cityStatus?.inactiveBas ?? []}
+              emptyText="No inactive BA's"
+              tone="forest"
             />
           </div>
 

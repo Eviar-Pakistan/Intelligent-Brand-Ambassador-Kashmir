@@ -845,6 +845,20 @@ function SchedulerPanel() {
   const [toast, setToast] = useState<string | null>(null)
   const [conflictNotice, setConflictNotice] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deactivateTarget, setDeactivateTarget] = useState<{
+    slotId: string
+    baId: string
+  } | null>(null)
+  const [deactivateReason, setDeactivateReason] = useState('Weekly Off')
+  const [deactivateOther, setDeactivateOther] = useState('')
+  const [deactivateBusy, setDeactivateBusy] = useState(false)
+
+  const INACTIVE_REASON_OPTIONS = [
+    'Weekly Off',
+    'Sick Leave',
+    'Family Emergency',
+    'Other',
+  ] as const
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkFileName, setBulkFileName] = useState('')
@@ -1184,20 +1198,54 @@ function SchedulerPanel() {
     }
   }
 
+  function openDeactivate(slotId: string, baId: string) {
+    setDeactivateTarget({ slotId, baId })
+    setDeactivateReason('Weekly Off')
+    setDeactivateOther('')
+  }
+
+  async function confirmDeactivate() {
+    if (!deactivateTarget) return
+    if (!isApiAuthenticated()) {
+      showToast('Sign in to Head Office to change BA status')
+      return
+    }
+    const reason =
+      deactivateReason === 'Other'
+        ? deactivateOther.trim()
+        : deactivateReason.trim()
+    if (!reason) {
+      showToast('Please enter a reason for deactivating this BA')
+      return
+    }
+    setDeactivateBusy(true)
+    setTogglingId(deactivateTarget.slotId)
+    try {
+      await deactivateAmbassador(deactivateTarget.baId, reason)
+      showToast('BA deactivated')
+      setDeactivateTarget(null)
+      await Promise.all([refreshSchedule(monthYm), syncAmbassadorsFromApi().catch(() => {})])
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not deactivate BA')
+    } finally {
+      setDeactivateBusy(false)
+      setTogglingId(null)
+    }
+  }
+
   async function toggleBaActive(slotId: string, baId: string, onLeave: boolean) {
     if (!isApiAuthenticated()) {
       showToast('Sign in to Head Office to change BA status')
       return
     }
+    if (!onLeave) {
+      openDeactivate(slotId, baId)
+      return
+    }
     setTogglingId(slotId)
     try {
-      if (onLeave) {
-        await activateAmbassador(baId)
-        showToast('BA activated')
-      } else {
-        await deactivateAmbassador(baId)
-        showToast('BA deactivated (on leave)')
-      }
+      await activateAmbassador(baId)
+      showToast('BA activated')
       await Promise.all([refreshSchedule(monthYm), syncAmbassadorsFromApi().catch(() => {})])
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not update BA')
@@ -1365,6 +1413,11 @@ function SchedulerPanel() {
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={statusLabel} />
+                        {onLeave && ba?.inactiveReason ? (
+                          <div className="mt-1 text-xs font-medium text-amber-700">
+                            {ba.inactiveReason}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-3 text-sm font-semibold">
@@ -1442,6 +1495,11 @@ function SchedulerPanel() {
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status="Disabled" />
+                        {ba.inactiveReason ? (
+                          <div className="mt-1 text-xs font-medium text-amber-700">
+                            {ba.inactiveReason}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <button
@@ -1461,6 +1519,65 @@ function SchedulerPanel() {
           </TableScroll>
         )}
       </Card>
+
+      <Modal
+        open={Boolean(deactivateTarget)}
+        onClose={() => {
+          if (deactivateBusy) return
+          setDeactivateTarget(null)
+        }}
+        title="Deactivate BA"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Choose why this BA is inactive. They will be marked Disabled and blocked from
+            check-in until activated again.
+          </p>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              Reason
+            </span>
+            <select
+              value={deactivateReason}
+              onChange={(e) => setDeactivateReason(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500"
+            >
+              {INACTIVE_REASON_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+          {deactivateReason === 'Other' && (
+            <label className="block space-y-1.5">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Specify reason
+              </span>
+              <input
+                type="text"
+                value={deactivateOther}
+                onChange={(e) => setDeactivateOther(e.target.value)}
+                maxLength={120}
+                placeholder="Enter reason…"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500"
+              />
+            </label>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              variant="secondary"
+              disabled={deactivateBusy}
+              onClick={() => setDeactivateTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={deactivateBusy} onClick={() => void confirmDeactivate()}>
+              {deactivateBusy ? 'Saving…' : 'Confirm deactivate'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={modalOpen}

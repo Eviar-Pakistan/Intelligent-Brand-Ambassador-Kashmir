@@ -663,6 +663,7 @@ class AmbassadorSerializer(serializers.ModelSerializer):
             'city',
             'phone',
             'status',
+            'inactive_reason',
             'invite_token',
             'training_url',
             'overall_score',
@@ -682,6 +683,7 @@ class AmbassadorSerializer(serializers.ModelSerializer):
         read_only_fields = (
             'id',
             'code',
+            'inactive_reason',
             'invite_token',
             'training_url',
             'overall_score',

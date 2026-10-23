@@ -151,11 +151,14 @@ export async function undeployAmbassador(ambassadorId: string | number) {
   })
 }
 
-/** Pause BA (On leave): keep store, shifts, and reports. Blocks check-in. */
-export async function deactivateAmbassador(ambassadorId: string | number) {
+/** Pause BA (Disabled): keep store, shifts, and reports. Requires inactivity reason. */
+export async function deactivateAmbassador(
+  ambassadorId: string | number,
+  inactiveReason: string,
+) {
   return apiRequest(`/api/ambassadors/${ambassadorId}/deactivate/`, {
     method: 'POST',
-    body: {},
+    body: { inactive_reason: inactiveReason.trim() },
   })
 }
 

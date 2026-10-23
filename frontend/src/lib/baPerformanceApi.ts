@@ -39,6 +39,8 @@ export type ActiveBaRow = {
   city: string
   target?: number | null
   achievement?: number | null
+  /** Present for inactive/Disabled BAs. */
+  reason?: string | null
 }
 
 export type BaStatusPayload = {
@@ -47,6 +49,8 @@ export type BaStatusPayload = {
   active: number
   break: number
   offline: number
+  /** Disabled BAs (paused with a reason) — not the same as live offline. */
+  inactive?: number
   cities: BaStatusCity[]
   /** Live checked-in BA's (same set as `active` count). */
   activeBas?: ActiveBaRow[]
@@ -54,6 +58,8 @@ export type BaStatusPayload = {
   offlineBas?: ActiveBaRow[]
   /** BA's currently on break (same set as `break` count). */
   breakBas?: ActiveBaRow[]
+  /** Disabled BAs with inactivity reason. */
+  inactiveBas?: ActiveBaRow[]
 }
 
 export type AttendanceRowLive = {
@@ -182,6 +188,7 @@ export async function downloadBaPerformanceExcel(
     { Field: "Active BA's", Value: dash.baStatus?.active ?? 0 },
     { Field: "Offline BA's", Value: dash.baStatus?.offline ?? 0 },
     { Field: "On Break BA's", Value: dash.baStatus?.break ?? 0 },
+    { Field: "Inactive BA's", Value: dash.baStatus?.inactive ?? 0 },
     { Field: 'Customers Intercepted', Value: dash.kpis.customersIntercepted },
     { Field: 'Productive Calls', Value: dash.kpis.productiveCalls },
     { Field: 'Productive %', Value: dash.kpis.productivePct },
