@@ -207,6 +207,17 @@ export function demoCategorySalesForFilters(category: ProductCategory | null, to
   return all.filter((c) => c.name === category)
 }
 
+/** Demo side-by-side brand target vs sales (all three brands). */
+export function demoBrandTargetVsSalesForFilters(town: string | null) {
+  const scope = town || 'all'
+  return baPerformanceCategories.map((name) => {
+    const sales = demoValue(`${scope}|brand|${name}|sales`, 4000, 14000)
+    const target = demoValue(`${scope}|brand|${name}|target`, Math.round(sales * 0.9), Math.round(sales * 1.35))
+    const achievement = target > 0 ? Math.round((sales / target) * 1000) / 10 : 0
+    return { name, target, sales, achievement }
+  })
+}
+
 /**
  * Top 10 store targets for the active town/store filters.
  * Prefers live store names from the filter panel when available.

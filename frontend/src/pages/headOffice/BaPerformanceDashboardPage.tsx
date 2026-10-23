@@ -5,6 +5,7 @@ import { Button, Card, CardHeader, cn, StatusBadge, TableScroll } from '../../co
 import {
   MONTH_ORDER,
   baPerformanceCategories,
+  demoBrandTargetVsSalesForFilters,
   demoCategorySalesForFilters,
   demoTargetVsSalesForFilters,
   demoTopSkusForFilters,
@@ -26,7 +27,6 @@ import {
   setDashboardCache,
 } from '../../lib/hoDataCache'
 import {
-  colorsForCategories,
   chartGold,
   chartGreen,
   chartGrid,
@@ -250,13 +250,15 @@ function FilterPanel({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl border border-slate-100 bg-white',
+        'overflow-hidden rounded-xl bg-white shadow-[0_6px_18px_rgba(60,50,30,0.06)] ring-1 ring-[#eee4d4]',
         fill && 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col',
         className,
       )}
     >
-      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-3 py-2">
-        <span className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">{title}</span>
+      <div className="flex items-center justify-between border-b border-[#eee4d4] bg-white px-3 py-2">
+        <span className="text-[11px] font-semibold tracking-wide text-[#16382b]/65 uppercase">
+          {title}
+        </span>
         <button
           type="button"
           title="Clear filter"
@@ -264,25 +266,25 @@ function FilterPanel({
             onChange(allowAll ? null : options[0] ?? null)
             setQuery('')
           }}
-          className="rounded-md p-1 text-slate-400 transition hover:bg-white hover:text-slate-600"
+          className="rounded-md p-1 text-[#16382b]/40 transition hover:bg-[#f7f1e6] hover:text-[#16382b]"
         >
           <RotateCcw size={12} />
         </button>
       </div>
-      <div className="border-b border-slate-50 px-2 py-1.5">
-        <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1.5">
-          <Search size={12} className="shrink-0 text-slate-400" />
+      <div className="border-b border-[#eee4d4] bg-white px-2 py-1.5">
+        <div className="flex items-center gap-1.5 rounded-lg border border-[#eee4d4] bg-white px-2 py-1.5">
+          <Search size={12} className="shrink-0 text-[#16382b]/35" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search..."
-            className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
+            className="w-full bg-transparent text-xs text-[#16382b] outline-none placeholder:text-[#16382b]/35"
           />
         </div>
       </div>
       <div
         className={cn(
-          'overflow-y-auto overscroll-contain',
+          'dashboard-filter-scroll overflow-y-auto overscroll-contain bg-gradient-to-b from-[#f7f1e6] to-[#fffcf7]',
           fill ? 'max-h-80 sm:max-h-96 lg:max-h-none lg:flex-1' : 'max-h-36',
         )}
       >
@@ -292,8 +294,8 @@ function FilterPanel({
             onClick={() => onChange(null)}
             className={`block w-full px-3 py-2 text-left text-xs transition ${
               value === null
-                ? 'bg-brand-50/80 text-brand-700'
-                : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-gold-500/20 font-semibold text-[#16382b]'
+                : 'text-[#16382b]/80 hover:bg-white/60'
             }`}
           >
             {allLabel}
@@ -306,15 +308,15 @@ function FilterPanel({
             onClick={() => onChange(option)}
             className={`block w-full px-3 py-2 text-left text-xs transition ${
               value === option
-                ? 'bg-brand-50/80 text-brand-700'
-                : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-gold-500/20 font-semibold text-[#16382b]'
+                : 'text-[#16382b]/80 hover:bg-white/60'
             }`}
           >
             {option}
           </button>
         ))}
         {filtered.length === 0 && (
-          <p className="px-3 py-4 text-center text-xs text-slate-400">No matches</p>
+          <p className="px-3 py-4 text-center text-xs text-[#16382b]/45">No matches</p>
         )}
       </div>
     </div>
@@ -363,9 +365,9 @@ function TownStoreFilterPanel({
   const allSelected = town === null && store === null
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-3 py-2">
-        <span className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+    <div className="overflow-hidden rounded-xl bg-white shadow-[0_6px_18px_rgba(60,50,30,0.06)] ring-1 ring-[#eee4d4]">
+      <div className="flex items-center justify-between border-b border-[#eee4d4] bg-white px-3 py-2">
+        <span className="text-[11px] font-semibold tracking-wide text-[#16382b]/65 uppercase">
           Town / Store
         </span>
         <button
@@ -375,28 +377,30 @@ function TownStoreFilterPanel({
             onSelectTown(null)
             setQuery('')
           }}
-          className="rounded-md p-1 text-slate-400 transition hover:bg-white hover:text-slate-600"
+          className="rounded-md p-1 text-[#16382b]/40 transition hover:bg-[#f7f1e6] hover:text-[#16382b]"
         >
           <RotateCcw size={12} />
         </button>
       </div>
-      <div className="border-b border-slate-50 px-2 py-1.5">
-        <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1.5">
-          <Search size={12} className="shrink-0 text-slate-400" />
+      <div className="border-b border-[#eee4d4] bg-white px-2 py-1.5">
+        <div className="flex items-center gap-1.5 rounded-lg border border-[#eee4d4] bg-white px-2 py-1.5">
+          <Search size={12} className="shrink-0 text-[#16382b]/35" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search town or store..."
-            className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
+            className="w-full bg-transparent text-xs text-[#16382b] outline-none placeholder:text-[#16382b]/35"
           />
         </div>
       </div>
-      <div className="h-44 overflow-y-auto overscroll-contain">
+      <div className="dashboard-filter-scroll h-44 overflow-y-auto overscroll-contain bg-gradient-to-b from-[#f7f1e6] to-[#fffcf7]">
         <button
           type="button"
           onClick={() => onSelectTown(null)}
           className={`block w-full px-3 py-2 text-left text-xs transition ${
-            allSelected ? 'bg-brand-50/80 text-brand-700' : 'text-slate-600 hover:bg-slate-50'
+            allSelected
+              ? 'bg-gold-500/20 font-semibold text-[#16382b]'
+              : 'text-[#16382b]/80 hover:bg-white/60'
           }`}
         >
           All towns
@@ -410,8 +414,8 @@ function TownStoreFilterPanel({
                 onClick={() => onSelectTown(g.town)}
                 className={`block w-full px-3 py-1.5 text-left text-xs font-semibold tracking-wide uppercase transition ${
                   townSelected
-                    ? 'bg-brand-50/80 text-brand-700'
-                    : 'text-slate-500 hover:bg-slate-50'
+                    ? 'bg-gold-500/20 text-[#16382b]'
+                    : 'text-[#16382b]/65 hover:bg-white/60'
                 }`}
               >
                 {g.town}
@@ -425,8 +429,8 @@ function TownStoreFilterPanel({
                     onClick={() => onSelectStore(g.town, s)}
                     className={`block w-full py-1.5 pr-3 pl-6 text-left text-xs transition ${
                       storeSelected
-                        ? 'bg-brand-50/80 text-brand-700'
-                        : 'text-slate-600 hover:bg-slate-50'
+                        ? 'bg-gold-500/20 font-semibold text-[#16382b]'
+                        : 'text-[#16382b]/80 hover:bg-white/60'
                     }`}
                   >
                     {s}
@@ -437,7 +441,7 @@ function TownStoreFilterPanel({
           )
         })}
         {filtered.length === 0 && (
-          <p className="px-3 py-4 text-center text-xs text-slate-400">No matches</p>
+          <p className="px-3 py-4 text-center text-xs text-[#16382b]/45">No matches</p>
         )}
       </div>
     </div>
@@ -757,6 +761,25 @@ export function BaPerformanceDashboardPage() {
         : hasLiveSales
           ? []
           : demoCategorySalesForFilters(category, town),
+      brandTargetVsSales: (() => {
+        const live = (dash?.brandTargetVsSales ?? []).filter(
+          (b) => (b.target ?? 0) > 0 || (b.sales ?? 0) > 0,
+        )
+        if (live.length) return live
+        if (hasLiveSales || hasLiveTarget) {
+          // Live payload but empty brand split — derive from category sales only
+          const fromCats = (dash?.categorySales ?? [])
+            .filter((c) => baPerformanceCategories.includes(c.name as ProductCategory))
+            .map((c) => ({
+              name: c.name,
+              target: 0,
+              sales: c.value,
+              achievement: 0,
+            }))
+          return fromCats.length ? fromCats : demoBrandTargetVsSalesForFilters(town)
+        }
+        return demoBrandTargetVsSalesForFilters(town)
+      })(),
       townTargetVsSales: hasLiveTarget && tvs
         ? {
             town: tvs.town || town || store || category || 'All towns',
@@ -977,34 +1000,68 @@ export function BaPerformanceDashboardPage() {
     return timeGonePctInMonth(asOf)
   }, [range])
 
-  const categoryChart = useMemo<ChartData<'doughnut'>>(
-    () => {
-      const labels = data.categorySales.map((c) => c.name)
-      return {
-        labels,
-        datasets: [
-          {
-            data: data.categorySales.map((c) => c.value),
-            backgroundColor: colorsForCategories(labels),
-            borderColor: '#fff',
-            borderWidth: 2,
-          },
-        ],
-      }
-    },
-    [data.categorySales],
-  )
+  const brandShortLabel = (name: string) => {
+    if (name === 'Kashmir Cooking Oil') return 'KCO'
+    if (name === 'Kashmir Banaspati') return 'KBP'
+    if (name === 'Waadi Banaspati') return 'WBP'
+    return name
+  }
 
-  const categoryOptions = useMemo<ChartOptions<'doughnut'>>(
+  const brandTargetChart = useMemo<ChartData<'bar'>>(() => {
+    const rows = data.brandTargetVsSales
+    return {
+      labels: rows.map((r) => brandShortLabel(r.name)),
+      datasets: [
+        {
+          label: 'Target',
+          data: rows.map((r) => r.target),
+          backgroundColor: chartGold,
+          hoverBackgroundColor: chartGold,
+          borderRadius: 4,
+          maxBarThickness: 36,
+        },
+        {
+          label: 'Sales',
+          data: rows.map((r) => r.sales),
+          backgroundColor: chartGreen,
+          hoverBackgroundColor: chartGreen,
+          borderRadius: 4,
+          maxBarThickness: 36,
+        },
+      ],
+    }
+  }, [data.brandTargetVsSales])
+
+  const brandTargetOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
       ...defaultChartOptions,
       plugins: {
         ...defaultChartOptions.plugins,
-        legend: { ...defaultChartOptions.plugins.legend, position: 'bottom' },
+        legend: {
+          ...defaultChartOptions.plugins.legend,
+          position: 'bottom',
+        },
+        tooltip: {
+          ...defaultChartOptions.plugins.tooltip,
+          callbacks: {
+            afterBody: (items) => {
+              const idx = items[0]?.dataIndex ?? 0
+              const row = data.brandTargetVsSales[idx]
+              if (!row) return []
+              return [
+                `${row.name}`,
+                `Achievement: ${row.achievement}% of target`,
+              ]
+            },
+          },
+        },
       },
-      cutout: '55%',
+      scales: {
+        x: scaleDefaults,
+        y: { ...scaleDefaults, beginAtZero: true },
+      },
     }),
-    [],
+    [data.brandTargetVsSales],
   )
 
   const targetSalesChart = useMemo<ChartData<'bar'>>(() => {
@@ -1419,9 +1476,11 @@ export function BaPerformanceDashboardPage() {
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:items-stretch">
-          <ChartCard
-            title="Brand Wise Achievement"
-            headerRight={
+          <Card padding={false} className="h-full">
+            <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-50 px-4">
+              <h3 className="truncate text-sm font-medium text-slate-700">
+                Brand target vs sales
+              </h3>
               <span className="shrink-0 text-right leading-tight">
                 <span className="block text-xs font-semibold tabular-nums text-slate-600">
                   {timeGone.pct}% time gone
@@ -1430,13 +1489,37 @@ export function BaPerformanceDashboardPage() {
                   Day {timeGone.day} of {timeGone.daysInMonth}
                 </span>
               </span>
-            }
-          >
-            <Doughnut data={categoryChart} options={categoryOptions} />
-          </ChartCard>
+            </div>
+            <div className="p-3 sm:p-4">
+              <div className={cn('relative w-full', CHART_HEIGHT)}>
+                <Bar data={brandTargetChart} options={brandTargetOptions} />
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {data.brandTargetVsSales.map((row) => (
+                  <div
+                    key={row.name}
+                    className="rounded-lg bg-slate-50 px-2 py-1.5 text-center"
+                    title={row.name}
+                  >
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      {brandShortLabel(row.name)}
+                    </div>
+                    <div
+                      className={cn(
+                        'text-sm font-semibold tabular-nums',
+                        row.achievement >= 100 ? 'text-brand-700' : 'text-slate-700',
+                      )}
+                    >
+                      {row.achievement}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
 
           <ChartCard
-            title={`Target vs sales — ${scopeLabel}`}
+            title={`Target vs sales ${scopeLabel}`}
             headerRight={
               <span
                 className={cn(

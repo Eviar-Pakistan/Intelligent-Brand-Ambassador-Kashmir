@@ -128,6 +128,30 @@ def _sales_num(sales: dict, *keys: str) -> float:
     return total
 
 
+CATEGORY_NAMES = (
+    'Kashmir Cooking Oil',
+    'Kashmir Banaspati',
+    'Waadi Banaspati',
+)
+
+
+def _category_for_target_sku(sku: str) -> str | None:
+    """Map a BaTarget.sku (category name or pack label) to a brand category."""
+    s = (sku or '').strip()
+    if not s:
+        return None
+    if s in CATEGORY_NAMES:
+        return s
+    low = s.lower()
+    if 'waadi' in low or low.startswith('wbp'):
+        return 'Waadi Banaspati'
+    if 'banaspati' in low or low.startswith('kbp') or 'ghee' in low:
+        return 'Kashmir Banaspati'
+    if 'cooking oil' in low or low.startswith('kpgo') or 'oil' in low:
+        return 'Kashmir Cooking Oil'
+    return None
+
+
 def _ba_target_vs_achievement(
     *,
     month: str,
@@ -410,13 +434,25 @@ def build_ba_performance_dashboard(
         else:
             d = date(d.year, d.month + 1, 1)
 
-    targets_qs = BaTarget.objects.select_related('ambassador', 'ambassador__store').filter(
+    targets_base = BaTarget.objects.select_related('ambassador', 'ambassador__store').filter(
         month__in=month_keys
     )
     if town:
-        targets_qs = targets_qs.filter(ambassador__store__city__iexact=town)
+        targets_base = targets_base.filter(ambassador__store__city__iexact=town)
     if store_name:
-        targets_qs = targets_qs.filter(ambassador__store__name__iexact=store_name)
+        targets_base = targets_base.filter(ambassador__store__name__iexact=store_name)
+
+    # Brand-wise targets from full town/store scope (not category/SKU filtered)
+    brand_target: dict[str, float] = {name: 0.0 for name in CATEGORY_NAMES}
+    brand_target_sales: dict[str, float] = {name: 0.0 for name in CATEGORY_NAMES}
+    for t in targets_base:
+        cat = _category_for_target_sku(t.sku)
+        if not cat:
+            continue
+        brand_target[cat] += float(t.target_kg or 0)
+        brand_target_sales[cat] += float(t.sales_kg or 0)
+
+    targets_qs = targets_base
     if sku:
         targets_qs = targets_qs.filter(sku__icontains=sku)
 
@@ -426,6 +462,13 @@ def build_ba_performance_dashboard(
         if category == 'Kashmir Cooking Oil' and t.sku and ('kbp' in t.sku.lower() or 'wbp' in t.sku.lower() or 'ghee' in t.sku.lower()):
             continue
         if category == 'Kashmir Banaspati' and t.sku and ('kpgo' in t.sku.lower() or 'wbp' in t.sku.lower() or 'oil' in t.sku.lower()):
+            continue
+        if category == 'Waadi Banaspati' and t.sku and (
+            'kpgo' in t.sku.lower()
+            or 'kbp' in t.sku.lower()
+            or 'oil' in t.sku.lower()
+            or 'ghee' in t.sku.lower()
+        ):
             continue
         target_total += float(t.target_kg or 0)
         target_sales_total += float(t.sales_kg or 0)
@@ -446,6 +489,31 @@ def build_ba_performance_dashboard(
     if uncategorized_sales > 0:
         category_sales.append(
             {'name': 'Total Sales (uncategorized)', 'value': round(uncategorized_sales, 1)}
+        )
+
+    # Side-by-side: all brands' target vs sales within town/store/date (sales always split)
+    brand_sales_map = {
+        'Kashmir Cooking Oil': oil_sales,
+        'Kashmir Banaspati': ghee_sales,
+        'Waadi Banaspati': waadi_sales,
+    }
+    brand_target_vs_sales = []
+    for name in CATEGORY_NAMES:
+        b_target = round(brand_target[name], 1)
+        b_sales_live = brand_sales_map[name]
+        b_sales = (
+            round(b_sales_live, 1)
+            if b_sales_live > 0
+            else round(brand_target_sales[name], 1)
+        )
+        b_ach = round((b_sales / b_target) * 100, 1) if b_target > 0 else 0.0
+        brand_target_vs_sales.append(
+            {
+                'name': name,
+                'target': b_target,
+                'sales': b_sales,
+                'achievement': b_ach,
+            }
         )
 
     top_stores = sorted(
@@ -504,6 +572,7 @@ def build_ba_performance_dashboard(
             'achievementPct': achievement,
         },
         'categorySales': category_sales,
+        'brandTargetVsSales': brand_target_vs_sales,
         'townTargetVsSales': {
             'town': town or 'All towns',
             'target': target_ltr_kg,

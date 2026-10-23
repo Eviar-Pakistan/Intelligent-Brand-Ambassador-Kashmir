@@ -88,11 +88,20 @@ export type TargetVsAchievementPayload = {
   rows: TargetVsAchievementRow[]
 }
 
+export type BrandTargetVsSalesRow = {
+  name: string
+  target: number
+  sales: number
+  achievement: number
+}
+
 export type BaPerformanceDashboard = {
   filters: BaPerformanceFiltersPayload
   range: { from: string; to: string; days: number }
   kpis: BaPerformanceKpis
   categorySales: { name: string; value: number }[]
+  /** Side-by-side target vs sales for each brand (KCO / KBP / WBP). */
+  brandTargetVsSales?: BrandTargetVsSalesRow[]
   townTargetVsSales: { town: string; target: number; sales: number }
   topStores: { store: string; sales: number }[]
   topSkus: { sku: string; sales: number }[]
@@ -219,6 +228,21 @@ export async function downloadBaPerformanceExcel(
     ),
     'Category Sales',
   )
+
+  if (dash.brandTargetVsSales?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        dash.brandTargetVsSales.map((b) => ({
+          Brand: b.name,
+          'Target (Kg)': b.target,
+          'Sales (Kg)': b.sales,
+          'Achievement %': b.achievement,
+        })),
+      ),
+      'Brand Target vs Sales',
+    )
+  }
 
   XLSX.utils.book_append_sheet(
     wb,

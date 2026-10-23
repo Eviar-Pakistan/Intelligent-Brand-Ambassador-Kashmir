@@ -101,3 +101,30 @@ body {
   background: #b7cfc0;
   border-radius: 999px;
 }
+
+/* Dashboard left filter panels — gold thumb on white track so scroll is obvious */
+.dashboard-filter-scroll {
+  scrollbar-width: thick;
+  scrollbar-color: #b89a5a #ffffff;
+}
+
+.dashboard-filter-scroll::-webkit-scrollbar {
+  width: 11px;
+}
+
+.dashboard-filter-scroll::-webkit-scrollbar-track {
+  background: #ffffff;
+  border-radius: 999px;
+  margin: 4px 0;
+}
+
+.dashboard-filter-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #d4b46a 0%, #b89a5a 100%);
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  min-height: 36px;
+}
+
+.dashboard-filter-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #e0c078 0%, #c4921c 100%);
+}
