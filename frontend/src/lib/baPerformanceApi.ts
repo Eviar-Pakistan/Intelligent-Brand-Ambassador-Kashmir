@@ -103,7 +103,12 @@ export type BaPerformanceDashboard = {
   /** Side-by-side target vs sales for each brand (KCO / KBP / WBP). */
   brandTargetVsSales?: BrandTargetVsSalesRow[]
   townTargetVsSales: { town: string; target: number; sales: number }
-  topStores: { store: string; sales: number }[]
+  topStores: {
+    store: string
+    sales: number
+    target?: number
+    achievement?: number | null
+  }[]
   topSkus: { sku: string; sales: number }[]
   periodSales: { label: string; sales: number; target: number }[]
   baStatus: BaStatusPayload
@@ -249,7 +254,9 @@ export async function downloadBaPerformanceExcel(
     XLSX.utils.json_to_sheet(
       (dash.topStores ?? []).map((s) => ({
         Store: s.store,
+        'Target (Kg)': s.target ?? '',
         'Sales (Kg)': s.sales,
+        'Achievement %': s.achievement ?? '',
       })),
     ),
     'Top Stores',

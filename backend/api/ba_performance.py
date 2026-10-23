@@ -458,6 +458,7 @@ def build_ba_performance_dashboard(
 
     target_total = 0.0
     target_sales_total = 0.0  # from BaTarget.sales_kg (HO-entered)
+    target_by_store: dict[str, float] = defaultdict(float)
     for t in targets_qs:
         if category == 'Kashmir Cooking Oil' and t.sku and ('kbp' in t.sku.lower() or 'wbp' in t.sku.lower() or 'ghee' in t.sku.lower()):
             continue
@@ -470,8 +471,12 @@ def build_ba_performance_dashboard(
             or 'ghee' in t.sku.lower()
         ):
             continue
-        target_total += float(t.target_kg or 0)
+        tgt = float(t.target_kg or 0)
+        target_total += tgt
         target_sales_total += float(t.sales_kg or 0)
+        store_obj = getattr(t.ambassador, 'store', None) if t.ambassador_id else None
+        if store_obj and store_obj.name:
+            target_by_store[store_obj.name] += tgt
 
     # Prefer field-report sales; fall back to target sales_kg when no reports
     sales_ltr_kg = round(scoped_sales, 1) if scoped_sales > 0 else round(target_sales_total, 1)
@@ -516,11 +521,21 @@ def build_ba_performance_dashboard(
             }
         )
 
-    top_stores = sorted(
-        ({'store': k, 'sales': round(v, 1)} for k, v in sales_by_store.items()),
-        key=lambda x: x['sales'],
-        reverse=True,
-    )[:10]
+    top_stores = []
+    for store_label, sales_val in sorted(
+        sales_by_store.items(), key=lambda kv: kv[1], reverse=True
+    )[:10]:
+        s_sales = round(sales_val, 1)
+        s_target = round(target_by_store.get(store_label, 0.0), 1)
+        s_ach = round((s_sales / s_target) * 100, 1) if s_target > 0 else None
+        top_stores.append(
+            {
+                'store': store_label,
+                'sales': s_sales,
+                'target': s_target,
+                'achievement': s_ach,
+            }
+        )
     top_skus = sorted(
         ({'sku': k, 'sales': round(v, 1)} for k, v in sales_by_sku.items()),
         key=lambda x: x['sales'],

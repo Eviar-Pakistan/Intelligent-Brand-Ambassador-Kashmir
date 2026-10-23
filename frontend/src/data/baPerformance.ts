@@ -229,8 +229,17 @@ export function demoTopStoresForFilters(opts: {
   category: ProductCategory | null
 }) {
   const { town, store, storeOptions, category } = opts
+  const row = (name: string, sales: number) => {
+    const target = demoValue(
+      `${town ?? 'all'}|${category ?? 'all'}|${name}|target`,
+      Math.round(sales * 0.85),
+      Math.round(sales * 1.4),
+    )
+    const achievement = target > 0 ? Math.round((sales / target) * 1000) / 10 : null
+    return { store: name, sales, target, achievement }
+  }
   if (store) {
-    return [{ store, sales: demoValue(`${town}|${store}|${category}`, 1600, 3600) }]
+    return [row(store, demoValue(`${town}|${store}|${category}`, 1600, 3600))]
   }
 
   let names =
@@ -246,10 +255,9 @@ export function demoTopStoresForFilters(opts: {
 
   // Stable unique, then score and take top 10
   names = [...new Set(names)]
-  const scored = names.map((name) => ({
-    store: name,
-    sales: demoValue(`${town ?? 'all'}|${category ?? 'all'}|${name}`, 1400, 3600),
-  }))
+  const scored = names.map((name) =>
+    row(name, demoValue(`${town ?? 'all'}|${category ?? 'all'}|${name}`, 1400, 3600)),
+  )
   scored.sort((a, b) => b.sales - a.sales)
   return scored.slice(0, 10)
 }
@@ -307,7 +315,12 @@ export type BaPerformanceAggregate = {
   categorySales: { name: string; value: number }[]
   townTargetVsSales: { town: string; target: number; sales: number }
   weekSales: { week: number; sales: number }[]
-  topStores: { store: string; sales: number }[]
+  topStores: {
+    store: string
+    sales: number
+    target?: number
+    achievement?: number | null
+  }[]
   topSkus: { sku: string; sales: number }[]
 }
 

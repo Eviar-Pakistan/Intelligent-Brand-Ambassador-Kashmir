@@ -1227,6 +1227,36 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
+  const topStoresBarOptions = useMemo<ChartOptions<'bar'>>(
+    () => ({
+      ...horizontalBarOptions,
+      plugins: {
+        ...horizontalBarOptions.plugins,
+        legend: { display: false },
+        tooltip: {
+          ...defaultChartOptions.plugins.tooltip,
+          callbacks: {
+            label: (ctx) => {
+              const row = data.topStores[ctx.dataIndex]
+              const sales = row?.sales ?? (typeof ctx.parsed.x === 'number' ? ctx.parsed.x : 0)
+              const target = row?.target ?? 0
+              const ach = row?.achievement
+              const lines = [
+                `Sales: ${Number(sales).toLocaleString()}`,
+                `Target: ${Number(target).toLocaleString()}`,
+              ]
+              if (ach != null) {
+                lines.push(`Achievement: ${ach}%`)
+              }
+              return lines
+            },
+          },
+        },
+      },
+    }),
+    [horizontalBarOptions, data.topStores],
+  )
+
   const workingHoursChart = useMemo<ChartData<'bar'>>(
     () => ({
       labels: workingHours?.points.map((p) => p.label) ?? [],
@@ -1538,7 +1568,7 @@ export function BaPerformanceDashboardPage() {
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-3 lg:items-stretch">
           <ChartCard title="Top 10 stores by performance" chartHeight={TOP10_CHART_HEIGHT}>
-            <Bar data={topStoresChart} options={horizontalBarOptions} />
+            <Bar data={topStoresChart} options={topStoresBarOptions} />
           </ChartCard>
 
           <ChartCard title="Top 5 selling SKU's" chartHeight={TOP10_CHART_HEIGHT}>
