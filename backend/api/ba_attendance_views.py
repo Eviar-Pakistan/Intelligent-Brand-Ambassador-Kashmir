@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, datetime, time, timedelta
 
@@ -132,24 +133,65 @@ def upsert_attendance_from_shift(shift: ShiftAssignment) -> BaAttendanceDay | No
     return row
 
 
-def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
-    """Last N calendar days for one BA: Present / Scheduled / Absent."""
-    days = max(1, min(int(days or 30), 90))
+def _parse_year_month(value: str | None) -> tuple[int, int] | None:
+    """Parse 'YYYY-MM' → (year, month)."""
+    raw = (value or '').strip()
+    if len(raw) < 7 or raw[4] != '-':
+        return None
+    try:
+        year = int(raw[:4])
+        month = int(raw[5:7])
+    except (TypeError, ValueError):
+        return None
+    if year < 2000 or year > 2100 or month < 1 or month > 12:
+        return None
+    return year, month
+
+
+def month_date_range(year: int, month: int) -> tuple[date, date]:
+    """Full calendar month (1st → last day)."""
+    last = calendar.monthrange(year, month)[1]
+    return date(year, month, 1), date(year, month, last)
+
+
+def build_attendance_chart(
+    ambassador: Ambassador,
+    *,
+    days: int = 30,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    """
+    Attendance day rows for one BA: Present / Scheduled / Absent.
+    Either last N days (default), or an explicit inclusive [date_from, date_to] range.
+    Results are newest-first (same as before).
+    """
     now = timezone.localtime()
     today = now.date()
-    start = today - timedelta(days=days - 1)
+
+    if date_from is not None and date_to is not None:
+        start = date_from
+        end = date_to
+        if end < start:
+            start, end = end, start
+    else:
+        days = max(1, min(int(days or 30), 90))
+        end = today
+        start = today - timedelta(days=days - 1)
 
     # Capture live clocks in case roll has not yet written history.
-    live = _today_shift_for(ambassador)
-    if live and (live.checked_in_at or live.checked_out_at):
-        upsert_attendance_from_shift(live)
+    if start <= today <= end:
+        live = _today_shift_for(ambassador)
+        if live and (live.checked_in_at or live.checked_out_at):
+            upsert_attendance_from_shift(live)
 
+    query_end = max(end, today)
     logs = {
         row.date: row
         for row in BaAttendanceDay.objects.filter(
             ambassador=ambassador,
             date__gte=start,
-            date__lte=today,
+            date__lte=query_end,
         ).select_related('store')
     }
 
@@ -157,7 +199,7 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
         BaDailyReport.objects.filter(
             ambassador=ambassador,
             date__gte=start,
-            date__lte=today,
+            date__lte=query_end,
         ).values_list('date', flat=True)
     )
 
@@ -167,7 +209,7 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
         ShiftAssignment.objects.filter(
             ambassador=ambassador,
             date__gte=month_start,
-            date__lte=today,
+            date__lte=query_end,
             status__in=(
                 ShiftAssignment.Status.SCHEDULED,
                 ShiftAssignment.Status.CONFLICT,
@@ -191,11 +233,14 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
     if shifts:
         fallback_label = shifts[-1].shift_label or fallback_label
 
+    day_count = (end - start).days + 1
     results = []
     present_count = 0
     absent_count = 0
-    for i in range(days):
-        d = today - timedelta(days=i)
+    for i in range(day_count):
+        d = end - timedelta(days=i)
+        if d < start:
+            break
         log = logs.get(d)
         cover = covering_shift(d)
 
@@ -255,23 +300,66 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
         )
 
     return {
-        'days': days,
+        'days': day_count,
+        'from': start.isoformat(),
+        'to': end.isoformat(),
         'present': present_count,
         'absent': absent_count,
         'results': results,
     }
 
 
-def build_attendance_export_payload(*, days: int = 30) -> dict:
+def list_attendance_export_months() -> list[dict]:
+    """
+    Months that have attendance / shift / report activity, plus the current month.
+    Newest first. Each item: { value: 'YYYY-MM', label: 'October 2026' }.
+    """
+    today = timezone.localdate()
+    month_keys: set[str] = set()
+
+    def add_date(d: date | None) -> None:
+        if d is None:
+            return
+        month_keys.add(f'{d.year:04d}-{d.month:02d}')
+
+    for d in BaAttendanceDay.objects.dates('date', 'month'):
+        add_date(d)
+    for d in BaDailyReport.objects.dates('date', 'month'):
+        add_date(d)
+    for d in ShiftAssignment.objects.dates('date', 'month'):
+        add_date(d)
+
+    # Always offer the current month even if empty.
+    add_date(today)
+
+    out = []
+    for key in sorted(month_keys, reverse=True):
+        parsed = _parse_year_month(key)
+        if not parsed:
+            continue
+        year, month = parsed
+        label = date(year, month, 1).strftime('%B %Y')
+        out.append({'value': key, 'label': label})
+    return out
+
+
+def build_attendance_export_payload(*, month: str | None = None, days: int = 30) -> dict:
     """
     Attendance rows for all non-placeholder BAs (Deployed / Disabled / Certified).
-    Used by HO Ambassadors → Download Attendance (one Excel sheet per BA).
+    Prefer calendar month (YYYY-MM); falls back to last N days if month omitted/invalid.
     """
     from .models import Supervisor
 
-    days = max(1, min(int(days or 30), 90))
     today = timezone.localdate()
-    date_from = today - timedelta(days=days - 1)
+    parsed = _parse_year_month(month)
+    if parsed:
+        date_from, date_to = month_date_range(*parsed)
+        month_key = f'{parsed[0]:04d}-{parsed[1]:02d}'
+    else:
+        days = max(1, min(int(days or 30), 90))
+        date_to = today
+        date_from = today - timedelta(days=days - 1)
+        month_key = ''
 
     # store_id → supervisor display name
     supervisor_by_store: dict[int, str] = {}
@@ -301,7 +389,7 @@ def build_attendance_export_payload(*, days: int = 30) -> dict:
         if 'hiring pending' in low:
             continue
 
-        chart = build_attendance_chart(ba, days=days)
+        chart = build_attendance_chart(ba, date_from=date_from, date_to=date_to)
         on_leave = ba.status == Ambassador.Status.ON_LEAVE
         reason = (ba.inactive_reason or '').strip() if on_leave else ''
         home_store = ba.store
@@ -351,9 +439,10 @@ def build_attendance_export_payload(*, days: int = 30) -> dict:
         )
 
     return {
+        'month': month_key,
         'from': date_from.isoformat(),
-        'to': today.isoformat(),
-        'days': days,
+        'to': date_to.isoformat(),
+        'days': (date_to - date_from).days + 1,
         'ambassadors': out,
     }
 

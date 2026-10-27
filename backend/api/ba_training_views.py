@@ -424,19 +424,30 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
             days = 30
         return Response(build_attendance_chart(ambassador, days=days))
 
+    @action(detail=False, methods=['get'], url_path='attendance-export-months')
+    def attendance_export_months(self, request):
+        """
+        GET /api/ambassadors/attendance-export-months/
+        Months with attendance activity (for HO Download Attendance dropdown).
+        """
+        from .ba_attendance_views import list_attendance_export_months
+
+        return Response({'months': list_attendance_export_months()})
+
     @action(detail=False, methods=['get'], url_path='attendance-export')
     def attendance_export(self, request):
         """
-        GET /api/ambassadors/attendance-export/?days=30
+        GET /api/ambassadors/attendance-export/?month=2026-10
         All BA attendance for HO Excel download (one sheet per BA on the client).
         """
         from .ba_attendance_views import build_attendance_export_payload
 
+        month = (request.query_params.get('month') or '').strip()
         try:
             days = int(request.query_params.get('days') or 30)
         except (TypeError, ValueError):
             days = 30
-        return Response(build_attendance_export_payload(days=days))
+        return Response(build_attendance_export_payload(month=month or None, days=days))
 
 
 @api_view(['POST'])

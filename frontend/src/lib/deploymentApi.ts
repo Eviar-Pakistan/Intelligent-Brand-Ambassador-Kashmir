@@ -162,16 +162,31 @@ export type AttendanceExportBa = {
 }
 
 export type AttendanceExportResponse = {
+  month?: string
   from: string
   to: string
   days: number
   ambassadors: AttendanceExportBa[]
 }
 
-/** All BA attendance for HO multi-sheet Excel download. */
-export async function fetchAttendanceExport(days = 30): Promise<AttendanceExportResponse> {
+export type AttendanceExportMonth = {
+  value: string
+  label: string
+}
+
+/** Months with attendance activity for the Download Attendance dropdown. */
+export async function fetchAttendanceExportMonths(): Promise<AttendanceExportMonth[]> {
+  const res = await apiRequest<{ months: AttendanceExportMonth[] }>(
+    `/api/ambassadors/attendance-export-months/`,
+  )
+  return res.months ?? []
+}
+
+/** All BA attendance for HO multi-sheet Excel download (calendar month YYYY-MM). */
+export async function fetchAttendanceExport(month: string): Promise<AttendanceExportResponse> {
+  const q = encodeURIComponent(month)
   return apiRequest<AttendanceExportResponse>(
-    `/api/ambassadors/attendance-export/?days=${days}`,
+    `/api/ambassadors/attendance-export/?month=${q}`,
   )
 }
 

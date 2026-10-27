@@ -45,10 +45,12 @@ import {
   fetchAmbassadorAttendance,
   fetchAmbassadorShifts,
   fetchAttendanceExport,
+  fetchAttendanceExportMonths,
   fetchMonthShifts,
   toIsoDate,
   type ApiShift,
   type AttendanceDayRow,
+  type AttendanceExportMonth,
 } from '../../lib/deploymentApi'
 import { findCreatedStore, syncStoresFromApi, useCreatedStores } from '../../lib/storeRegistry'
 import { isApiAuthenticated } from '../../lib/api'
@@ -1061,21 +1063,46 @@ export function AmbassadorsPage() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [masterDownloading, setMasterDownloading] = useState(false)
   const [attendanceDownloading, setAttendanceDownloading] = useState(false)
+  const [attendanceMonthOpen, setAttendanceMonthOpen] = useState(false)
+  const [attendanceMonths, setAttendanceMonths] = useState<AttendanceExportMonth[]>([])
+  const [attendanceMonthsLoading, setAttendanceMonthsLoading] = useState(false)
+  const [attendanceMonth, setAttendanceMonth] = useState(() => monthInputValue())
 
-  async function handleDownloadAttendance() {
+  async function openAttendanceDownload() {
     if (attendanceDownloading) return
     if (!isApiAuthenticated()) {
       setBulkToast('Sign in to download attendance')
       setTimeout(() => setBulkToast(null), 2800)
       return
     }
+    setAttendanceMonthOpen(true)
+    setAttendanceMonthsLoading(true)
+    try {
+      const months = await fetchAttendanceExportMonths()
+      setAttendanceMonths(months)
+      const current = monthInputValue()
+      const preferred =
+        months.find((m) => m.value === current)?.value || months[0]?.value || current
+      setAttendanceMonth(preferred)
+    } catch (err) {
+      setAttendanceMonthOpen(false)
+      setBulkToast(err instanceof Error ? err.message : 'Could not load months')
+      setTimeout(() => setBulkToast(null), 3200)
+    } finally {
+      setAttendanceMonthsLoading(false)
+    }
+  }
+
+  async function handleDownloadAttendance() {
+    if (attendanceDownloading || !attendanceMonth) return
     setAttendanceDownloading(true)
     try {
-      const payload = await fetchAttendanceExport(30)
+      const payload = await fetchAttendanceExport(attendanceMonth)
       await downloadBaAttendance(payload.ambassadors, {
         from: payload.from,
         to: payload.to,
       })
+      setAttendanceMonthOpen(false)
       setBulkToast('Attendance Excel downloaded (one sheet per BA)')
       setTimeout(() => setBulkToast(null), 2800)
     } catch (err) {
@@ -1234,10 +1261,10 @@ export function AmbassadorsPage() {
             <Button
               variant="secondary"
               disabled={attendanceDownloading}
-              onClick={() => void handleDownloadAttendance()}
+              onClick={() => void openAttendanceDownload()}
             >
               <Download size={15} />
-              {attendanceDownloading ? 'Preparing…' : 'Download Attendance'}
+              Download Attendance
             </Button>
             <Button variant="secondary" onClick={() => setUploadTargetsOpen(true)}>
               <FileSpreadsheet size={15} /> Upload targets
@@ -1437,6 +1464,56 @@ export function AmbassadorsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={attendanceMonthOpen}
+        onClose={() => !attendanceDownloading && setAttendanceMonthOpen(false)}
+        title="Download Attendance"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Choose a month to download. One Excel sheet is created per ambassador for that month.
+          </p>
+          <label className="block">
+            <span className="mb-1 block font-medium text-slate-700">Month</span>
+            <Select
+              className="w-full"
+              value={attendanceMonth}
+              disabled={attendanceMonthsLoading || attendanceDownloading}
+              onChange={(e) => setAttendanceMonth(e.target.value)}
+            >
+              {attendanceMonthsLoading && <option value="">Loading months…</option>}
+              {!attendanceMonthsLoading &&
+                attendanceMonths.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+            </Select>
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              variant="secondary"
+              disabled={attendanceDownloading}
+              onClick={() => setAttendanceMonthOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                attendanceDownloading ||
+                attendanceMonthsLoading ||
+                !attendanceMonth ||
+                attendanceMonths.length === 0
+              }
+              onClick={() => void handleDownloadAttendance()}
+            >
+              <Download size={15} />
+              {attendanceDownloading ? 'Preparing…' : 'Download'}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {bulkToast && (
