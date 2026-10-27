@@ -424,6 +424,20 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
             days = 30
         return Response(build_attendance_chart(ambassador, days=days))
 
+    @action(detail=False, methods=['get'], url_path='attendance-export')
+    def attendance_export(self, request):
+        """
+        GET /api/ambassadors/attendance-export/?days=30
+        All BA attendance for HO Excel download (one sheet per BA on the client).
+        """
+        from .ba_attendance_views import build_attendance_export_payload
+
+        try:
+            days = int(request.query_params.get('days') or 30)
+        except (TypeError, ValueError):
+            days = 30
+        return Response(build_attendance_export_payload(days=days))
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

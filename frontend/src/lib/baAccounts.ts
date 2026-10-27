@@ -934,3 +934,170 @@ export async function downloadBaMaster(list: BaMasterRow[]) {
   XLSX.utils.book_append_sheet(wb, sheet, 'BA Master')
   XLSX.writeFile(wb, 'Kashmir_BA_Master.xlsx')
 }
+
+export type BaAttendanceExportDay = {
+  date: string
+  day: string
+  storeName: string
+  city: string
+  supervisor: string
+  status: string
+  checkedInAt: string | null
+  checkedOutAt: string | null
+  shift?: string
+  inactiveReason?: string
+}
+
+export type BaAttendanceExportBa = {
+  id: number | string
+  code?: string
+  name: string
+  storeName?: string
+  city?: string
+  supervisor?: string
+  status?: string
+  inactiveReason?: string
+  days: BaAttendanceExportDay[]
+}
+
+function excelClock(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
+const FULL_SHIFT_HOURS = 8
+
+/** Hours between check-in and check-out (null if either clock missing). */
+function hoursWorked(
+  checkedInAt: string | null | undefined,
+  checkedOutAt: string | null | undefined,
+): number | null {
+  if (!checkedInAt || !checkedOutAt) return null
+  const a = new Date(checkedInAt).getTime()
+  const b = new Date(checkedOutAt).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null
+  return Math.round(((b - a) / 3_600_000) * 100) / 100
+}
+
+/** Excel sheet name: max 31 chars, no \ / ? * [ ] */
+function safeSheetName(raw: string, used: Set<string>): string {
+  let base = (raw || 'BA')
+    .replace(/[\\/?*[\]:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 31)
+  if (!base) base = 'BA'
+  let name = base
+  let n = 2
+  while (used.has(name.toLowerCase())) {
+    const suffix = ` (${n})`
+    name = `${base.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`
+    n += 1
+  }
+  used.add(name.toLowerCase())
+  return name
+}
+
+/**
+ * Download Attendance — one workbook, one sheet per BA.
+ * Header includes Present / Absent / Leave day totals.
+ * Day rows include hours worked and whether the BA completed 8 hours.
+ */
+export async function downloadBaAttendance(
+  ambassadors: BaAttendanceExportBa[],
+  opts?: { from?: string; to?: string },
+) {
+  const rows = ambassadors.filter((a) => !isPlaceholderBaName(a.name))
+  if (rows.length === 0) throw new Error('No ambassadors to export')
+
+  const XLSX = await import('xlsx')
+  const wb = XLSX.utils.book_new()
+  const usedNames = new Set<string>()
+
+  for (const ba of rows) {
+    const label = (ba.name || '').trim() || (ba.code || '').trim() || 'BA'
+    const sheetName = safeSheetName(label, usedNames)
+
+    let presentDays = 0
+    let absentDays = 0
+    let leaveDays = 0
+    for (const d of ba.days) {
+      const s = (d.status || '').trim()
+      if (s === 'Present') presentDays += 1
+      else if (s === 'Absent') absentDays += 1
+      else if (s === 'On Leave') leaveDays += 1
+    }
+
+    const headerMeta = [
+      ['BA Code', ba.code || ''],
+      ['Name', ba.name],
+      ['Store', ba.storeName || ''],
+      ['City', ba.city || ''],
+      ['Supervisor', ba.supervisor || ''],
+      ['Status', ba.status || ''],
+      ['Inactive Reason', ba.status === 'Disabled' ? ba.inactiveReason || '' : ''],
+      ['Present days', presentDays],
+      ['Absent days', absentDays],
+      ['Leave days', leaveDays],
+      [],
+    ]
+    const table = [
+      [
+        'Date',
+        'Day',
+        'Store',
+        'City',
+        'Supervisor',
+        'Status',
+        'Check In',
+        'Check Out',
+        'Hours Worked',
+        '8 Hours Complete',
+        'Shift',
+        'Reason',
+      ],
+      ...ba.days.map((d) => {
+        const hours = hoursWorked(d.checkedInAt, d.checkedOutAt)
+        const complete8 =
+          hours == null ? '' : hours >= FULL_SHIFT_HOURS ? 'Yes' : 'No'
+        return [
+          d.date,
+          d.day,
+          d.storeName || '',
+          d.city || '',
+          d.supervisor || '',
+          d.status || '',
+          excelClock(d.checkedInAt),
+          excelClock(d.checkedOutAt),
+          hours == null ? '' : hours,
+          complete8,
+          d.shift || '',
+          d.inactiveReason || '',
+        ]
+      }),
+    ]
+    const sheet = XLSX.utils.aoa_to_sheet([...headerMeta, ...table])
+    sheet['!cols'] = [
+      { wch: 12 },
+      { wch: 6 },
+      { wch: 28 },
+      { wch: 16 },
+      { wch: 22 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 22 },
+      { wch: 28 },
+    ]
+    XLSX.utils.book_append_sheet(wb, sheet, sheetName)
+  }
+
+  const from = opts?.from?.replace(/-/g, '') || ''
+  const to = opts?.to?.replace(/-/g, '') || ''
+  const range = from && to ? `_${from}_${to}` : ''
+  XLSX.writeFile(wb, `Kashmir_BA_Attendance${range}.xlsx`)
+}

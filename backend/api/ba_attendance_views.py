@@ -262,6 +262,102 @@ def build_attendance_chart(ambassador: Ambassador, *, days: int = 30) -> dict:
     }
 
 
+def build_attendance_export_payload(*, days: int = 30) -> dict:
+    """
+    Attendance rows for all non-placeholder BAs (Deployed / Disabled / Certified).
+    Used by HO Ambassadors → Download Attendance (one Excel sheet per BA).
+    """
+    from .models import Supervisor
+
+    days = max(1, min(int(days or 30), 90))
+    today = timezone.localdate()
+    date_from = today - timedelta(days=days - 1)
+
+    # store_id → supervisor display name
+    supervisor_by_store: dict[int, str] = {}
+    for sup in Supervisor.objects.select_related('user').prefetch_related('stores'):
+        label = (sup.name or '').strip() or (sup.email or '').strip() or f'Supervisor #{sup.pk}'
+        for store in sup.stores.all():
+            supervisor_by_store[store.id] = label
+
+    ambassadors = (
+        Ambassador.objects.filter(
+            status__in=(
+                Ambassador.Status.DEPLOYED,
+                Ambassador.Status.CERTIFIED,
+                Ambassador.Status.ON_LEAVE,
+            ),
+        )
+        .select_related('store')
+        .order_by('name', 'id')
+    )
+
+    out = []
+    for ba in ambassadors:
+        name = (ba.name or '').strip()
+        low = name.lower()
+        if not name or low in ('closed', 'store closed', 'hiring pending'):
+            continue
+        if 'hiring pending' in low:
+            continue
+
+        chart = build_attendance_chart(ba, days=days)
+        on_leave = ba.status == Ambassador.Status.ON_LEAVE
+        reason = (ba.inactive_reason or '').strip() if on_leave else ''
+        home_store = ba.store
+        home_supervisor = (
+            supervisor_by_store.get(home_store.id, '') if home_store else ''
+        )
+
+        day_rows = []
+        for row in chart.get('results') or []:
+            status = row.get('status') or ''
+            if on_leave and status in ('Absent', 'Scheduled'):
+                status = 'On Leave'
+            store_id = row.get('storeId')
+            supervisor = (
+                supervisor_by_store.get(int(store_id), '') if store_id else home_supervisor
+            )
+            day_rows.append(
+                {
+                    'date': row.get('date') or '',
+                    'day': row.get('day') or '',
+                    'storeName': row.get('storeName') or (home_store.name if home_store else ''),
+                    'city': row.get('city') or (home_store.city if home_store else '') or '',
+                    'supervisor': supervisor,
+                    'status': status,
+                    'checkedInAt': row.get('checkedInAt'),
+                    'checkedOutAt': row.get('checkedOutAt'),
+                    'shift': row.get('shift') or '',
+                    'inactiveReason': reason if status == 'On Leave' else '',
+                }
+            )
+
+        # Chart returns newest-first; Excel reads better oldest → newest
+        day_rows.reverse()
+
+        out.append(
+            {
+                'id': ba.id,
+                'code': ba.code or '',
+                'name': name,
+                'status': ba.status,
+                'inactiveReason': reason,
+                'storeName': home_store.name if home_store else '',
+                'city': (home_store.city if home_store else '') or ba.city or '',
+                'supervisor': home_supervisor,
+                'days': day_rows,
+            }
+        )
+
+    return {
+        'from': date_from.isoformat(),
+        'to': today.isoformat(),
+        'days': days,
+        'ambassadors': out,
+    }
+
+
 def _ambassador_from_token(token: str | None) -> Ambassador | None:
     token = (token or '').strip()
     if not token:

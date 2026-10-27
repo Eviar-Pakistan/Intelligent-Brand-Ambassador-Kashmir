@@ -136,6 +136,45 @@ export async function fetchAmbassadorAttendance(
   )
 }
 
+export type AttendanceExportDayRow = {
+  date: string
+  day: string
+  storeName: string
+  city: string
+  supervisor: string
+  status: string
+  checkedInAt: string | null
+  checkedOutAt: string | null
+  shift: string
+  inactiveReason: string
+}
+
+export type AttendanceExportBa = {
+  id: number
+  code: string
+  name: string
+  status: string
+  inactiveReason: string
+  storeName: string
+  city: string
+  supervisor: string
+  days: AttendanceExportDayRow[]
+}
+
+export type AttendanceExportResponse = {
+  from: string
+  to: string
+  days: number
+  ambassadors: AttendanceExportBa[]
+}
+
+/** All BA attendance for HO multi-sheet Excel download. */
+export async function fetchAttendanceExport(days = 30): Promise<AttendanceExportResponse> {
+  return apiRequest<AttendanceExportResponse>(
+    `/api/ambassadors/attendance-export/?days=${days}`,
+  )
+}
+
 export async function deployAmbassador(ambassadorId: string | number, storeId: number) {
   return apiRequest(`/api/ambassadors/${ambassadorId}/deploy/`, {
     method: 'POST',

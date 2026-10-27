@@ -21,6 +21,7 @@ import {
   createBaAccountAsync,
   createBaAccountsAsync,
   downloadAmbassadorTemplate,
+  downloadBaAttendance,
   downloadBaLinks,
   downloadBaMaster,
   generateBaEmail,
@@ -43,6 +44,7 @@ import {
   deployAmbassador,
   fetchAmbassadorAttendance,
   fetchAmbassadorShifts,
+  fetchAttendanceExport,
   fetchMonthShifts,
   toIsoDate,
   type ApiShift,
@@ -1058,6 +1060,31 @@ export function AmbassadorsPage() {
   const [bulkToast, setBulkToast] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [masterDownloading, setMasterDownloading] = useState(false)
+  const [attendanceDownloading, setAttendanceDownloading] = useState(false)
+
+  async function handleDownloadAttendance() {
+    if (attendanceDownloading) return
+    if (!isApiAuthenticated()) {
+      setBulkToast('Sign in to download attendance')
+      setTimeout(() => setBulkToast(null), 2800)
+      return
+    }
+    setAttendanceDownloading(true)
+    try {
+      const payload = await fetchAttendanceExport(30)
+      await downloadBaAttendance(payload.ambassadors, {
+        from: payload.from,
+        to: payload.to,
+      })
+      setBulkToast('Attendance Excel downloaded (one sheet per BA)')
+      setTimeout(() => setBulkToast(null), 2800)
+    } catch (err) {
+      setBulkToast(err instanceof Error ? err.message : 'Could not download attendance')
+      setTimeout(() => setBulkToast(null), 3200)
+    } finally {
+      setAttendanceDownloading(false)
+    }
+  }
 
   async function handleDownloadBaMaster() {
     if (filteredAccounts.length === 0 || masterDownloading) return
@@ -1203,6 +1230,14 @@ export function AmbassadorsPage() {
             >
               <Download size={15} />
               {masterDownloading ? 'Preparing…' : 'Download BA Master'}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={attendanceDownloading}
+              onClick={() => void handleDownloadAttendance()}
+            >
+              <Download size={15} />
+              {attendanceDownloading ? 'Preparing…' : 'Download Attendance'}
             </Button>
             <Button variant="secondary" onClick={() => setUploadTargetsOpen(true)}>
               <FileSpreadsheet size={15} /> Upload targets
