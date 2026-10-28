@@ -53,7 +53,8 @@ const headOfficeNav: NavItem[] = [
 ]
 
 const misNav: NavItem[] = [
-  { to: '/mis/daily-reports', label: 'Daily Reports', icon: FileClock, end: true, section: 'Command' },
+  { to: '/mis/ba-performance', label: 'Dashboard', icon: BarChart3, end: true, section: 'Command' },
+  { to: '/mis/daily-reports', label: 'Daily Reports', icon: FileClock, section: 'Command' },
   { to: '/mis/ambassadors', label: 'Ambassadors', icon: Users, section: 'Operations' },
   { to: '/mis/stores', label: 'Stores', icon: Store, section: 'Operations' },
   { to: '/mis/supervisors', label: 'Supervisors', icon: UserCog, section: 'Operations' },
@@ -136,6 +137,7 @@ const titles: Record<string, string> = {
   '/ho/stores/new': 'Create Store',
   '/ho/supervisors': 'Supervisors',
   '/ho/mis-audit-log': 'MIS Audit Log',
+  '/mis/ba-performance': 'Dashboard',
   '/mis/daily-reports': 'Daily Reports',
   '/mis/ambassadors': 'Ambassadors',
   '/mis/stores': 'Store Management',

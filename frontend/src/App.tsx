@@ -95,7 +95,8 @@ const hoPages = (
 
 const misPages = (
   <>
-    <Route index element={<Navigate to="daily-reports" replace />} />
+    <Route index element={<Navigate to="ba-performance" replace />} />
+    <Route path="ba-performance" element={<BaPerformanceDashboardPage />} />
     <Route path="daily-reports" element={<DailyReportsPage misEditable />} />
     <Route path="ambassadors" element={<AmbassadorsPage />} />
     <Route path="ambassadors/:id" element={<AmbassadorProfilePage />} />

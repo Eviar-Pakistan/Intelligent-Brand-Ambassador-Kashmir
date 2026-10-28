@@ -22,7 +22,7 @@ export const roleMeta: Record<
   mis: {
     label: 'MIS',
     short: 'MIS',
-    home: '/mis/daily-reports',
+    home: '/mis/ba-performance',
     tone: 'Operations desk',
   },
   admin: {
