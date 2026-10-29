@@ -617,30 +617,18 @@ function SwapBasModal({
   )
 }
 
-function lastDayOfMonthIso(monthYm: string) {
-  const [y, m] = monthYm.split('-').map(Number)
-  const last = new Date(y, m, 0).getDate()
-  return `${monthYm}-${String(last).padStart(2, '0')}`
-}
-
 function RevampBasModal({
   open,
-  monthYm,
-  todayIso,
   onClose,
   onDone,
 }: {
   open: boolean
-  monthYm: string
-  todayIso: string
   onClose: () => void
   onDone: () => void
 }) {
   const [candidates, setCandidates] = useState<MisRevampCandidate[]>([])
   const [oldId, setOldId] = useState('')
   const [newId, setNewId] = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [previewing, setPreviewing] = useState(false)
@@ -653,17 +641,12 @@ function RevampBasModal({
     setNewId('')
     setPlan(null)
     setError(null)
-    const monthStart = `${monthYm}-01`
-    const monthEnd = lastDayOfMonthIso(monthYm)
-    const inMonth = todayIso >= monthStart && todayIso <= monthEnd
-    setFromDate(monthStart)
-    setToDate(inMonth ? todayIso : monthEnd)
     setLoading(true)
     void fetchMisRevampCandidates()
       .then(setCandidates)
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not load BAs'))
       .finally(() => setLoading(false))
-  }, [open, monthYm, todayIso])
+  }, [open])
 
   useEffect(() => {
     if (!open || !oldId || !newId) {
@@ -677,8 +660,6 @@ function RevampBasModal({
       void misRevampBas({
         oldAmbassadorId: Number(oldId),
         newAmbassadorId: Number(newId),
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
         confirm: false,
       })
         .then((next) => {
@@ -704,7 +685,7 @@ function RevampBasModal({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, oldId, newId, fromDate, toDate])
+  }, [open, oldId, newId])
 
   async function confirm() {
     if (!oldId || !newId || !plan?.ok) return
@@ -714,8 +695,6 @@ function RevampBasModal({
       await misRevampBas({
         oldAmbassadorId: Number(oldId),
         newAmbassadorId: Number(newId),
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
         confirm: true,
       })
       onDone()
@@ -734,8 +713,9 @@ function RevampBasModal({
     <Modal open={open} onClose={onClose} title="Revamp BAs">
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Cut the old BA’s sales, targets, attendance, and other field history and attach them to
-          the new BA. If both already have a report on the same date, nothing is moved.
+          Move the old BA’s full history — targets, sales, reports, attendance, shifts, and related
+          field data — onto the new BA. The store moves with them. If both already have a report on
+          the same date, nothing is moved.
         </p>
         {loading ? (
           <p className="text-sm text-slate-400">Loading BAs…</p>
@@ -771,35 +751,15 @@ function RevampBasModal({
                 ))}
               </select>
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm">
-                <span className="mb-1.5 block font-semibold text-slate-800">From date</span>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="mb-1.5 block font-semibold text-slate-800">To date</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                />
-              </label>
-            </div>
             <p className="text-xs text-slate-400">
-              Defaults to this month. Clear both dates to move all history.
+              All history is moved — there is no date filter.
             </p>
           </>
         )}
         {previewing && <p className="text-sm text-slate-400">Checking for colliding dates…</p>}
         {typeof counts?.reports === 'number' && !previewing && (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-            <p className="font-semibold text-slate-800">Will move</p>
+            <p className="font-semibold text-slate-800">Will move (full history)</p>
             <p className="mt-1">
               {counts.reports} reports · {counts.targets} targets · {counts.attendance} attendance
               days · {counts.shifts} shifts
@@ -1831,8 +1791,6 @@ function SchedulerPanel() {
       />
       <RevampBasModal
         open={revampOpen}
-        monthYm={monthYm}
-        todayIso={todayIso}
         onClose={() => setRevampOpen(false)}
         onDone={() => {
           void syncAmbassadorsFromApi()
