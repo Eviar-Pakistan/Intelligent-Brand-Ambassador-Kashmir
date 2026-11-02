@@ -559,6 +559,11 @@ function dateInputValue(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** YYYY-MM for Target vs Achievement, keyed off the selected range end date. */
+function yearMonthFromDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 function todayInputValue() {
   return dateInputValue(new Date())
 }
@@ -630,15 +635,19 @@ export function BaPerformanceDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [hoursCity, setHoursCity] = useState<string | null>(null)
-  const [targetMonth, setTargetMonth] = useState<string>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  })
+  const [targetMonth, setTargetMonth] = useState<string>(() => yearMonthFromDate(new Date()))
 
   const range = useMemo(
     () => dateRangeForPreset(datePreset, customFrom, customTo),
     [datePreset, customFrom, customTo],
   )
+
+  // Keep Target vs Achievement on the same month as the date filter (Custom Oct → October).
+  useEffect(() => {
+    if (!range) return
+    const ym = yearMonthFromDate(range.end)
+    setTargetMonth((prev) => (prev === ym ? prev : ym))
+  }, [range])
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const from = range ? dateInputValue(range.start) : customFrom || null
