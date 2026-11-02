@@ -25,6 +25,11 @@ import {
 } from '../../lib/baAccounts'
 import type { AnswerMetrics, AssessmentResult } from '../../lib/baAssessment'
 import { formatMonthLabel, fetchBaOwnTargets, monthInputValue, sumBaTargetsForMonth } from '../../lib/baTargets'
+import {
+  fetchBaWeeklyOff,
+  saveBaWeeklyOff,
+  type BaWeeklyOffPayload,
+} from '../../lib/baWeeklyOffApi'
 import { AssessmentReport } from './AssessmentReport'
 import { BaOnboarding } from './BaOnboarding'
 import { LockedTrainingVideo, VerbalAssessmentCapture, primaryButton } from './verbalTrainingParts'
@@ -94,6 +99,68 @@ export function BaHomePage() {
   const [checkoutWarningOpen, setCheckoutWarningOpen] = useState(false)
   const [earlyReasonOpen, setEarlyReasonOpen] = useState(false)
   const [earlyReason, setEarlyReason] = useState('')
+  const [weeklyOff, setWeeklyOff] = useState<BaWeeklyOffPayload | null>(null)
+  const [weeklyOffLoading, setWeeklyOffLoading] = useState(false)
+  const [weeklyOffBusy, setWeeklyOffBusy] = useState(false)
+  const [weeklyOffError, setWeeklyOffError] = useState<string | null>(null)
+  const [pickedOffDay, setPickedOffDay] = useState<string | null>(null)
+
+  useEffect(() => {
+    const token = account?.accessToken
+    if (!token || token.startsWith('demo-')) {
+      setWeeklyOff(null)
+      setPickedOffDay(null)
+      return
+    }
+    let cancelled = false
+    setWeeklyOffLoading(true)
+    setWeeklyOffError(null)
+    void fetchBaWeeklyOff(token)
+      .then((data) => {
+        if (cancelled) return
+        setWeeklyOff(data)
+        setPickedOffDay(data.offDay)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setWeeklyOff(null)
+          setWeeklyOffError(err instanceof Error ? err.message : 'Could not load weekly off')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWeeklyOffLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account?.accessToken])
+
+  async function confirmWeeklyOff() {
+    const token = account?.accessToken
+    if (!token || token.startsWith('demo-') || !pickedOffDay) return
+    if (weeklyOff?.offDay && pickedOffDay === weeklyOff.offDay) return
+    const pickedMeta = weeklyOff?.days.find((d) => d.day === pickedOffDay)
+    const pickedPast =
+      Boolean(pickedMeta) &&
+      (pickedMeta!.past === true ||
+        pickedMeta!.selectable === false ||
+        (weeklyOff?.today ? pickedMeta!.date < weeklyOff.today : false))
+    if (pickedPast) {
+      setWeeklyOffError('That day has already passed. Choose today or a later day this week.')
+      return
+    }
+    setWeeklyOffBusy(true)
+    setWeeklyOffError(null)
+    try {
+      const data = await saveBaWeeklyOff(token, pickedOffDay)
+      setWeeklyOff(data)
+      setPickedOffDay(data.offDay)
+    } catch (err) {
+      setWeeklyOffError(err instanceof Error ? err.message : 'Could not save weekly off')
+    } finally {
+      setWeeklyOffBusy(false)
+    }
+  }
 
   // Reload today's shift whenever Home opens (any BA status).
   useEffect(() => {
@@ -481,6 +548,109 @@ export function BaHomePage() {
           </div>
         </div>
       </Modal>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-sm font-bold text-slate-900">Weekly Off</div>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {weeklyOff
+                ? `Week of ${weeklyOff.weekStart} · change anytime this week`
+                : 'Choose one off day for this week'}
+            </p>
+          </div>
+          <div className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+            {weeklyOffLoading ? '…' : weeklyOff?.status || 'Not set'}
+          </div>
+        </div>
+        {weeklyOffError && (
+          <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">{weeklyOffError}</p>
+        )}
+        {weeklyOffLoading ? (
+          <p className="mt-3 text-sm text-slate-400">Loading week…</p>
+        ) : weeklyOff ? (
+          <>
+            <div className="mt-3 grid grid-cols-7 gap-1.5">
+              {weeklyOff.days.map((d) => {
+                const selected = pickedOffDay === d.day
+                const isPast =
+                  d.past === true ||
+                  (d.selectable === false) ||
+                  (weeklyOff.today ? d.date < weeklyOff.today : false)
+                const disabled = weeklyOffBusy || isPast
+                return (
+                  <button
+                    key={d.day}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (!isPast) setPickedOffDay(d.day)
+                    }}
+                    className={`rounded-xl px-1 py-2 text-center transition ${
+                      selected
+                        ? 'bg-navy-900 text-white shadow-sm'
+                        : isPast
+                          ? 'bg-slate-50 text-slate-400 ring-1 ring-slate-100'
+                          : 'bg-slate-50 text-slate-700 ring-1 ring-slate-100'
+                    } ${isPast && !selected ? 'opacity-45' : ''} ${
+                      disabled ? 'cursor-not-allowed' : 'hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                      {d.day}
+                    </div>
+                    <div className="mt-0.5 text-[11px] font-bold tabular-nums">{d.dateLabel}</div>
+                  </button>
+                )
+              })}
+            </div>
+            {(() => {
+              const hasSaved = Boolean(weeklyOff.offDay)
+              const dirty = Boolean(pickedOffDay) && pickedOffDay !== weeklyOff.offDay
+              const pickedMeta = weeklyOff.days.find((d) => d.day === pickedOffDay)
+              const pickedPast =
+                Boolean(pickedMeta) &&
+                (pickedMeta!.past === true ||
+                  pickedMeta!.selectable === false ||
+                  (weeklyOff.today ? pickedMeta!.date < weeklyOff.today : false))
+              const canSave =
+                Boolean(pickedOffDay) &&
+                !pickedPast &&
+                (!hasSaved || dirty) &&
+                !weeklyOffBusy
+              return (
+                <>
+                  <button
+                    type="button"
+                    disabled={!canSave}
+                    onClick={() => void confirmWeeklyOff()}
+                    className="mt-3 w-full rounded-2xl bg-gradient-to-b from-brand-600 to-navy-900 py-3 text-sm font-semibold text-white shadow-md shadow-navy-900/20 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {weeklyOffBusy
+                      ? 'Saving…'
+                      : hasSaved
+                        ? dirty
+                          ? 'Update weekly off'
+                          : 'Weekly off saved'
+                        : 'Confirm weekly off'}
+                  </button>
+                  {hasSaved && !dirty ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Past days are locked. Pick today or a later day to change this week.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Past days cannot be selected.
+                    </p>
+                  )}
+                </>
+              )
+            })()}
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-slate-400">Weekly off unavailable right now.</p>
+        )}
+      </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <div className="flex items-center gap-2">
@@ -992,7 +1162,6 @@ export function BaPerformancePage() {
       achievementPct: number | null
     }[]
   } | null>(null)
-
   useEffect(() => {
     const token = account?.accessToken
     if (!token) {

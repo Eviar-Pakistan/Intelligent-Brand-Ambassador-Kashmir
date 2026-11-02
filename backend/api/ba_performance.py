@@ -611,7 +611,27 @@ def build_ba_performance_dashboard(
             store_name=store_name,
             store_ids=store_ids if (town or store_name) else None,
         ),
+        'weeklyOff': _weekly_off_block(
+            town=town,
+            store_name=store_name,
+            store_ids=store_ids if (town or store_name) else None,
+        ),
     }
+
+
+def _weekly_off_block(
+    *,
+    town: str | None,
+    store_name: str | None,
+    store_ids: list[int] | None,
+) -> dict:
+    from .ba_attendance_views import build_weekly_off_dashboard
+
+    return build_weekly_off_dashboard(
+        town=town,
+        store_name=store_name,
+        store_ids=store_ids,
+    )
 
 
 def _period_sales_series(

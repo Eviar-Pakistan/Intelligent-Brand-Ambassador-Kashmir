@@ -18,6 +18,7 @@ from .models import (
     AmbassadorComplaint,
     BaAttendanceDay,
     BaDailyReport,
+    BaWeeklyOff,
     ShiftAssignment,
     Store,
     UserInterception,
@@ -27,6 +28,47 @@ from .serializers import AmbassadorComplaintSerializer
 
 DAY_KEYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 _SHIFT_TIME_RE = re.compile(r'(\d{1,2}):(\d{2})\s*(AM|PM)', re.IGNORECASE)
+
+
+def week_start_monday(d: date | None = None) -> date:
+    """Monday of the week containing `d` (local)."""
+    d = d or timezone.localdate()
+    return d - timedelta(days=d.weekday())
+
+
+def off_day_for_date(d: date) -> str:
+    return DAY_KEYS[d.weekday()]
+
+
+def weekly_off_dates_for_ambassador(
+    ambassador_id: int,
+    date_from: date,
+    date_to: date,
+) -> set[date]:
+    """Calendar dates in [date_from, date_to] that are this BA's chosen weekly off."""
+    if date_to < date_from:
+        return set()
+    week_from = week_start_monday(date_from)
+    week_to = week_start_monday(date_to)
+    rows = BaWeeklyOff.objects.filter(
+        ambassador_id=ambassador_id,
+        week_start__gte=week_from,
+        week_start__lte=week_to,
+    ).only('week_start', 'off_day')
+    out: set[date] = set()
+    for row in rows:
+        try:
+            idx = DAY_KEYS.index(row.off_day)
+        except ValueError:
+            continue
+        off_date = row.week_start + timedelta(days=idx)
+        if date_from <= off_date <= date_to:
+            out.add(off_date)
+    return out
+
+
+def is_weekly_off_day(ambassador_id: int, d: date) -> bool:
+    return d in weekly_off_dates_for_ambassador(ambassador_id, d, d)
 
 
 def _float_or_none(v):
@@ -234,6 +276,7 @@ def build_attendance_chart(
         fallback_label = shifts[-1].shift_label or fallback_label
 
     day_count = (end - start).days + 1
+    weekly_off_dates = weekly_off_dates_for_ambassador(ambassador.id, start, end)
     results = []
     present_count = 0
     absent_count = 0
@@ -280,6 +323,9 @@ def build_attendance_chart(
             shift_label=shift_label,
             has_report=d in report_dates,
         )
+        # BA weekly off → On Leave (unless they still submitted a report / Present).
+        if day_status != 'Present' and d in weekly_off_dates:
+            day_status = 'On Leave'
         if day_status == 'Present':
             present_count += 1
         elif day_status == 'Absent':
@@ -639,6 +685,165 @@ def ba_today_shift(request):
     # Reload in case ensure updated ambassador.store / status
     ambassador.refresh_from_db()
     return Response(serialize_ba_shift(shift, ambassador))
+
+
+def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None = None) -> dict:
+    today = timezone.localdate()
+    start = week_start or week_start_monday(today)
+    days = []
+    for i, key in enumerate(DAY_KEYS):
+        d = start + timedelta(days=i)
+        days.append(
+            {
+                'day': key,
+                'label': d.strftime('%a'),
+                'date': d.isoformat(),
+                'dateLabel': d.strftime('%d %b'),
+                'past': d < today,
+                'selectable': d >= today,
+            }
+        )
+    row = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).first()
+    return {
+        'weekStart': start.isoformat(),
+        'weekEnd': (start + timedelta(days=6)).isoformat(),
+        'today': today.isoformat(),
+        'days': days,
+        'offDay': row.off_day if row else None,
+        'offDate': row.off_date.isoformat() if row else None,
+        # Kept for older clients; BA may change the day within the same week.
+        'locked': False,
+        'status': row.off_day if row else 'Not set',
+    }
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def ba_weekly_off(request):
+    """
+    GET  /api/ba/weekly-off/?token=…
+    POST /api/ba/weekly-off/  Body: { token, offDay: 'Mon'|'Tue'|… }
+    One day per BA per week. BA may change the day anytime this week (updates same row).
+    New calendar week → new row.
+    """
+    token = request.query_params.get('token') if request.method == 'GET' else request.data.get('token')
+    ambassador = _ambassador_from_token(token)
+    if not ambassador:
+        return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        return Response(
+            {'detail': 'Weekly off is unavailable while you are Disabled.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == 'GET':
+        return Response(_weekly_off_week_payload(ambassador))
+
+    off_day = str(request.data.get('offDay') or request.data.get('off_day') or '').strip()
+    if off_day not in DAY_KEYS:
+        return Response(
+            {'detail': 'Select exactly one day (Mon–Sun).'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    today = timezone.localdate()
+    start = week_start_monday(today)
+    try:
+        day_index = DAY_KEYS.index(off_day)
+    except ValueError:
+        return Response(
+            {'detail': 'Select exactly one day (Mon–Sun).'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    off_date = start + timedelta(days=day_index)
+    if off_date < today:
+        return Response(
+            {
+                'detail': 'That day has already passed. Choose today or a later day this week.',
+                **_weekly_off_week_payload(ambassador, week_start=start),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    existing = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).first()
+    if existing:
+        if existing.off_day == off_day:
+            return Response(_weekly_off_week_payload(ambassador, week_start=start))
+        existing.off_day = off_day
+        existing.save(update_fields=['off_day', 'updated_at'])
+        return Response(_weekly_off_week_payload(ambassador, week_start=start))
+
+    BaWeeklyOff.objects.create(
+        ambassador=ambassador,
+        week_start=start,
+        off_day=off_day,
+    )
+    return Response(_weekly_off_week_payload(ambassador, week_start=start), status=status.HTTP_201_CREATED)
+
+
+def build_weekly_off_dashboard(*, town: str | None = None, store_name: str | None = None, store_ids: list[int] | None = None) -> dict:
+    """Current-week weekly off roster for HO/MIS dashboard."""
+    today = timezone.localdate()
+    start = week_start_monday(today)
+    end = start + timedelta(days=6)
+
+    bas = (
+        Ambassador.objects.filter(
+            status__in=(
+                Ambassador.Status.DEPLOYED,
+                Ambassador.Status.CERTIFIED,
+            ),
+        )
+        .select_related('store')
+        .order_by('name', 'id')
+    )
+    if store_ids is not None:
+        bas = bas.filter(store_id__in=store_ids)
+    elif town:
+        bas = bas.filter(store__city__iexact=town)
+    if store_name:
+        bas = bas.filter(store__name__iexact=store_name)
+
+    offs = {
+        row.ambassador_id: row
+        for row in BaWeeklyOff.objects.filter(week_start=start, ambassador_id__in=bas.values_list('id', flat=True))
+    }
+
+    rows = []
+    for ba in bas:
+        name = (ba.name or '').strip()
+        low = name.lower()
+        if not name or low in ('closed', 'store closed', 'hiring pending') or 'hiring pending' in low:
+            continue
+        row = offs.get(ba.id)
+        rows.append(
+            {
+                'ambassadorId': ba.id,
+                'code': ba.code or '',
+                'name': name,
+                'store': ba.store.name if ba.store_id else '—',
+                'city': (ba.store.city if ba.store_id else None) or ba.city or '—',
+                'offDay': row.off_day if row else None,
+                'offDate': row.off_date.isoformat() if row else None,
+                'status': row.off_day if row else 'Not set',
+            }
+        )
+
+    rows.sort(
+        key=lambda r: (
+            0 if r['offDay'] else 1,
+            DAY_KEYS.index(r['offDay']) if r['offDay'] in DAY_KEYS else 99,
+            (r['name'] or '').lower(),
+        )
+    )
+    return {
+        'weekStart': start.isoformat(),
+        'weekEnd': end.isoformat(),
+        'weekLabel': f"{start.strftime('%d %b')} – {end.strftime('%d %b %Y')}",
+        'rows': rows,
+        'setCount': sum(1 for r in rows if r['offDay']),
+        'notSetCount': sum(1 for r in rows if not r['offDay']),
+    }
 
 
 @api_view(['POST'])

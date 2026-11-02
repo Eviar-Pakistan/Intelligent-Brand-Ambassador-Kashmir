@@ -909,6 +909,58 @@ class BaTarget(models.Model):
         return f'{self.ambassador_id} · {self.month} · {sku}'
 
 
+class BaWeeklyOff(models.Model):
+    """
+    BA-chosen weekly off day for one calendar week (Mon–Sun).
+    One row per ambassador per week_start (Monday). BA may update off_day within the week.
+    """
+
+    class OffDay(models.TextChoices):
+        MON = 'Mon', 'Monday'
+        TUE = 'Tue', 'Tuesday'
+        WED = 'Wed', 'Wednesday'
+        THU = 'Thu', 'Thursday'
+        FRI = 'Fri', 'Friday'
+        SAT = 'Sat', 'Saturday'
+        SUN = 'Sun', 'Sunday'
+
+    ambassador = models.ForeignKey(
+        Ambassador,
+        on_delete=models.CASCADE,
+        related_name='weekly_offs',
+    )
+    week_start = models.DateField(
+        db_index=True,
+        help_text='Monday of the week this off day applies to.',
+    )
+    off_day = models.CharField(max_length=3, choices=OffDay.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-week_start', 'ambassador_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ambassador', 'week_start'],
+                name='uniq_ba_weekly_off_week',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['week_start', 'off_day']),
+        ]
+
+    def __str__(self):
+        return f'{self.ambassador_id} · week {self.week_start} · off {self.off_day}'
+
+    @property
+    def off_date(self):
+        """Calendar date of the off day within this week."""
+        from datetime import timedelta
+
+        day_index = list(self.OffDay.values).index(self.off_day)
+        return self.week_start + timedelta(days=day_index)
+
+
 class BaAttendanceDay(models.Model):
     """
     One calendar day of BA attendance clocks.

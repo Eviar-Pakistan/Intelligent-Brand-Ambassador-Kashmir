@@ -839,6 +839,8 @@ export function BaPerformanceDashboardPage() {
   const isSingleDay = (dash?.range.days ?? 0) === 1
   const targetVsAchievement = dash?.targetVsAchievement
   const targetRows = targetVsAchievement?.rows ?? []
+  const weeklyOff = dash?.weeklyOff
+  const weeklyOffRows = weeklyOff?.rows ?? []
 
   const totalBasRows = useMemo(() => {
     const seen = new Map<number, ActiveBaRow>()
@@ -1685,6 +1687,61 @@ export function BaPerformanceDashboardPage() {
         </TableScroll>
       </Card>
 
+      <Card padding={false}>
+        <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
+          <CardHeader
+            title="BA weekly off"
+            subtitle={
+              weeklyOff?.weekLabel
+                ? `${weeklyOff.weekLabel} · ${weeklyOff.setCount} set · ${weeklyOff.notSetCount} not set`
+                : 'One off day per BA for the current week'
+            }
+          />
+        </div>
+        <TableScroll minWidth={640} className="max-h-80 overflow-y-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="px-4 py-3">BA</th>
+                <th className="px-4 py-3">Code</th>
+                <th className="px-4 py-3">Store</th>
+                <th className="px-4 py-3">Off day</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weeklyOffRows.map((row) => (
+                <tr key={row.ambassadorId} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+                  <td className="px-4 py-3 tabular-nums text-slate-600">{row.code || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <div>{row.store}</div>
+                    <div className="text-xs text-slate-400">{row.city}</div>
+                  </td>
+                  <td className="px-4 py-3 font-semibold tabular-nums text-slate-800">
+                    {row.offDay || '—'}
+                    {row.offDate ? (
+                      <div className="text-xs font-normal text-slate-400">{row.offDate}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        row.offDay
+                          ? 'rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700'
+                          : 'rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500'
+                      }
+                    >
+                      {row.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {weeklyOffRows.length === 0 && <EmptyRow cols={5} />}
+            </tbody>
+          </table>
+        </TableScroll>
+      </Card>
 
       <Card padding={false}>
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">

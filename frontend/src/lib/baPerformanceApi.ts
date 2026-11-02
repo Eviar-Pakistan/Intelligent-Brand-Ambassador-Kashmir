@@ -94,6 +94,26 @@ export type TargetVsAchievementPayload = {
   rows: TargetVsAchievementRow[]
 }
 
+export type WeeklyOffRow = {
+  ambassadorId: number
+  code: string
+  name: string
+  store: string
+  city: string
+  offDay: string | null
+  offDate: string | null
+  status: string
+}
+
+export type WeeklyOffPayload = {
+  weekStart: string
+  weekEnd: string
+  weekLabel: string
+  rows: WeeklyOffRow[]
+  setCount: number
+  notSetCount: number
+}
+
 export type BrandTargetVsSalesRow = {
   name: string
   target: number
@@ -121,6 +141,7 @@ export type BaPerformanceDashboard = {
   attendance: AttendanceRowLive[]
   workingHours: WorkingHoursLive
   targetVsAchievement?: TargetVsAchievementPayload
+  weeklyOff?: WeeklyOffPayload
 }
 
 export type FetchBaPerformanceParams = {

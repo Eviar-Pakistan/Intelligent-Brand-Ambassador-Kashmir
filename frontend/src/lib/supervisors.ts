@@ -450,6 +450,9 @@ export type SupervisorBa = {
   salesKg: number
   /** salesKg / targetKg * 100. null when no target set. */
   targetAchievement: number | null
+  /** Current-week BA weekly off day (Mon–Sun), or null if not set. */
+  weeklyOff: string | null
+  weeklyOffDate: string | null
 }
 
 export type SupervisorOverview = {
@@ -485,6 +488,8 @@ export function supervisorOverview(supervisor: Supervisor): SupervisorOverview {
         targetKg: profile?.score ?? null,
         salesKg: 0,
         targetAchievement: profile?.score ?? null,
+        weeklyOff: null,
+        weeklyOffDate: null,
       }
     }),
   )
@@ -557,6 +562,12 @@ function mapOverview(data: Record<string, unknown>): SupervisorOverview {
         row.targetAchievement == null || row.targetAchievement === ''
           ? null
           : Number(row.targetAchievement),
+      weeklyOff:
+        row.weeklyOff == null || row.weeklyOff === '' ? null : String(row.weeklyOff),
+      weeklyOffDate:
+        row.weeklyOffDate == null || row.weeklyOffDate === ''
+          ? null
+          : String(row.weeklyOffDate),
     }
   })
   return {

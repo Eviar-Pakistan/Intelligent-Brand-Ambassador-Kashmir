@@ -323,13 +323,14 @@ export function SupervisorBaTable({
       <div className="px-4 pt-4 sm:px-5">
         <CardHeader title="BA performance" subtitle="Ambassadors working in your stores" />
       </div>
-      <TableScroll minWidth={640}>
+      <TableScroll minWidth={720}>
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">BA</th>
               <th className="px-4 py-3">Store</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Weekly off</th>
               <th className="px-4 py-3">Conversion</th>
               <th className="px-4 py-3">Target</th>
               <th className="px-4 py-3">Achievement</th>
@@ -354,6 +355,22 @@ export function SupervisorBaTable({
                 <td className="px-4 py-3 text-slate-600">{b.store || '—'}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={b.state} />
+                </td>
+                <td className="px-4 py-3">
+                  {b.weeklyOff ? (
+                    <div>
+                      <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700">
+                        {b.weeklyOff}
+                      </span>
+                      {b.weeklyOffDate ? (
+                        <div className="mt-1 text-[10px] text-slate-400">{b.weeklyOffDate}</div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                      Not set
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 font-semibold">{b.conversion}%</td>
                 <td className="px-4 py-3 tabular-nums text-slate-700">

@@ -8,7 +8,16 @@ from datetime import date, timedelta
 from django.db.models import Count
 from django.utils import timezone
 
-from .models import Ambassador, BaDailyReport, Consumer, ShiftAssignment, Store, Supervisor, SurveyQuestion
+from .models import (
+    Ambassador,
+    BaDailyReport,
+    BaWeeklyOff,
+    Consumer,
+    ShiftAssignment,
+    Store,
+    Supervisor,
+    SurveyQuestion,
+)
 
 
 def supervisor_ambassador_ids(supervisor: Supervisor) -> set[int]:
@@ -330,6 +339,14 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
     from .incentives import ba_month_achievement
 
     month = today.strftime('%Y-%m')
+    week_start = today - timedelta(days=today.weekday())
+    weekly_offs = {
+        row.ambassador_id: row
+        for row in BaWeeklyOff.objects.filter(
+            week_start=week_start,
+            ambassador_id__in=[ba.id for ba in ambassadors],
+        ).only('ambassador_id', 'week_start', 'off_day')
+    }
     for ba in ambassadors:
         sid = ba.store_id if ba.store_id in store_ids else shift_home.get(ba.id)
         store = next((s for s in stores if s.id == sid), ba.store)
@@ -353,6 +370,7 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
         _target_kg, _sales_kg, ach_pct = ba_month_achievement(ba.id, month)
         # Only show a % when a target exists; otherwise UI shows "—"
         target_achievement = round(ach_pct, 1) if _target_kg > 0 else None
+        off = weekly_offs.get(ba.id)
         ba_rows.append(
             {
                 'id': str(ba.id),
@@ -368,6 +386,8 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
                 'targetKg': round(_target_kg, 1) if _target_kg > 0 else None,
                 'salesKg': round(_sales_kg, 1),
                 'targetAchievement': target_achievement,
+                'weeklyOff': off.off_day if off else None,
+                'weeklyOffDate': off.off_date.isoformat() if off else None,
             }
         )
 

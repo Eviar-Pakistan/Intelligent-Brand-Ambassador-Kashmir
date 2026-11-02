@@ -8,6 +8,7 @@ from .models import (
     AssessmentSession,
     BaAttendanceDay,
     BaDailyReport,
+    BaWeeklyOff,
     BaIncentivePayout,
     BaTarget,
     Consumer,
@@ -278,6 +279,15 @@ class BaAttendanceDayAdmin(admin.ModelAdmin):
     list_filter = ('date', 'day_key')
     search_fields = ('ambassador__name', 'store__name', 'shift_label')
     raw_id_fields = ('ambassador', 'store', 'shift')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(BaWeeklyOff)
+class BaWeeklyOffAdmin(admin.ModelAdmin):
+    list_display = ('id', 'week_start', 'off_day', 'ambassador', 'created_at')
+    list_filter = ('week_start', 'off_day')
+    search_fields = ('ambassador__name', 'ambassador__code')
+    raw_id_fields = ('ambassador',)
     readonly_fields = ('created_at', 'updated_at')
 
 
