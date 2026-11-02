@@ -60,6 +60,7 @@ CATEGORY_NAMES = (
     'Kashmir Cooking Oil',
     'Kashmir Banaspati',
     'Waadi Banaspati',
+    'Kashmir Canola',
 )
 
 CATEGORY_SKU_KEYS = {
@@ -93,6 +94,8 @@ CATEGORY_SKU_KEYS = {
         'wbpBkt16',
         'salesWaadi',
     ),
+    # Pack keys TBD — target category only for now.
+    'Kashmir Canola': (),
 }
 
 # Catalog pack labels per category (for default assigned SKUs when HO sets category target).
@@ -123,6 +126,7 @@ CATEGORY_PACK_LABELS = {
         'WBP POUCH 1 KG',
         'WBP 2.5 KG BKT',
     ],
+    'Kashmir Canola': [],
 }
 
 
@@ -131,6 +135,9 @@ def _category_for_sku(sku: str) -> str | None:
     if s in CATEGORY_NAMES:
         return s
     low = s.lower()
+    # Canola before generic "oil" so it is not mapped to Cooking Oil.
+    if 'canola' in low:
+        return 'Kashmir Canola'
     if 'waadi' in low or low.startswith('wbp'):
         return 'Waadi Banaspati'
     if 'banaspati' in low or low.startswith('kbp'):

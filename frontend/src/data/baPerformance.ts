@@ -39,15 +39,17 @@ export type ProductCategory =
   | 'Kashmir Cooking Oil'
   | 'Kashmir Banaspati'
   | 'Waadi Banaspati'
+  | 'Kashmir Canola'
 
 export const baPerformanceCategories: ProductCategory[] = [
   'Kashmir Cooking Oil',
   'Kashmir Banaspati',
   'Waadi Banaspati',
+  'Kashmir Canola',
 ]
 export const baPerformanceBrands = ['Kashmir', 'Waadi'] as const
 
-/** LMT SKUs — packs across KCO / KBP / WBP. */
+/** LMT SKUs — packs across KCO / KBP / WBP. Canola packs TBD (target category only for now). */
 const OIL_SKUS = [
   'KPGO 10 LTR CAN. RED',
   'KPGO 3.0 LTR BOTTLE. RED',
@@ -87,6 +89,7 @@ export function getSkusForCategory(category: ProductCategory | null): string[] {
   if (category === 'Kashmir Cooking Oil') return [...OIL_SKUS]
   if (category === 'Kashmir Banaspati') return [...GHEE_SKUS]
   if (category === 'Waadi Banaspati') return [...WAADI_SKUS]
+  if (category === 'Kashmir Canola') return []
   return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
 }
 

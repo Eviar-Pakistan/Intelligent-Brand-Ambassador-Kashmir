@@ -4,7 +4,7 @@
  * BA Code is required; ambassador name is taken from Ambassadors in the database.
  *
  * Categories (LMT):
- *   Kashmir Cooking Oil (KCO / KPGO) · Kashmir Banaspati (KBP) · Waadi Banaspati (WBP)
+ *   Kashmir Cooking Oil (KCO / KPGO) · Kashmir Banaspati (KBP) · Waadi Banaspati (WBP) · Kashmir Canola
  * One row = one BA + month + category + SKU + target.
  * Same BA can appear on many rows (e.g. all three categories, one or more SKUs each).
  */
@@ -84,6 +84,9 @@ export function resolveProductCategory(raw: string): ProductCategory | null {
   ) {
     return 'Waadi Banaspati'
   }
+  if (t === 'kashmir canola' || t === 'canola' || t === 'kcanola') {
+    return 'Kashmir Canola'
+  }
   const exact = baPerformanceCategories.find((c) => normalizeLabel(c) === t)
   return exact ?? null
 }
@@ -149,40 +152,47 @@ export async function downloadSalesBulkTemplate(opts?: {
     ],
     ['3. Month — full month name (e.g. September) or YYYY-MM. Blank = current month.'],
     [
-      '4. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP).',
+      '4. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP), Kashmir Canola.',
     ],
     [
-      '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category).',
+      '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category). For Kashmir Canola (no packs yet), put the category name in SKU or leave SKU blank.',
     ],
     [
-      '6. Same BA Code can appear on many rows — e.g. three categories (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).',
+      '6. Same BA Code can appear on many rows — e.g. four categories (Oil / Banaspati / Waadi / Canola).',
     ],
     ['7. Target — numeric target for that row (required). Do not use 0.'],
     ['8. Save the file, then upload it via Upload targets on Ambassadors.'],
     [],
     COLUMNS.map((c) => c.header),
     [],
-    ['Example (three category rows; use the real BA Code from Ambassadors)'],
+    ['Example (four category rows; use the real BA Code from Ambassadors)'],
     [
       opts?.baSamples?.[0]?.code || 'BA-016',
-      '2026-10',
+      '2026-11',
       'Kashmir Cooking Oil',
       'KPGO 10 LTR CAN. RED, KPGO 5 LTR TIN. RED',
       120,
     ],
     [
       opts?.baSamples?.[0]?.code || 'BA-016',
-      '2026-10',
+      '2026-11',
       'Kashmir Banaspati',
       'KBP GOLD 10 KG BKT',
       80,
     ],
     [
       opts?.baSamples?.[0]?.code || 'BA-016',
-      '2026-10',
+      '2026-11',
       'Waadi Banaspati',
       'WBP 5 KG BKT',
       40,
+    ],
+    [
+      opts?.baSamples?.[0]?.code || 'BA-016',
+      '2026-11',
+      'Kashmir Canola',
+      'Kashmir Canola',
+      20,
     ],
     [],
     ['BA Code reference (from Ambassadors)'],
@@ -203,8 +213,18 @@ export async function downloadSalesBulkTemplate(opts?: {
     ['Category', 'Code', 'SKU'],
     ...baPerformanceCategories.flatMap((cat) => {
       const code =
-        cat === 'Kashmir Cooking Oil' ? 'KCO' : cat === 'Kashmir Banaspati' ? 'KBP' : 'WBP'
-      return getSkusForCategory(cat).map((sku, i) => [i === 0 ? cat : '', i === 0 ? code : '', sku])
+        cat === 'Kashmir Cooking Oil'
+          ? 'KCO'
+          : cat === 'Kashmir Banaspati'
+            ? 'KBP'
+            : cat === 'Waadi Banaspati'
+              ? 'WBP'
+              : 'CANOLA'
+      const skus = getSkusForCategory(cat)
+      if (skus.length === 0) {
+        return [[cat, code, '(no pack SKUs yet — use category name or blank SKU for targets)']]
+      }
+      return skus.map((sku, i) => [i === 0 ? cat : '', i === 0 ? code : '', sku])
     }),
   ]
   const catSheet = XLSX.utils.aoa_to_sheet(catRows)
@@ -295,21 +315,26 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     const category = resolveProductCategory(categoryRaw)
     if (!categoryRaw) {
       rowErrors.push(
-        `Row ${rowNum}: Category is required (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati).`,
+        `Row ${rowNum}: Category is required (Kashmir Cooking Oil / Kashmir Banaspati / Waadi Banaspati / Kashmir Canola).`,
       )
     } else if (!category) {
       rowErrors.push(
-        `Row ${rowNum}: unknown Category "${categoryRaw}" — use Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), or Waadi Banaspati (WBP).`,
+        `Row ${rowNum}: unknown Category "${categoryRaw}" — use Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP), or Kashmir Canola.`,
       )
     }
 
-    if (!skuRaw) {
+    const categoryHasNoSkus = category != null && getSkusForCategory(category).length === 0
+    if (!skuRaw && !categoryHasNoSkus) {
       rowErrors.push(`Row ${rowNum}: SKU is required.`)
     }
 
     let sku = skuRaw
     let assignedSkus: string[] = []
-    if (category && skuRaw) {
+    if (category && categoryHasNoSkus) {
+      // Target-only categories (e.g. Kashmir Canola) — no pack list yet.
+      sku = category
+      assignedSkus = []
+    } else if (category && skuRaw) {
       const parts = splitSkuCell(skuRaw)
       if (parts.length > 1) {
         // Category-level target: many SKUs in one cell, one Target for the category.

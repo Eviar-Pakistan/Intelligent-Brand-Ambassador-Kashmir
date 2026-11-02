@@ -132,6 +132,7 @@ CATEGORY_NAMES = (
     'Kashmir Cooking Oil',
     'Kashmir Banaspati',
     'Waadi Banaspati',
+    'Kashmir Canola',
 )
 
 
@@ -143,6 +144,9 @@ def _category_for_target_sku(sku: str) -> str | None:
     if s in CATEGORY_NAMES:
         return s
     low = s.lower()
+    # Canola before generic "oil" so it is not mapped to Cooking Oil.
+    if 'canola' in low:
+        return 'Kashmir Canola'
     if 'waadi' in low or low.startswith('wbp'):
         return 'Waadi Banaspati'
     if 'banaspati' in low or low.startswith('kbp') or 'ghee' in low:
@@ -501,11 +505,13 @@ def build_ba_performance_dashboard(
         'Kashmir Cooking Oil': oil_sales,
         'Kashmir Banaspati': ghee_sales,
         'Waadi Banaspati': waadi_sales,
+        # No Canola pack keys on checkout yet — sales stay 0 until SKUs are added.
+        'Kashmir Canola': 0.0,
     }
     brand_target_vs_sales = []
     for name in CATEGORY_NAMES:
         b_target = round(brand_target[name], 1)
-        b_sales_live = brand_sales_map[name]
+        b_sales_live = brand_sales_map.get(name, 0.0)
         b_sales = (
             round(b_sales_live, 1)
             if b_sales_live > 0
@@ -569,7 +575,7 @@ def build_ba_performance_dashboard(
             'storesByTown': dict(stores_by_town),
             'months': months,
             'monthLabels': {m: _month_label(m) for m in months},
-            'categories': ['Kashmir Cooking Oil', 'Kashmir Banaspati', 'Waadi Banaspati'],
+            'categories': list(CATEGORY_NAMES),
             'brands': ['Kashmir', 'Waadi'],
             'skus': sorted(set(SKU_LABELS.values())),
         },

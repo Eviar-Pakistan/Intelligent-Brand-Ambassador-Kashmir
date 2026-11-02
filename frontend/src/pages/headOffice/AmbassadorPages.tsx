@@ -67,7 +67,7 @@ import {
 } from '../../lib/salesBulkUpload'
 import { baPerformanceCategories, getSkusForCategory } from '../../data/baPerformance'
 
-/** Set monthly targets for one BA — all three product categories (no category/SKU picker). */
+/** Set monthly targets for one BA — all product categories (no category/SKU picker). */
 function SetTargetSalesModal({
   open,
   onClose,
@@ -160,7 +160,8 @@ function SetTargetSalesModal({
           <p className="rounded-xl bg-rose-50 px-3 py-2 text-rose-800">{saveError}</p>
         )}
         <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          Sets targets for all three categories. The Ambassadors table shows their sum.
+          Sets targets for all categories (including Kashmir Canola). The Ambassadors table shows
+          their sum. Canola has no pack SKUs yet — target only.
         </p>
         <label className="block">
           <span className="mb-1 block font-medium text-slate-700">Ambassador</span>
@@ -738,9 +739,9 @@ function UploadTargetsModal({
           <div className="font-semibold text-slate-900">1. Download the template</div>
           <p className="text-xs text-slate-500">
             Columns: BA Code, Month, Category, SKU, Target. BA Code is required — the ambassador name
-            is taken from Ambassadors automatically. Same BA Code can have many rows (e.g. all three
-            categories). SKU must match the category — see sheet &quot;Categories &amp; SKUs&quot; in
-            the file.
+            is taken from Ambassadors automatically. Same BA Code can have many rows (e.g. all four
+            categories including Kashmir Canola). SKU must match the category — for Canola leave SKU
+            blank or use the category name (no packs yet). See sheet &quot;Categories &amp; SKUs&quot;.
           </p>
           <Button
             variant="secondary"
