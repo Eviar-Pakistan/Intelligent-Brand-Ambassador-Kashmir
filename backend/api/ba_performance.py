@@ -527,12 +527,13 @@ def build_ba_performance_dashboard(
             }
         )
 
+    # Full store list (sales and/or target). Client ranks top 10 by volume or achievement %.
     top_stores = []
-    for store_label, sales_val in sorted(
-        sales_by_store.items(), key=lambda kv: kv[1], reverse=True
-    )[:10]:
-        s_sales = round(sales_val, 1)
+    for store_label in sorted(set(sales_by_store) | set(target_by_store)):
+        s_sales = round(sales_by_store.get(store_label, 0.0), 1)
         s_target = round(target_by_store.get(store_label, 0.0), 1)
+        if s_sales <= 0 and s_target <= 0:
+            continue
         s_ach = round((s_sales / s_target) * 100, 1) if s_target > 0 else None
         top_stores.append(
             {
@@ -542,6 +543,7 @@ def build_ba_performance_dashboard(
                 'achievement': s_ach,
             }
         )
+    top_stores.sort(key=lambda row: row['sales'], reverse=True)
     top_skus = sorted(
         ({'sku': k, 'sales': round(v, 1)} for k, v in sales_by_sku.items()),
         key=lambda x: x['sales'],

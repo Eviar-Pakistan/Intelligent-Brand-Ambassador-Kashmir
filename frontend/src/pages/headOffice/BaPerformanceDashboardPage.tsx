@@ -517,6 +517,40 @@ function PeriodToggle({
   )
 }
 
+type TopStoresMode = 'volume' | 'achievement'
+
+function TopStoresModeToggle({
+  value,
+  onChange,
+}: {
+  value: TopStoresMode
+  onChange: (v: TopStoresMode) => void
+}) {
+  const options: { id: TopStoresMode; label: string }[] = [
+    { id: 'volume', label: 'Volume Wise' },
+    { id: 'achievement', label: 'Achievement Wise' },
+  ]
+  return (
+    <div className="flex shrink-0 rounded-lg bg-slate-100 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => onChange(o.id)}
+          className={cn(
+            'rounded-md px-2 py-1 text-[10px] font-semibold transition sm:text-[11px]',
+            value === o.id
+              ? 'bg-white text-navy-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 const scaleDefaults = {
   grid: { color: chartGrid },
   ticks: { color: chartTick, font: { size: 11 } },
@@ -627,6 +661,7 @@ export function BaPerformanceDashboardPage() {
   const [category, setCategory] = useState<ProductCategory | null>(null)
   const [sku, setSku] = useState<string | null>(null)
   const [salesPeriod, setSalesPeriod] = useState<SalesPeriodMode>('mom')
+  const [topStoresMode, setTopStoresMode] = useState<TopStoresMode>('volume')
   const [datePreset, setDatePreset] = useState<DatePreset>('mtd')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -751,7 +786,9 @@ export function BaPerformanceDashboardPage() {
   }, [])
 
   const data = useMemo(() => {
-    const liveStores = (dash?.topStores ?? []).filter((s) => s.sales > 0)
+    const liveStores = (dash?.topStores ?? []).filter(
+      (s) => s.sales > 0 || (s.target ?? 0) > 0,
+    )
     const liveSkus = (dash?.topSkus ?? []).filter((s) => s.sales > 0)
     let liveCats = (dash?.categorySales ?? []).filter((c) => c.value > 0)
     if (category && liveCats.length) {
@@ -804,7 +841,7 @@ export function BaPerformanceDashboardPage() {
           }
         : demoTargetVsSalesForFilters({ town, store, category, sku }),
       topStores: liveStores.length
-        ? liveStores.slice(0, 10)
+        ? liveStores
         : hasLiveSales
           ? []
           : demoTopStoresForFilters({ town, store, storeOptions, category }),
@@ -815,6 +852,17 @@ export function BaPerformanceDashboardPage() {
           : demoTopSkusForFilters({ category, sku, town }),
     }
   }, [dash, town, store, storeOptions, category, sku])
+
+  const rankedTopStores = useMemo(() => {
+    const pool = data.topStores
+    if (topStoresMode === 'achievement') {
+      return [...pool]
+        .filter((s) => s.achievement != null)
+        .sort((a, b) => (b.achievement ?? -1) - (a.achievement ?? -1))
+        .slice(0, 10)
+    }
+    return [...pool].sort((a, b) => b.sales - a.sales).slice(0, 10)
+  }, [data.topStores, topStoresMode])
 
   const salesTargetPoints = useMemo(
     () =>
@@ -1175,13 +1223,16 @@ export function BaPerformanceDashboardPage() {
   )
 
   const topStoresChart = useMemo<ChartData<'bar'>>(() => {
-    const values = data.topStores.map((s) => s.sales)
-    const min = Math.min(...values)
+    const values =
+      topStoresMode === 'achievement'
+        ? rankedTopStores.map((s) => s.achievement ?? 0)
+        : rankedTopStores.map((s) => s.sales)
+    const min = values.length ? Math.min(...values) : 0
     const max = Math.max(...values, 1)
     const span = max - min
     const colors = values.map((v) => batteryBarColor(span <= 0 ? 1 : (v - min) / span))
     return {
-      labels: data.topStores.map((s) => s.store),
+      labels: rankedTopStores.map((s) => s.store),
       datasets: [
         {
           data: values,
@@ -1192,7 +1243,7 @@ export function BaPerformanceDashboardPage() {
         },
       ],
     }
-  }, [data.topStores])
+  }, [rankedTopStores, topStoresMode])
 
   const topSkusChart = useMemo<ChartData<'bar'>>(() => {
     const labels = data.topSkus.map((s) => s.sku)
@@ -1245,6 +1296,25 @@ export function BaPerformanceDashboardPage() {
   const topStoresBarOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
       ...horizontalBarOptions,
+      scales: {
+        ...horizontalBarOptions.scales,
+        x: {
+          ...horizontalBarOptions.scales?.x,
+          beginAtZero: true,
+          ticks: {
+            ...(typeof horizontalBarOptions.scales?.x === 'object'
+              ? horizontalBarOptions.scales.x?.ticks
+              : {}),
+            callback: (v) => {
+              if (typeof v !== 'number') return String(v)
+              if (topStoresMode === 'achievement') return `${Math.round(v)}%`
+              return v >= 1000
+                ? `${(v / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`
+                : String(v)
+            },
+          },
+        },
+      },
       plugins: {
         ...horizontalBarOptions.plugins,
         legend: { display: false },
@@ -1252,7 +1322,7 @@ export function BaPerformanceDashboardPage() {
           ...defaultChartOptions.plugins.tooltip,
           callbacks: {
             label: (ctx) => {
-              const row = data.topStores[ctx.dataIndex]
+              const row = rankedTopStores[ctx.dataIndex]
               const sales = row?.sales ?? (typeof ctx.parsed.x === 'number' ? ctx.parsed.x : 0)
               const target = row?.target ?? 0
               const ach = row?.achievement
@@ -1269,7 +1339,7 @@ export function BaPerformanceDashboardPage() {
         },
       },
     }),
-    [horizontalBarOptions, data.topStores],
+    [horizontalBarOptions, rankedTopStores, topStoresMode],
   )
 
   const workingHoursChart = useMemo<ChartData<'bar'>>(
@@ -1590,7 +1660,13 @@ export function BaPerformanceDashboardPage() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:col-start-2 lg:row-start-3 lg:items-stretch">
-          <ChartCard title="Top 10 stores by performance" chartHeight={TOP10_CHART_HEIGHT}>
+          <ChartCard
+            title="Top 10 stores by performance"
+            chartHeight={TOP10_CHART_HEIGHT}
+            headerRight={
+              <TopStoresModeToggle value={topStoresMode} onChange={setTopStoresMode} />
+            }
+          >
             <Bar data={topStoresChart} options={topStoresBarOptions} />
           </ChartCard>
 

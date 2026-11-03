@@ -256,13 +256,13 @@ export function demoTopStoresForFilters(opts: {
           return hit ? [...hit[1]] : Object.values(DEMO_STORES_BY_CITY).flat()
         })()
 
-  // Stable unique, then score and take top 10
+  // Stable unique scored list — UI ranks top 10 by volume or achievement.
   names = [...new Set(names)]
   const scored = names.map((name) =>
     row(name, demoValue(`${town ?? 'all'}|${category ?? 'all'}|${name}`, 1400, 3600)),
   )
   scored.sort((a, b) => b.sales - a.sales)
-  return scored.slice(0, 10)
+  return scored
 }
 
 /** Top 5 SKU targets for the active category/sku (+ town scales values). */
