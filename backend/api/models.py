@@ -654,6 +654,17 @@ def supervisor_visit_photo_upload_to(instance, filename: str) -> str:
     return f'supervisor/{instance.supervisor_id}/{stamp}_{instance.store_id}.{ext}'
 
 
+def ba_check_in_photo_upload_to(instance, filename: str) -> str:
+    """BA check-in photos under media/bas/<ambassador_id>/."""
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'jpg'
+    if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+        ext = 'jpg'
+    stamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+    day = getattr(instance, 'date', None)
+    day_part = day.isoformat() if day else stamp[:8]
+    return f'bas/{instance.ambassador_id}/{day_part}_{stamp}.{ext}'
+
+
 class SupervisorStoreVisit(models.Model):
     """
     Supervisor physical store visit: face-gated check-in (GPS + photo), GPS check-out.
@@ -1056,6 +1067,12 @@ class BaAttendanceDay(models.Model):
     check_in_lng = models.FloatField(null=True, blank=True)
     check_out_lat = models.FloatField(null=True, blank=True)
     check_out_lng = models.FloatField(null=True, blank=True)
+    check_in_photo = models.ImageField(
+        upload_to=ba_check_in_photo_upload_to,
+        blank=True,
+        null=True,
+        help_text='Face-gated selfie captured at check-in (media/bas/).',
+    )
     early_leave_reason = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

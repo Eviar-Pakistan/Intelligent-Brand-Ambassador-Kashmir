@@ -176,13 +176,35 @@ export async function fetchBaTodayShift(token: string) {
   )
 }
 
-export async function baCheckInApi(token: string, attendanceType: BaAttendanceType = 'store') {
+export async function baCheckInApi(
+  token: string,
+  attendanceType: BaAttendanceType = 'store',
+  photo?: Blob,
+) {
   try {
+    if (!photo || photo.size < 1) {
+      throw new Error('Could not capture photo. Try again.')
+    }
     const geo = await readGeoRequired()
+    const form = new FormData()
+    form.append('token', token)
+    form.append('attendance_type', attendanceType)
+    form.append('latitude', String(geo.latitude))
+    form.append('longitude', String(geo.longitude))
+    if (typeof geo.accuracy === 'number') {
+      form.append('accuracy', String(geo.accuracy))
+    }
+    const filename =
+      photo.type === 'image/png'
+        ? 'checkin.png'
+        : photo.type === 'image/webp'
+          ? 'checkin.webp'
+          : 'checkin.jpg'
+    form.append('photo', photo, filename)
     return await apiRequest<BaTodayShiftResponse>('/api/ba/check-in/', {
       method: 'POST',
       auth: false,
-      body: { token, attendance_type: attendanceType, ...geo },
+      formData: form,
     })
   } catch (err) {
     throw mapAttendanceError(err, 'Check-in failed')

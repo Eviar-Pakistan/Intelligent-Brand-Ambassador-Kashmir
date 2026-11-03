@@ -105,7 +105,7 @@ export type BaShiftState = {
   isEarlyCheckout: boolean
   attendanceType: BaAttendanceType | null
   isTrainingAttendance: boolean
-  checkIn: (type?: BaAttendanceType) => void
+  checkIn: (type: BaAttendanceType | undefined, photo: Blob) => void
   checkOut: (earlyLeaveReason?: string) => void
   markReportSubmitted: () => void
   refresh: () => Promise<void>
@@ -321,12 +321,16 @@ export function BaShiftProvider({
     now.getTime() - checkInAt.getTime() >= CHECKOUT_UNLOCK_AFTER_MS
 
   const checkIn = useCallback(
-    (type: BaAttendanceType = 'store') => {
+    (type: BaAttendanceType = 'store', photo: Blob) => {
       if (apiMode && inviteToken) {
         if (!hasShift || checkedIn || checkedOut || busy) return
+        if (!photo || photo.size < 1) {
+          setError('Could not capture photo. Try again.')
+          return
+        }
         setBusy(true)
         setError(null)
-        void baCheckInApi(inviteToken, type)
+        void baCheckInApi(inviteToken, type, photo)
           .then((data) => applyTodayShift(data, applySetters))
           .catch((err) => {
             setError(err instanceof Error ? err.message : 'Check-in failed')

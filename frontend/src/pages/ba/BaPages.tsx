@@ -14,7 +14,9 @@ import { fetchBaOwnIncentive, formatPkr, type IncentiveBreakdown } from '../../l
 import { useBrand } from '../../context/BrandContext'
 import { formatDate, formatTime, formatCoord, useBaShift } from '../../context/BaShiftContext'
 import { useTrainingContent } from '../../context/TrainingContentContext'
+import { FaceCheckInModal } from '../../components/FaceCheckInModal'
 import { Modal } from '../../components/ui'
+import type { BaAttendanceType } from '../../context/BaShiftContext'
 import {
   useBaSession,
   isBaCertified,
@@ -101,6 +103,7 @@ export function BaHomePage() {
   const [earlyReasonOpen, setEarlyReasonOpen] = useState(false)
   const [earlyReason, setEarlyReason] = useState('')
   const [locationHelpOpen, setLocationHelpOpen] = useState(false)
+  const [faceCheckInType, setFaceCheckInType] = useState<BaAttendanceType | null>(null)
   const [weeklyOff, setWeeklyOff] = useState<BaWeeklyOffPayload | null>(null)
   const [weeklyOffLoading, setWeeklyOffLoading] = useState(false)
   const [weeklyOffBusy, setWeeklyOffBusy] = useState(false)
@@ -169,6 +172,10 @@ export function BaHomePage() {
       setLocationHelpOpen(true)
     }
   }, [shiftError])
+
+  useEffect(() => {
+    if (checkedIn && faceCheckInType) setFaceCheckInType(null)
+  }, [checkedIn, faceCheckInType])
 
   // Reload today's shift whenever Home opens (any BA status).
   useEffect(() => {
@@ -356,7 +363,7 @@ export function BaHomePage() {
                 <button
                   type="button"
                   disabled={shiftBusy}
-                  onClick={() => checkIn('store')}
+                  onClick={() => setFaceCheckInType('store')}
                   className="shrink-0 rounded-full bg-navy-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
                 >
                   {shiftBusy ? 'Checking in…' : 'Check In'}
@@ -472,6 +479,20 @@ export function BaHomePage() {
           </>
         )}
       </div>
+
+      {faceCheckInType ? (
+        <FaceCheckInModal
+          open
+          title={
+            faceCheckInType === 'training' ? 'Training check-in' : `Check in · ${storeLabel}`
+          }
+          busy={shiftBusy}
+          onClose={() => {
+            if (!shiftBusy) setFaceCheckInType(null)
+          }}
+          onConfirmed={(photo) => checkIn(faceCheckInType, photo)}
+        />
+      ) : null}
 
       <Modal
         open={locationHelpOpen}
@@ -752,7 +773,7 @@ export function BaHomePage() {
           <button
             type="button"
             disabled={shiftBusy}
-            onClick={() => checkIn('training')}
+            onClick={() => setFaceCheckInType('training')}
             className="mt-4 w-full rounded-2xl border border-brand-500 bg-white py-3 text-sm font-semibold text-brand-600 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {shiftBusy ? 'Checking in…' : 'Training Check In'}

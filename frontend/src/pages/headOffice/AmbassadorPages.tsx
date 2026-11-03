@@ -1549,6 +1549,7 @@ export function AmbassadorProfilePage() {
   const [incentive, setIncentive] = useState<IncentiveBreakdown | null>(null)
   const [apiShifts, setApiShifts] = useState<ApiShift[]>([])
   const [attendanceRows, setAttendanceRows] = useState<AttendanceDayRow[]>([])
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
   const [attendancePresent, setAttendancePresent] = useState(0)
   const [loadingShifts, setLoadingShifts] = useState(false)
   const [loadingAttendance, setLoadingAttendance] = useState(false)
@@ -1887,7 +1888,7 @@ export function AmbassadorProfilePage() {
             ) : attendanceRows.length === 0 ? (
               <p className="py-6 text-center text-sm text-slate-500">No attendance records yet.</p>
             ) : (
-              <TableScroll minWidth={640} className="max-h-80 overflow-y-auto">
+              <TableScroll minWidth={720} className="max-h-80 overflow-y-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-white text-xs text-slate-500 uppercase">
                     <tr>
@@ -1895,6 +1896,7 @@ export function AmbassadorProfilePage() {
                       <th className="pb-2 pr-3 font-medium">Store</th>
                       <th className="pb-2 pr-3 font-medium">Shift</th>
                       <th className="pb-2 pr-3 font-medium">In / Out</th>
+                      <th className="pb-2 pr-3 font-medium">Photo</th>
                       <th className="pb-2 pr-3 font-medium">Location</th>
                       <th className="pb-2 font-medium">Status</th>
                     </tr>
@@ -1911,6 +1913,7 @@ export function AmbassadorProfilePage() {
                         row.checkOutLng != null &&
                         Number.isFinite(Number(row.checkOutLat)) &&
                         Number.isFinite(Number(row.checkOutLng))
+                      const photoUrl = row.checkInPhotoUrl || null
                       return (
                       <tr key={row.date} className="border-t border-slate-100">
                         <td className="py-2.5 pr-3">
@@ -1928,6 +1931,24 @@ export function AmbassadorProfilePage() {
                         </td>
                         <td className="py-2.5 pr-3 tabular-nums text-slate-600 whitespace-nowrap">
                           {formatShiftClock(row.checkedInAt)} → {formatShiftClock(row.checkedOutAt)}
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          {photoUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setPhotoPreviewUrl(photoUrl)}
+                              className="block overflow-hidden rounded-lg ring-1 ring-slate-200 transition hover:ring-brand-400"
+                              title="View check-in photo"
+                            >
+                              <img
+                                src={photoUrl}
+                                alt={`Check-in ${row.date}`}
+                                className="h-10 w-10 object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="py-2.5 pr-3">
                           {hasIn || hasOut ? (
@@ -1980,6 +2001,21 @@ export function AmbassadorProfilePage() {
               </TableScroll>
             )}
           </Card>
+
+          <Modal
+            open={!!photoPreviewUrl}
+            onClose={() => setPhotoPreviewUrl(null)}
+            title="Check-in photo"
+            size="md"
+          >
+            {photoPreviewUrl ? (
+              <img
+                src={photoPreviewUrl}
+                alt="BA check-in"
+                className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg"
+              />
+            ) : null}
+          </Modal>
 
           {incentive && (
             <Card className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50/80">

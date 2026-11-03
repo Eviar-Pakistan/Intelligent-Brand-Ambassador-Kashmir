@@ -120,6 +120,7 @@ export type AttendanceDayRow = {
   checkInLng?: number | null
   checkOutLat?: number | null
   checkOutLng?: number | null
+  checkInPhotoUrl?: string | null
   status: 'Present' | 'Absent' | 'Scheduled' | string
 }
 

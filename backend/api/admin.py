@@ -294,6 +294,7 @@ class BaAttendanceDayAdmin(admin.ModelAdmin):
         'shift_label',
         'checked_in_at',
         'checked_out_at',
+        'check_in_photo',
     )
     list_filter = ('date', 'day_key')
     search_fields = ('ambassador__name', 'store__name', 'shift_label')

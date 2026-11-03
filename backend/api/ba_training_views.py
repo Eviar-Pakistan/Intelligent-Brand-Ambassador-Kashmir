@@ -422,7 +422,7 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
             days = int(request.query_params.get('days') or 30)
         except (TypeError, ValueError):
             days = 30
-        return Response(build_attendance_chart(ambassador, days=days))
+        return Response(build_attendance_chart(ambassador, days=days, request=request))
 
     @action(detail=False, methods=['get'], url_path='attendance-export-months')
     def attendance_export_months(self, request):

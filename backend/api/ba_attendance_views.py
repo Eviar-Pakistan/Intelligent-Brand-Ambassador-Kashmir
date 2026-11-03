@@ -9,7 +9,8 @@ from datetime import date, datetime, time, timedelta
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -185,11 +186,23 @@ def _float_or_none(v):
 
 
 def _geo_from_request(data) -> tuple[float | None, float | None, float | None]:
-    """latitude / longitude / accuracy from BA client body."""
-    lat = _float_or_none(data.get('latitude'))
-    lng = _float_or_none(data.get('longitude'))
+    """latitude / longitude / accuracy from BA client body (JSON or multipart)."""
+    lat = _float_or_none(data.get('latitude') if data.get('latitude') not in (None, '') else data.get('lat'))
+    lng = _float_or_none(data.get('longitude') if data.get('longitude') not in (None, '') else data.get('lng'))
     accuracy = _float_or_none(data.get('accuracy'))
     return lat, lng, accuracy
+
+
+def _photo_url(request, field) -> str | None:
+    if not field:
+        return None
+    try:
+        url = field.url
+    except ValueError:
+        return None
+    if request is not None and hasattr(request, 'build_absolute_uri'):
+        return request.build_absolute_uri(url)
+    return url
 
 
 def _require_geo(data) -> tuple[float, float, float | None] | Response:
@@ -326,6 +339,7 @@ def build_attendance_chart(
     days: int = 30,
     date_from: date | None = None,
     date_to: date | None = None,
+    request=None,
 ) -> dict:
     """
     Attendance day rows for one BA: Present / Scheduled / Absent.
@@ -426,6 +440,7 @@ def build_attendance_chart(
         check_in_lng = None
         check_out_lat = None
         check_out_lng = None
+        check_in_photo_url = None
 
         if log:
             store = log.store
@@ -436,6 +451,7 @@ def build_attendance_chart(
             check_in_lng = log.check_in_lng
             check_out_lat = log.check_out_lat
             check_out_lng = log.check_out_lng
+            check_in_photo_url = _photo_url(request, log.check_in_photo)
         elif cover:
             store = cover.store
             shift_label = cover.shift_label or fallback_label
@@ -482,10 +498,11 @@ def build_attendance_chart(
         elif day_status == 'Absent':
             absent_count += 1
 
-        # Only expose coords when that clock exists for the day.
+        # Only expose coords / photo when that clock exists for the day.
         if not checked_in:
             check_in_lat = None
             check_in_lng = None
+            check_in_photo_url = None
         if not checked_out:
             check_out_lat = None
             check_out_lng = None
@@ -504,6 +521,7 @@ def build_attendance_chart(
                 'checkInLng': check_in_lng,
                 'checkOutLat': check_out_lat,
                 'checkOutLng': check_out_lng,
+                'checkInPhotoUrl': check_in_photo_url,
                 'status': day_status,
             }
         )
@@ -1303,11 +1321,12 @@ def list_user_interceptions(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def ba_check_in(request):
     """
     POST /api/ba/check-in/
-    Body: { token, attendance_type?: 'store'|'training', latitude, longitude, accuracy? }
-    GPS latitude/longitude are required.
+    multipart/JSON: token, attendance_type?, latitude, longitude, accuracy?, photo (required image)
+    GPS + face selfie are required for new check-ins.
     """
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
@@ -1345,6 +1364,19 @@ def ba_check_in(request):
         return geo
     lat, lng, accuracy = geo
 
+    photo = request.FILES.get('photo') or request.FILES.get('image')
+    if not photo:
+        return Response(
+            {'detail': 'Check-in photo is required. Allow camera access and try again.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    content_type = (getattr(photo, 'content_type', '') or '').lower()
+    if content_type and not content_type.startswith('image/'):
+        return Response(
+            {'detail': 'Check-in photo must be an image file.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     shift.checked_in_at = timezone.now()
     shift.check_in_lat = lat
     shift.check_in_lng = lng
@@ -1366,7 +1398,11 @@ def ba_check_in(request):
         ambassador.status = Ambassador.Status.TRAINING
         ambassador.save(update_fields=['status', 'updated_at'])
 
-    upsert_attendance_from_shift(shift)
+    row = upsert_attendance_from_shift(shift)
+    if row is not None:
+        row.check_in_photo = photo
+        row.save(update_fields=['check_in_photo', 'updated_at'])
+
     ambassador.refresh_from_db()
     return Response(serialize_ba_shift(shift, ambassador))
 
