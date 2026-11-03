@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from .models import (
     Ambassador,
+    BaAttendanceDay,
     BaDailyReport,
+    BaWeeklyOff,
     Consumer,
     ShiftAssignment,
     Store,
     Supervisor,
     SurveyQuestion,
 )
+
+DAY_KEYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+_SHIFT_TIME_RE = re.compile(r'(\d{1,2}):(\d{2})\s*(AM|PM)', re.IGNORECASE)
+MAX_ATTENDANCE_RANGE_DAYS = 31
 
 
 def supervisor_ambassador_ids(supervisor: Supervisor) -> set[int]:
@@ -400,4 +407,281 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
         'teamConversion': team_conversion,
         'coverage': coverage,
         'todayFootfall': today_footfall,
+    }
+
+
+def _parse_clock_token(hour: str, minute: str, ampm: str) -> time:
+    h = int(hour) % 12
+    if ampm.upper() == 'PM':
+        h += 12
+    return time(h, int(minute))
+
+
+def _parse_shift_end(label: str) -> time | None:
+    parts = _SHIFT_TIME_RE.findall(label or '')
+    if len(parts) < 2:
+        return None
+    return _parse_clock_token(*parts[1])
+
+
+def _photo_url(request, field) -> str | None:
+    if not field:
+        return None
+    try:
+        url = field.url
+    except ValueError:
+        return None
+    if request is not None and hasattr(request, 'build_absolute_uri'):
+        return request.build_absolute_uri(url)
+    return url
+
+
+def _filter_status_for_row(
+    *,
+    day: date,
+    today: date,
+    now: datetime,
+    checked_in,
+    checked_out,
+    shift_label: str,
+    on_leave: bool,
+) -> str:
+    if on_leave:
+        return 'on_leave'
+    if checked_in and checked_out:
+        return 'present'
+    if checked_in and not checked_out:
+        return 'on_shift'
+    # No check-in
+    if day > today:
+        return 'not_checked_in'
+    if day < today:
+        return 'absent'
+    # Today
+    end = _parse_shift_end(shift_label)
+    if end is not None:
+        end_dt = timezone.make_aware(
+            datetime.combine(day, end),
+            timezone.get_current_timezone(),
+        )
+        if now >= end_dt:
+            return 'absent'
+    return 'not_checked_in'
+
+
+def build_supervisor_ba_attendance(
+    supervisor: Supervisor,
+    *,
+    date_from: date,
+    date_to: date,
+    request=None,
+) -> dict:
+    """
+    Flattened BA attendance rows for supervisor stores over [date_from, date_to].
+    One row per BA per day when the BA is in roster for that day.
+    """
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+    span = (date_to - date_from).days + 1
+    if span > MAX_ATTENDANCE_RANGE_DAYS:
+        raise ValueError(f'Date range cannot exceed {MAX_ATTENDANCE_RANGE_DAYS} days.')
+
+    store_ids = list(supervisor.stores.values_list('id', flat=True))
+    now = timezone.localtime()
+    today = now.date()
+
+    if not store_ids:
+        return {
+            'from': date_from.isoformat(),
+            'to': date_to.isoformat(),
+            'results': [],
+        }
+
+    home_bas = list(
+        Ambassador.objects.filter(
+            store_id__in=store_ids,
+            status__in=(
+                Ambassador.Status.CERTIFIED,
+                Ambassador.Status.DEPLOYED,
+                Ambassador.Status.TRAINING,
+                Ambassador.Status.ON_LEAVE,
+            ),
+        ).select_related('store')
+    )
+    home_ids = {ba.id for ba in home_bas}
+
+    shifts = list(
+        ShiftAssignment.objects.filter(
+            store_id__in=store_ids,
+            ambassador_id__isnull=False,
+            date__gte=date_from,
+            date__lte=date_to,
+        )
+        .exclude(status=ShiftAssignment.Status.OPEN)
+        .select_related('store', 'ambassador', 'ambassador__store')
+    )
+    shift_ba_ids = {s.ambassador_id for s in shifts if s.ambassador_id}
+
+    attendance_logs = list(
+        BaAttendanceDay.objects.filter(
+            date__gte=date_from,
+            date__lte=date_to,
+        )
+        .filter(Q(store_id__in=store_ids) | Q(ambassador_id__in=home_ids | shift_ba_ids))
+        .select_related('store', 'ambassador', 'ambassador__store')
+    )
+    log_ba_ids = {r.ambassador_id for r in attendance_logs}
+
+    all_ids = home_ids | shift_ba_ids | log_ba_ids
+    if not all_ids:
+        return {
+            'from': date_from.isoformat(),
+            'to': date_to.isoformat(),
+            'results': [],
+        }
+
+    ambassadors = {
+        ba.id: ba
+        for ba in Ambassador.objects.filter(id__in=all_ids).select_related('store')
+    }
+    # Ensure home_bas already loaded are used
+    for ba in home_bas:
+        ambassadors[ba.id] = ba
+
+    shifts_by_ba_day: dict[tuple[int, date], ShiftAssignment] = {}
+    for s in shifts:
+        if s.ambassador_id:
+            shifts_by_ba_day[(s.ambassador_id, s.date)] = s
+
+    logs_by_ba_day: dict[tuple[int, date], BaAttendanceDay] = {}
+    for row in attendance_logs:
+        logs_by_ba_day[(row.ambassador_id, row.date)] = row
+
+    # Weekly offs for all BAs in range
+    week_from = date_from - timedelta(days=date_from.weekday())
+    week_to = date_to - timedelta(days=date_to.weekday())
+    weekly_off_map: dict[int, set[date]] = defaultdict(set)
+    for row in BaWeeklyOff.objects.filter(
+        ambassador_id__in=all_ids,
+        week_start__gte=week_from,
+        week_start__lte=week_to,
+    ).only('ambassador_id', 'week_start', 'off_day'):
+        try:
+            idx = DAY_KEYS.index(row.off_day)
+        except ValueError:
+            continue
+        off_date = row.week_start + timedelta(days=idx)
+        if date_from <= off_date <= date_to:
+            weekly_off_map[row.ambassador_id].add(off_date)
+
+    report_pairs = set(
+        BaDailyReport.objects.filter(
+            ambassador_id__in=all_ids,
+            date__gte=date_from,
+            date__lte=date_to,
+        ).values_list('ambassador_id', 'date')
+    )
+
+    results: list[dict] = []
+    day_count = (date_to - date_from).days + 1
+    for i in range(day_count):
+        day = date_from + timedelta(days=i)
+        day_key = DAY_KEYS[day.weekday()]
+        for ba_id, ba in ambassadors.items():
+            log = logs_by_ba_day.get((ba_id, day))
+            shift = shifts_by_ba_day.get((ba_id, day))
+            on_weekly_off = day in weekly_off_map.get(ba_id, set())
+            status_on_leave = ba.status == Ambassador.Status.ON_LEAVE
+            on_leave = on_weekly_off or status_on_leave
+
+            # Include row if BA is home-roster, has shift/attendance that day, or on leave that day
+            is_home = ba.store_id in store_ids if ba.store_id else False
+            if not (is_home or shift or log or on_weekly_off):
+                continue
+            # For multi-day ranges, home BAs without activity on past days still appear
+            # so filters like Absent / Not checked in work.
+
+            store = None
+            shift_label = ''
+            checked_in = None
+            checked_out = None
+            check_in_lat = check_in_lng = None
+            check_out_lat = check_out_lng = None
+            check_in_photo_url = None
+
+            if log:
+                store = log.store
+                shift_label = log.shift_label or ''
+                checked_in = log.checked_in_at
+                checked_out = log.checked_out_at
+                check_in_lat = log.check_in_lat
+                check_in_lng = log.check_in_lng
+                check_out_lat = log.check_out_lat
+                check_out_lng = log.check_out_lng
+                check_in_photo_url = _photo_url(request, log.check_in_photo)
+            if shift:
+                store = store or shift.store
+                shift_label = shift_label or (shift.shift_label or '')
+                if not checked_in and shift.checked_in_at:
+                    cin_day = timezone.localtime(shift.checked_in_at).date()
+                    if cin_day == day:
+                        checked_in = shift.checked_in_at
+                        checked_out = shift.checked_out_at
+                        check_in_lat = shift.check_in_lat
+                        check_in_lng = shift.check_in_lng
+                        check_out_lat = shift.check_out_lat
+                        check_out_lng = shift.check_out_lng
+            if not store:
+                store = ba.store
+            if not shift_label:
+                shift_label = '9:00 AM – 6:00 PM'
+
+            if not checked_in:
+                check_in_lat = check_in_lng = None
+                check_in_photo_url = None
+            if not checked_out:
+                check_out_lat = check_out_lng = None
+
+            filter_status = _filter_status_for_row(
+                day=day,
+                today=today,
+                now=now,
+                checked_in=checked_in,
+                checked_out=checked_out,
+                shift_label=shift_label,
+                on_leave=on_leave,
+            )
+
+            report_submitted = (ba_id, day) in report_pairs
+
+            results.append(
+                {
+                    'date': day.isoformat(),
+                    'day': day_key,
+                    'baId': ba.id,
+                    'baName': ba.name,
+                    'baCode': ba.code or '',
+                    'storeId': store.id if store else None,
+                    'storeName': store.name if store else '',
+                    'storeCode': (store.code or '') if store else '',
+                    'city': (store.city if store else '') or ba.city or '',
+                    'shift': shift_label,
+                    'checkedInAt': checked_in.isoformat() if checked_in else None,
+                    'checkedOutAt': checked_out.isoformat() if checked_out else None,
+                    'checkInLat': check_in_lat,
+                    'checkInLng': check_in_lng,
+                    'checkOutLat': check_out_lat,
+                    'checkOutLng': check_out_lng,
+                    'checkInPhotoUrl': check_in_photo_url,
+                    'reportSubmitted': report_submitted,
+                    'filterStatus': filter_status,
+                }
+            )
+
+    results.sort(key=lambda r: (r['date'], r['baName'].lower()), reverse=True)
+
+    return {
+        'from': date_from.isoformat(),
+        'to': date_to.isoformat(),
+        'results': results,
     }

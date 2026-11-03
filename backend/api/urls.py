@@ -32,6 +32,7 @@ from .supervisor_views import (
     SupervisorViewSet,
     supervisor_login_directory,
     supervisor_me,
+    supervisor_me_ba_attendance,
     supervisor_me_overview,
     supervisor_me_report_dates,
     supervisor_me_reports,
@@ -115,6 +116,11 @@ urlpatterns = [
     path('supervisor/me/report-dates/', supervisor_me_report_dates, name='supervisor-me-report-dates'),
     path('supervisor/me/reports/', supervisor_me_reports, name='supervisor-me-reports'),
     path('supervisor/me/stock-matrix/', supervisor_me_stock_matrix, name='supervisor-me-stock-matrix'),
+    path(
+        'supervisor/me/ba-attendance/',
+        supervisor_me_ba_attendance,
+        name='supervisor-me-ba-attendance',
+    ),
     path('supervisor/me/visits/', supervisor_me_visits, name='supervisor-me-visits'),
     path(
         'supervisor/me/visits/check-in/',

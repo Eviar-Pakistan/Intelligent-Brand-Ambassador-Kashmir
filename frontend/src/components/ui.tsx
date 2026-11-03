@@ -128,6 +128,9 @@ export function StatusBadge({ status }: { status: string }) {
     Open: 'bg-rose-50 text-rose-700 ring-rose-200',
     Present: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Absent: 'bg-rose-50 text-rose-700 ring-rose-200',
+    'On shift': 'bg-sky-50 text-sky-700 ring-sky-200',
+    'Not checked in': 'bg-amber-50 text-amber-700 ring-amber-200',
+    'On Leave': 'bg-amber-50 text-amber-800 ring-amber-200',
     'In Review': 'bg-amber-50 text-amber-700 ring-amber-200',
     Resolved: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   }

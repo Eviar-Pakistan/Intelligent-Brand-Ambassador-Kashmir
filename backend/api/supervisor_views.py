@@ -18,6 +18,8 @@ from .models import Store, Supervisor
 from .serializers import SupervisorSerializer
 from .ba_attendance_views import build_stock_matrix_payload
 from .supervisor_ops import (
+    MAX_ATTENDANCE_RANGE_DAYS,
+    build_supervisor_ba_attendance,
     build_supervisor_overview,
     supervisor_report_dates,
     supervisor_reports_for_date,
@@ -264,6 +266,12 @@ class SupervisorViewSet(viewsets.ModelViewSet):
         store_ids = list(supervisor.stores.values_list('id', flat=True))
         return Response(build_stock_matrix_payload(store_ids=store_ids))
 
+    @action(detail=True, methods=['get'], url_path='ba-attendance')
+    def ba_attendance(self, request, pk=None):
+        """GET /api/supervisors/:id/ba-attendance/?from=&to= — HO preview attendance table."""
+        supervisor = self.get_object()
+        return _ba_attendance_response(request, supervisor)
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -347,3 +355,41 @@ def supervisor_me_stock_matrix(request):
         return err
     store_ids = list(profile.stores.values_list('id', flat=True))
     return Response(build_stock_matrix_payload(store_ids=store_ids))
+
+
+def _ba_attendance_response(request, supervisor):
+    from django.utils import timezone as dj_tz
+
+    today = dj_tz.localdate()
+    raw_from = (request.query_params.get('from') or '').strip()
+    raw_to = (request.query_params.get('to') or '').strip()
+    date_from = _parse_report_date(raw_from) or today
+    date_to = _parse_report_date(raw_to) or date_from
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+    span = (date_to - date_from).days + 1
+    if span > MAX_ATTENDANCE_RANGE_DAYS:
+        return Response(
+            {'detail': f'Date range cannot exceed {MAX_ATTENDANCE_RANGE_DAYS} days.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        payload = build_supervisor_ba_attendance(
+            supervisor,
+            date_from=date_from,
+            date_to=date_to,
+            request=request,
+        )
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(payload)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supervisor_me_ba_attendance(request):
+    """GET /api/supervisor/me/ba-attendance/?from=&to= — BA attendance for assigned stores."""
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
+    return _ba_attendance_response(request, profile)
