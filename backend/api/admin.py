@@ -19,6 +19,7 @@ from .models import (
     Store,
     StoreReward,
     Supervisor,
+    SupervisorStoreVisit,
     SurveyQuestion,
     TrainingVideo,
     UserInterception,
@@ -181,6 +182,23 @@ class SupervisorAdmin(admin.ModelAdmin):
     search_fields = ('user__email', 'user__first_name', 'user__last_name', 'city')
     raw_id_fields = ('user',)
     filter_horizontal = ('stores',)
+
+
+@admin.register(SupervisorStoreVisit)
+class SupervisorStoreVisitAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'supervisor',
+        'store',
+        'checked_in_at',
+        'checked_out_at',
+        'check_in_lat',
+        'check_in_lng',
+    )
+    list_filter = ('checked_in_at',)
+    search_fields = ('supervisor__user__email', 'store__name', 'store__code')
+    raw_id_fields = ('supervisor', 'store')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(TrainingVideo)

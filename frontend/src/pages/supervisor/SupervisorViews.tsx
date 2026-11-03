@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Download, FileSpreadsheet } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Download, FileSpreadsheet, MapPin } from 'lucide-react'
 import {
   Avatar,
   Button,
@@ -16,6 +16,13 @@ import { calculateSupervisorIncentive, formatPkr } from '../../lib/incentives'
 import { useKpiConfigSync } from '../../lib/kpiConfig'
 import { findCreatedStore, useCreatedStores } from '../../lib/storeRegistry'
 import {
+  checkInWithGeo,
+  checkOutWithGeo,
+  fetchSupervisorVisits,
+  visitApiErrorMessage,
+  type SupervisorStoreVisit,
+} from '../../lib/supervisorVisitApi'
+import {
   downloadSupervisorBaReportsExcel,
   fetchMySupervisorOverview,
   fetchSupervisorOverview,
@@ -25,6 +32,7 @@ import {
   type Supervisor,
   type SupervisorOverview,
 } from '../../lib/supervisors'
+import { SupervisorFaceCheckInModal } from './SupervisorFaceCheckInModal'
 
 /** The sections of a supervisor's view. Used in their own portal and on Head Office's supervisor page. */
 
@@ -221,6 +229,15 @@ export function SupervisorSummary({
   )
 }
 
+function formatVisitTime(iso: string | null | undefined) {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return iso
+  }
+}
+
 export function SupervisorStoreCards({
   supervisor,
   mode = 'ho',
@@ -230,6 +247,59 @@ export function SupervisorStoreCards({
 }) {
   useCreatedStores()
   const { stores } = useLiveOverview(supervisor, mode)
+  const canVisit = mode === 'me'
+
+  const [openVisit, setOpenVisit] = useState<SupervisorStoreVisit | null>(null)
+  const [todayVisits, setTodayVisits] = useState<SupervisorStoreVisit[]>([])
+  const [checkInStore, setCheckInStore] = useState<{ id: number; name: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const reloadVisits = useCallback(() => {
+    if (!canVisit) return
+    void fetchSupervisorVisits()
+      .then((data) => {
+        setOpenVisit(data.openVisit)
+        setTodayVisits(data.visits || [])
+      })
+      .catch(() => {
+        /* keep last known */
+      })
+  }, [canVisit])
+
+  useEffect(() => {
+    reloadVisits()
+  }, [reloadVisits])
+
+  const handleFaceConfirmed = async (photo: Blob) => {
+    if (!checkInStore) return
+    setBusy(true)
+    setActionError(null)
+    try {
+      const visit = await checkInWithGeo(checkInStore.id, photo)
+      setOpenVisit(visit)
+      setCheckInStore(null)
+      reloadVisits()
+    } catch (err) {
+      setActionError(visitApiErrorMessage(err, 'Check-in failed.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleCheckOut = async (visitId?: number) => {
+    setBusy(true)
+    setActionError(null)
+    try {
+      await checkOutWithGeo(visitId)
+      setOpenVisit(null)
+      reloadVisits()
+    } catch (err) {
+      setActionError(visitApiErrorMessage(err, 'Check-out failed.'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   if (stores.length === 0) {
     return (
@@ -240,55 +310,149 @@ export function SupervisorStoreCards({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {stores.map((s) => {
-        const details = findCreatedStore(s.id)
-        return (
-          <Card key={s.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold text-slate-900">
-                  #{s.id} {s.name}
+    <div className="space-y-4">
+      {canVisit && openVisit ? (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Currently checked in
+              </div>
+              <div className="mt-0.5 font-semibold text-slate-900">
+                {openVisit.storeName}
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  since {formatVisitTime(openVisit.checkedInAt)}
+                </span>
+              </div>
+            </div>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy}
+              onClick={() => void handleCheckOut(openVisit.id)}
+            >
+              {busy ? 'Checking out…' : 'Check out'}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {actionError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {actionError}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {stores.map((s) => {
+          const details = findCreatedStore(s.id)
+          const isHere = openVisit?.storeId === s.id
+          const storeVisitsToday = todayVisits.filter((v) => v.storeId === s.id)
+          return (
+            <Card key={s.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-slate-900">
+                    #{s.id} {s.name}
+                  </div>
+                  <div className="text-xs text-slate-500">{s.city}</div>
                 </div>
-                <div className="text-xs text-slate-500">{s.city}</div>
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  {isHere ? <StatusBadge status="LIVE" /> : null}
+                  <StatusBadge status={s.status} />
+                  <StatusBadge status={s.footfall} />
+                </div>
               </div>
-              <div className="flex flex-wrap justify-end gap-1.5">
-                <StatusBadge status={s.status} />
-                <StatusBadge status={s.footfall} />
+
+              <div className="mt-4">
+                <div className="mb-1 flex justify-between text-xs text-slate-500">
+                  <span>BA coverage</span>
+                  <span className="font-semibold text-slate-800">{s.coverage}%</span>
+                </div>
+                <ProgressBar value={s.coverage} />
               </div>
-            </div>
 
-            <div className="mt-4">
-              <div className="mb-1 flex justify-between text-xs text-slate-500">
-                <span>BA coverage</span>
-                <span className="font-semibold text-slate-800">{s.coverage}%</span>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <Stat label="Engagement" value={`${s.engagement}%`} />
+                <Stat label="Conversion" value={`${s.conversion}%`} />
+                <Stat label="Footfall today" value={s.todayFootfall.toLocaleString()} />
               </div>
-              <ProgressBar value={s.coverage} />
-            </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <Stat label="Engagement" value={`${s.engagement}%`} />
-              <Stat label="Conversion" value={`${s.conversion}%`} />
-              <Stat label="Footfall today" value={s.todayFootfall.toLocaleString()} />
-            </div>
+              <dl className="mt-4 space-y-1.5 text-xs">
+                <Row label="Peak hours" value={s.peak.join(' · ') || '—'} />
+                <Row
+                  label="Ambassadors"
+                  value={
+                    s.assigned.length
+                      ? s.assigned
+                          .map((a) => (a.code ? `${a.code} · ${a.name}` : a.name))
+                          .join(', ')
+                      : 'None assigned'
+                  }
+                />
+                {details && <Row label="Address" value={details.address} />}
+              </dl>
 
-            <dl className="mt-4 space-y-1.5 text-xs">
-              <Row label="Peak hours" value={s.peak.join(' · ') || '—'} />
-              <Row
-                label="Ambassadors"
-                value={
-                  s.assigned.length
-                    ? s.assigned
-                        .map((a) => (a.code ? `${a.code} · ${a.name}` : a.name))
-                        .join(', ')
-                    : 'None assigned'
-                }
-              />
-              {details && <Row label="Address" value={details.address} />}
-            </dl>
-          </Card>
-        )
-      })}
+              {canVisit ? (
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  {storeVisitsToday.length > 0 ? (
+                    <ul className="mb-3 space-y-1 text-xs text-slate-600">
+                      {storeVisitsToday.map((v) => (
+                        <li key={v.id} className="flex items-center gap-1.5">
+                          <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                          <span>
+                            {formatVisitTime(v.checkedInAt)}
+                            {' → '}
+                            {v.checkedOutAt ? formatVisitTime(v.checkedOutAt) : 'open'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {isHere ? (
+                    <Button
+                      variant="danger"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={() => void handleCheckOut(openVisit?.id)}
+                    >
+                      Check out of this store
+                    </Button>
+                  ) : (
+                    <Button
+                      className="w-full"
+                      disabled={busy || !!openVisit}
+                      title={
+                        openVisit
+                          ? `Check out of ${openVisit.storeName} first`
+                          : undefined
+                      }
+                      onClick={() => {
+                        setActionError(null)
+                        setCheckInStore({ id: s.id, name: s.name })
+                      }}
+                    >
+                      {openVisit ? 'Finish other visit first' : 'Check in'}
+                    </Button>
+                  )}
+                </div>
+              ) : null}
+            </Card>
+          )
+        })}
+      </div>
+
+      {checkInStore ? (
+        <SupervisorFaceCheckInModal
+          open
+          storeName={checkInStore.name}
+          busy={busy}
+          onClose={() => {
+            if (!busy) setCheckInStore(null)
+          }}
+          onConfirmed={(photo) => void handleFaceConfirmed(photo)}
+        />
+      ) : null}
     </div>
   )
 }

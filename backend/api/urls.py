@@ -37,6 +37,11 @@ from .supervisor_views import (
     supervisor_me_reports,
     supervisor_me_stock_matrix,
 )
+from .supervisor_visit_views import (
+    supervisor_me_visit_check_in,
+    supervisor_me_visit_check_out,
+    supervisor_me_visits,
+)
 from .incentive_views import (
     ba_my_incentive,
     incentive_kpi_settings,
@@ -110,6 +115,17 @@ urlpatterns = [
     path('supervisor/me/report-dates/', supervisor_me_report_dates, name='supervisor-me-report-dates'),
     path('supervisor/me/reports/', supervisor_me_reports, name='supervisor-me-reports'),
     path('supervisor/me/stock-matrix/', supervisor_me_stock_matrix, name='supervisor-me-stock-matrix'),
+    path('supervisor/me/visits/', supervisor_me_visits, name='supervisor-me-visits'),
+    path(
+        'supervisor/me/visits/check-in/',
+        supervisor_me_visit_check_in,
+        name='supervisor-me-visit-check-in',
+    ),
+    path(
+        'supervisor/me/visits/check-out/',
+        supervisor_me_visit_check_out,
+        name='supervisor-me-visit-check-out',
+    ),
     path('shopper/store/<slug:slug>/', shopper_store_lookup, name='shopper-store-lookup'),
     path(
         'shopper/store/<slug:slug>/rewards/',

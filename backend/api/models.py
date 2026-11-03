@@ -5,6 +5,7 @@ import qrcode
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
+from django.utils import timezone
 
 from .codes import normalize_code, normalize_store_code, save_with_code, uniquify_store_code
 
@@ -642,6 +643,60 @@ class Supervisor(models.Model):
             for other in Supervisor.objects.exclude(pk=self.pk).filter(stores__id__in=ids).distinct():
                 other.stores.remove(*ids)
         self.stores.set(ids)
+
+
+def supervisor_visit_photo_upload_to(instance, filename: str) -> str:
+    """Store check-in photos under media/supervisor/<supervisor_id>/."""
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'jpg'
+    if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+        ext = 'jpg'
+    stamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+    return f'supervisor/{instance.supervisor_id}/{stamp}_{instance.store_id}.{ext}'
+
+
+class SupervisorStoreVisit(models.Model):
+    """
+    Supervisor physical store visit: face-gated check-in (GPS + photo), GPS check-out.
+    One open (not checked-out) visit per supervisor at a time; history is append-only.
+    """
+
+    supervisor = models.ForeignKey(
+        Supervisor,
+        on_delete=models.CASCADE,
+        related_name='store_visits',
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name='supervisor_visits',
+    )
+    checked_in_at = models.DateTimeField(db_index=True)
+    checked_out_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    check_in_lat = models.FloatField()
+    check_in_lng = models.FloatField()
+    check_in_accuracy_m = models.FloatField(null=True, blank=True)
+    check_out_lat = models.FloatField(null=True, blank=True)
+    check_out_lng = models.FloatField(null=True, blank=True)
+    check_out_accuracy_m = models.FloatField(null=True, blank=True)
+    check_in_photo = models.ImageField(upload_to=supervisor_visit_photo_upload_to)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-checked_in_at']
+        indexes = [
+            models.Index(fields=['supervisor', 'checked_out_at']),
+            models.Index(fields=['supervisor', 'store', 'checked_in_at']),
+        ]
+        # One-open-visit is enforced in supervisor_visit_views (MySQL lacks partial unique).
+
+    def __str__(self):
+        state = 'open' if self.checked_out_at is None else 'closed'
+        return f'{self.supervisor_id} → store {self.store_id} ({state})'
+
+    @property
+    def is_open(self) -> bool:
+        return self.checked_out_at is None
 
 
 class BaIncentivePayout(models.Model):
