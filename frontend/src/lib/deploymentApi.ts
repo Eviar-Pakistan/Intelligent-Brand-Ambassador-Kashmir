@@ -116,6 +116,10 @@ export type AttendanceDayRow = {
   shift: string
   checkedInAt: string | null
   checkedOutAt: string | null
+  checkInLat?: number | null
+  checkInLng?: number | null
+  checkOutLat?: number | null
+  checkOutLng?: number | null
   status: 'Present' | 'Absent' | 'Scheduled' | string
 }
 

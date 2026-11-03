@@ -15,7 +15,7 @@ import {
   TableScroll,
   Tabs,
 } from '../../components/ui'
-import { Check, Copy, Download, ExternalLink, FileSpreadsheet, Target, Upload, UserPlus } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, FileSpreadsheet, MapPin, Target, Upload, UserPlus } from 'lucide-react'
 import {
   baAccessUrl,
   createBaAccountAsync,
@@ -1887,7 +1887,7 @@ export function AmbassadorProfilePage() {
             ) : attendanceRows.length === 0 ? (
               <p className="py-6 text-center text-sm text-slate-500">No attendance records yet.</p>
             ) : (
-              <TableScroll minWidth={560} className="max-h-80 overflow-y-auto">
+              <TableScroll minWidth={640} className="max-h-80 overflow-y-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-white text-xs text-slate-500 uppercase">
                     <tr>
@@ -1895,11 +1895,23 @@ export function AmbassadorProfilePage() {
                       <th className="pb-2 pr-3 font-medium">Store</th>
                       <th className="pb-2 pr-3 font-medium">Shift</th>
                       <th className="pb-2 pr-3 font-medium">In / Out</th>
+                      <th className="pb-2 pr-3 font-medium">Location</th>
                       <th className="pb-2 font-medium">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {attendanceRows.map((row) => (
+                    {attendanceRows.map((row) => {
+                      const hasIn =
+                        row.checkInLat != null &&
+                        row.checkInLng != null &&
+                        Number.isFinite(Number(row.checkInLat)) &&
+                        Number.isFinite(Number(row.checkInLng))
+                      const hasOut =
+                        row.checkOutLat != null &&
+                        row.checkOutLng != null &&
+                        Number.isFinite(Number(row.checkOutLat)) &&
+                        Number.isFinite(Number(row.checkOutLng))
+                      return (
                       <tr key={row.date} className="border-t border-slate-100">
                         <td className="py-2.5 pr-3">
                           <div className="font-medium">{row.day}</div>
@@ -1917,6 +1929,38 @@ export function AmbassadorProfilePage() {
                         <td className="py-2.5 pr-3 tabular-nums text-slate-600 whitespace-nowrap">
                           {formatShiftClock(row.checkedInAt)} → {formatShiftClock(row.checkedOutAt)}
                         </td>
+                        <td className="py-2.5 pr-3">
+                          {hasIn || hasOut ? (
+                            <div className="flex items-center gap-2">
+                              {hasIn ? (
+                                <a
+                                  href={`https://www.google.com/maps?q=${Number(row.checkInLat)},${Number(row.checkInLng)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Open check-in on Google Maps"
+                                  className="inline-flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-brand-600 transition hover:bg-brand-50 hover:text-brand-700"
+                                >
+                                  <MapPin size={16} />
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide">In</span>
+                                </a>
+                              ) : null}
+                              {hasOut ? (
+                                <a
+                                  href={`https://www.google.com/maps?q=${Number(row.checkOutLat)},${Number(row.checkOutLng)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Open check-out on Google Maps"
+                                  className="inline-flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-slate-600 transition hover:bg-slate-100 hover:text-navy-900"
+                                >
+                                  <MapPin size={16} />
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide">Out</span>
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
                         <td className="py-2.5">
                           <StatusBadge
                             status={
@@ -1929,7 +1973,8 @@ export function AmbassadorProfilePage() {
                           />
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </TableScroll>

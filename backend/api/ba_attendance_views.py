@@ -289,6 +289,10 @@ def upsert_attendance_from_shift(shift: ShiftAssignment) -> BaAttendanceDay | No
             'shift_label': shift.shift_label or '',
             'checked_in_at': shift.checked_in_at,
             'checked_out_at': shift.checked_out_at,
+            'check_in_lat': shift.check_in_lat,
+            'check_in_lng': shift.check_in_lng,
+            'check_out_lat': shift.check_out_lat,
+            'check_out_lng': shift.check_out_lng,
             'early_leave_reason': shift.early_leave_reason or '',
         },
     )
@@ -418,12 +422,20 @@ def build_attendance_chart(
         shift_label = fallback_label
         checked_in = None
         checked_out = None
+        check_in_lat = None
+        check_in_lng = None
+        check_out_lat = None
+        check_out_lng = None
 
         if log:
             store = log.store
             shift_label = log.shift_label or (cover.shift_label if cover else fallback_label)
             checked_in = log.checked_in_at
             checked_out = log.checked_out_at
+            check_in_lat = log.check_in_lat
+            check_in_lng = log.check_in_lng
+            check_out_lat = log.check_out_lat
+            check_out_lng = log.check_out_lng
         elif cover:
             store = cover.store
             shift_label = cover.shift_label or fallback_label
@@ -433,8 +445,22 @@ def build_attendance_chart(
                 if cin_day == today:
                     checked_in = cover.checked_in_at
                     checked_out = cover.checked_out_at
+                    check_in_lat = cover.check_in_lat
+                    check_in_lng = cover.check_in_lng
+                    check_out_lat = cover.check_out_lat
+                    check_out_lng = cover.check_out_lng
         elif fallback_store:
             store = fallback_store
+
+        # Fallback: GPS still on the covering shift for this calendar day.
+        if cover and (check_in_lat is None or check_out_lat is None):
+            if cover.checked_in_at and timezone.localtime(cover.checked_in_at).date() == d:
+                if check_in_lat is None:
+                    check_in_lat = cover.check_in_lat
+                    check_in_lng = cover.check_in_lng
+                if check_out_lat is None and cover.checked_out_at:
+                    check_out_lat = cover.check_out_lat
+                    check_out_lng = cover.check_out_lng
 
         if store:
             store_name = store.name
@@ -456,6 +482,14 @@ def build_attendance_chart(
         elif day_status == 'Absent':
             absent_count += 1
 
+        # Only expose coords when that clock exists for the day.
+        if not checked_in:
+            check_in_lat = None
+            check_in_lng = None
+        if not checked_out:
+            check_out_lat = None
+            check_out_lng = None
+
         results.append(
             {
                 'date': d.isoformat(),
@@ -466,6 +500,10 @@ def build_attendance_chart(
                 'shift': shift_label,
                 'checkedInAt': checked_in.isoformat() if checked_in else None,
                 'checkedOutAt': checked_out.isoformat() if checked_out else None,
+                'checkInLat': check_in_lat,
+                'checkInLng': check_in_lng,
+                'checkOutLat': check_out_lat,
+                'checkOutLng': check_out_lng,
                 'status': day_status,
             }
         )
