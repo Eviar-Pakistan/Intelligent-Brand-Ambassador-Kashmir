@@ -3,7 +3,7 @@
  */
 
 import { apiRequest, isApiAuthenticated } from './api'
-import { readGeo } from './baAttendanceApi'
+import { readGeoRequired } from './baAttendanceApi'
 
 export type DailyReportRow = {
   id: string
@@ -116,7 +116,7 @@ export async function submitBaDailyReportApi(input: {
   /** Applied when checkout is stamped on final report submit. */
   earlyLeaveReason?: string
 }) {
-  const geo = await readGeo()
+  const geo = await readGeoRequired()
 
   return apiRequest('/api/ba/daily-report/', {
     method: 'POST',

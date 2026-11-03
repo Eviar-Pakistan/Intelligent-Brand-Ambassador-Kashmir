@@ -1,4 +1,4 @@
-import { apiRequest } from './api'
+import { apiRequest, ApiError } from './api'
 
 export type BaAttendanceType = 'store' | 'training'
 
@@ -60,23 +60,113 @@ export type BaTodayShiftResponse = {
   }
 }
 
-export function readGeo(): Promise<{ latitude?: number; longitude?: number; accuracy?: number }> {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({})
+export type GeoCoords = {
+  latitude: number
+  longitude: number
+  accuracy?: number
+}
+
+/** Thrown when GPS is required but unavailable. */
+export class GeoRequiredError extends Error {
+  code: 'unsupported' | 'permission' | 'unavailable' | 'timeout'
+
+  constructor(code: GeoRequiredError['code'], message: string) {
+    super(message)
+    this.name = 'GeoRequiredError'
+    this.code = code
+  }
+}
+
+const LOCATION_OFF_MSG =
+  'Location access is off or blocked. Turn on location for this browser/app, allow access when prompted, then try again.'
+
+const LOCATION_TIMEOUT_MSG =
+  'Could not get your location in time. Check that GPS/location is on and you have a signal, then try again.'
+
+const LOCATION_UNAVAILABLE_MSG =
+  'Location is unavailable right now. Turn on location services and try again.'
+
+const NETWORK_MSG =
+  'Network issue. Check your internet connection and try again.'
+
+export function isLocationOrNetworkErrorMessage(msg: string): boolean {
+  const m = (msg || '').toLowerCase()
+  return (
+    m.includes('location') ||
+    m.includes('gps') ||
+    m.includes('network issue') ||
+    m.includes('internet') ||
+    m.includes('failed to fetch')
+  )
+}
+
+export function readGeoRequired(): Promise<GeoCoords> {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      reject(
+        new GeoRequiredError(
+          'unsupported',
+          'This device/browser does not support location. Use a phone or browser with GPS enabled.',
+        ),
+      )
       return
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) =>
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        }),
-      () => resolve({}),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords
+        if (
+          typeof latitude !== 'number' ||
+          typeof longitude !== 'number' ||
+          Number.isNaN(latitude) ||
+          Number.isNaN(longitude)
+        ) {
+          reject(new GeoRequiredError('unavailable', LOCATION_UNAVAILABLE_MSG))
+          return
+        }
+        resolve({ latitude, longitude, accuracy })
+      },
+      (err) => {
+        const code = err?.code
+        if (code === 1) {
+          // PERMISSION_DENIED
+          reject(new GeoRequiredError('permission', LOCATION_OFF_MSG))
+          return
+        }
+        if (code === 3) {
+          // TIMEOUT
+          reject(new GeoRequiredError('timeout', LOCATION_TIMEOUT_MSG))
+          return
+        }
+        // POSITION_UNAVAILABLE or unknown
+        reject(new GeoRequiredError('unavailable', LOCATION_UNAVAILABLE_MSG))
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     )
   })
+}
+
+function mapAttendanceError(err: unknown, fallback: string): Error {
+  if (err instanceof GeoRequiredError) return err
+  if (err instanceof ApiError) {
+    return err
+  }
+  if (err instanceof TypeError) {
+    // fetch() network failures often surface as TypeError: Failed to fetch
+    return new Error(NETWORK_MSG)
+  }
+  if (err instanceof Error) {
+    const low = err.message.toLowerCase()
+    if (
+      low.includes('failed to fetch') ||
+      low.includes('networkerror') ||
+      low.includes('network request failed') ||
+      low.includes('load failed')
+    ) {
+      return new Error(NETWORK_MSG)
+    }
+    return err
+  }
+  return new Error(fallback)
 }
 
 export async function fetchBaTodayShift(token: string) {
@@ -87,25 +177,33 @@ export async function fetchBaTodayShift(token: string) {
 }
 
 export async function baCheckInApi(token: string, attendanceType: BaAttendanceType = 'store') {
-  const geo = await readGeo()
-  return apiRequest<BaTodayShiftResponse>('/api/ba/check-in/', {
-    method: 'POST',
-    auth: false,
-    body: { token, attendance_type: attendanceType, ...geo },
-  })
+  try {
+    const geo = await readGeoRequired()
+    return await apiRequest<BaTodayShiftResponse>('/api/ba/check-in/', {
+      method: 'POST',
+      auth: false,
+      body: { token, attendance_type: attendanceType, ...geo },
+    })
+  } catch (err) {
+    throw mapAttendanceError(err, 'Check-in failed')
+  }
 }
 
 export async function baCheckOutApi(token: string, earlyLeaveReason?: string) {
-  const geo = await readGeo()
-  return apiRequest<BaTodayShiftResponse>('/api/ba/check-out/', {
-    method: 'POST',
-    auth: false,
-    body: {
-      token,
-      ...geo,
-      ...(earlyLeaveReason?.trim()
-        ? { early_leave_reason: earlyLeaveReason.trim() }
-        : {}),
-    },
-  })
+  try {
+    const geo = await readGeoRequired()
+    return await apiRequest<BaTodayShiftResponse>('/api/ba/check-out/', {
+      method: 'POST',
+      auth: false,
+      body: {
+        token,
+        ...geo,
+        ...(earlyLeaveReason?.trim()
+          ? { early_leave_reason: earlyLeaveReason.trim() }
+          : {}),
+      },
+    })
+  } catch (err) {
+    throw mapAttendanceError(err, 'Check-out failed')
+  }
 }

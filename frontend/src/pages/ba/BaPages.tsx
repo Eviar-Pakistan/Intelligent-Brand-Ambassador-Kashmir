@@ -30,6 +30,7 @@ import {
   saveBaWeeklyOff,
   type BaWeeklyOffPayload,
 } from '../../lib/baWeeklyOffApi'
+import { isLocationOrNetworkErrorMessage } from '../../lib/baAttendanceApi'
 import { AssessmentReport } from './AssessmentReport'
 import { BaOnboarding } from './BaOnboarding'
 import { LockedTrainingVideo, VerbalAssessmentCapture, primaryButton } from './verbalTrainingParts'
@@ -99,6 +100,7 @@ export function BaHomePage() {
   const [checkoutWarningOpen, setCheckoutWarningOpen] = useState(false)
   const [earlyReasonOpen, setEarlyReasonOpen] = useState(false)
   const [earlyReason, setEarlyReason] = useState('')
+  const [locationHelpOpen, setLocationHelpOpen] = useState(false)
   const [weeklyOff, setWeeklyOff] = useState<BaWeeklyOffPayload | null>(null)
   const [weeklyOffLoading, setWeeklyOffLoading] = useState(false)
   const [weeklyOffBusy, setWeeklyOffBusy] = useState(false)
@@ -161,6 +163,12 @@ export function BaHomePage() {
       setWeeklyOffBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (shiftError && isLocationOrNetworkErrorMessage(shiftError)) {
+      setLocationHelpOpen(true)
+    }
+  }, [shiftError])
 
   // Reload today's shift whenever Home opens (any BA status).
   useEffect(() => {
@@ -464,6 +472,37 @@ export function BaHomePage() {
           </>
         )}
       </div>
+
+      <Modal
+        open={locationHelpOpen}
+        onClose={() => setLocationHelpOpen(false)}
+        title={
+          shiftError && shiftError.toLowerCase().includes('network')
+            ? 'Network issue'
+            : 'Location required'
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+            <MapPin className="mt-0.5 shrink-0 text-amber-600" size={22} />
+            <p className="text-sm leading-relaxed text-slate-800">
+              {shiftError ||
+                'Location access is required for check-in and check-out. Turn on location and try again.'}
+            </p>
+          </div>
+          <p className="text-xs text-slate-500">
+            On your phone: open Settings → Location (or Site settings → Location) and allow access
+            for this browser, then tap Check In / Check Out again.
+          </p>
+          <button
+            type="button"
+            onClick={() => setLocationHelpOpen(false)}
+            className="w-full rounded-xl bg-navy-900 py-3 text-sm font-semibold text-white transition hover:bg-brand-600"
+          >
+            OK
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={earlyReasonOpen}

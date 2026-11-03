@@ -71,6 +71,110 @@ def is_weekly_off_day(ambassador_id: int, d: date) -> bool:
     return d in weekly_off_dates_for_ambassador(ambassador_id, d, d)
 
 
+def _skip_weekly_off_auto(ambassador: Ambassador) -> bool:
+    """Hiring pending / Disabled do not get auto weekly off."""
+    if ambassador.status == Ambassador.Status.ON_LEAVE:
+        return True
+    name = (ambassador.name or '').strip().lower()
+    if not name or name in ('closed', 'store closed', 'hiring pending') or 'hiring pending' in name:
+        return True
+    return False
+
+
+def ensure_weekly_off_for_ambassador(
+    ambassador: Ambassador,
+    *,
+    week_start: date | None = None,
+) -> BaWeeklyOff | None:
+    """
+    If this week has no BaWeeklyOff row, create one from preferred_weekly_off
+    (fallback: previous week's off_day). No-op for Disabled / hiring pending.
+    """
+    if _skip_weekly_off_auto(ambassador):
+        return None
+    start = week_start or week_start_monday()
+    existing = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).first()
+    if existing:
+        return existing
+
+    pref = (ambassador.preferred_weekly_off or '').strip()
+    if pref not in DAY_KEYS:
+        prev = (
+            BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start - timedelta(days=7))
+            .only('off_day')
+            .first()
+        )
+        pref = (prev.off_day if prev else '') or ''
+    if pref not in DAY_KEYS:
+        return None
+
+    return BaWeeklyOff.objects.create(
+        ambassador=ambassador,
+        week_start=start,
+        off_day=pref,
+    )
+
+
+def ensure_weekly_offs_for_ambassadors(
+    ambassadors,
+    *,
+    week_start: date | None = None,
+) -> dict[int, BaWeeklyOff]:
+    """Batch ensure current-week weekly offs; returns ambassador_id → row (existing or created)."""
+    start = week_start or week_start_monday()
+    bas = [ba for ba in ambassadors if not _skip_weekly_off_auto(ba)]
+    if not bas:
+        return {}
+    ids = [ba.id for ba in bas]
+    existing = {
+        row.ambassador_id: row
+        for row in BaWeeklyOff.objects.filter(week_start=start, ambassador_id__in=ids)
+    }
+    missing = [ba for ba in bas if ba.id not in existing]
+    if not missing:
+        return existing
+
+    prev_week = start - timedelta(days=7)
+    prev_offs = {
+        row.ambassador_id: row.off_day
+        for row in BaWeeklyOff.objects.filter(
+            week_start=prev_week,
+            ambassador_id__in=[ba.id for ba in missing],
+        ).only('ambassador_id', 'off_day')
+    }
+    to_create: list[BaWeeklyOff] = []
+    for ba in missing:
+        pref = (ba.preferred_weekly_off or '').strip()
+        if pref not in DAY_KEYS:
+            pref = (prev_offs.get(ba.id) or '').strip()
+        if pref not in DAY_KEYS:
+            continue
+        to_create.append(
+            BaWeeklyOff(
+                ambassador=ba,
+                week_start=start,
+                off_day=pref,
+            )
+        )
+    if to_create:
+        BaWeeklyOff.objects.bulk_create(to_create, ignore_conflicts=True)
+        for row in BaWeeklyOff.objects.filter(
+            week_start=start,
+            ambassador_id__in=[ba.id for ba in missing],
+        ):
+            existing[row.ambassador_id] = row
+    return existing
+
+
+def set_preferred_weekly_off(ambassador: Ambassador, off_day: str) -> None:
+    if off_day not in DAY_KEYS:
+        return
+    if (ambassador.preferred_weekly_off or '') == off_day:
+        return
+    ambassador.preferred_weekly_off = off_day
+    ambassador.save(update_fields=['preferred_weekly_off', 'updated_at'])
+
+
 def _float_or_none(v):
     if v is None or v == '':
         return None
@@ -85,6 +189,22 @@ def _geo_from_request(data) -> tuple[float | None, float | None, float | None]:
     lat = _float_or_none(data.get('latitude'))
     lng = _float_or_none(data.get('longitude'))
     accuracy = _float_or_none(data.get('accuracy'))
+    return lat, lng, accuracy
+
+
+def _require_geo(data) -> tuple[float, float, float | None] | Response:
+    """GPS is mandatory for check-in / check-out. Returns coords or an error Response."""
+    lat, lng, accuracy = _geo_from_request(data)
+    if lat is None or lng is None:
+        return Response(
+            {
+                'detail': (
+                    'Location is required for check-in and check-out. '
+                    'Turn on location access and try again.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     return lat, lng, accuracy
 
 
@@ -226,6 +346,11 @@ def build_attendance_chart(
         live = _today_shift_for(ambassador)
         if live and (live.checked_in_at or live.checked_out_at):
             upsert_attendance_from_shift(live)
+
+    # Auto-carry preferred weekly off into the current week when this range includes it.
+    current_week = week_start_monday(today)
+    if start <= current_week + timedelta(days=6) and end >= current_week:
+        ensure_weekly_off_for_ambassador(ambassador, week_start=current_week)
 
     query_end = max(end, today)
     logs = {
@@ -703,7 +828,7 @@ def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None 
                 'selectable': d >= today,
             }
         )
-    row = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).first()
+    row = ensure_weekly_off_for_ambassador(ambassador, week_start=start)
     return {
         'weekStart': start.isoformat(),
         'weekEnd': (start + timedelta(days=6)).isoformat(),
@@ -711,6 +836,7 @@ def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None 
         'days': days,
         'offDay': row.off_day if row else None,
         'offDate': row.off_date.isoformat() if row else None,
+        'preferredOffDay': (ambassador.preferred_weekly_off or None) or (row.off_day if row else None),
         # Kept for older clients; BA may change the day within the same week.
         'locked': False,
         'status': row.off_day if row else 'Not set',
@@ -766,19 +892,27 @@ def ba_weekly_off(request):
         )
 
     existing = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).first()
+    created = False
     if existing:
-        if existing.off_day == off_day:
-            return Response(_weekly_off_week_payload(ambassador, week_start=start))
-        existing.off_day = off_day
-        existing.save(update_fields=['off_day', 'updated_at'])
-        return Response(_weekly_off_week_payload(ambassador, week_start=start))
+        if existing.off_day != off_day:
+            existing.off_day = off_day
+            existing.save(update_fields=['off_day', 'updated_at'])
+    else:
+        BaWeeklyOff.objects.create(
+            ambassador=ambassador,
+            week_start=start,
+            off_day=off_day,
+        )
+        created = True
 
-    BaWeeklyOff.objects.create(
-        ambassador=ambassador,
-        week_start=start,
-        off_day=off_day,
+    # Standing preference drives auto-carry into future weeks.
+    set_preferred_weekly_off(ambassador, off_day)
+    ambassador.refresh_from_db(fields=['preferred_weekly_off'])
+    payload = _weekly_off_week_payload(ambassador, week_start=start)
+    return Response(
+        payload,
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
-    return Response(_weekly_off_week_payload(ambassador, week_start=start), status=status.HTTP_201_CREATED)
 
 
 def build_weekly_off_dashboard(*, town: str | None = None, store_name: str | None = None, store_ids: list[int] | None = None) -> dict:
@@ -804,13 +938,11 @@ def build_weekly_off_dashboard(*, town: str | None = None, store_name: str | Non
     if store_name:
         bas = bas.filter(store__name__iexact=store_name)
 
-    offs = {
-        row.ambassador_id: row
-        for row in BaWeeklyOff.objects.filter(week_start=start, ambassador_id__in=bas.values_list('id', flat=True))
-    }
+    bas_list = list(bas)
+    offs = ensure_weekly_offs_for_ambassadors(bas_list, week_start=start)
 
     rows = []
-    for ba in bas:
+    for ba in bas_list:
         name = (ba.name or '').strip()
         low = name.lower()
         if not name or low in ('closed', 'store closed', 'hiring pending') or 'hiring pending' in low:
@@ -1136,7 +1268,8 @@ def list_user_interceptions(request):
 def ba_check_in(request):
     """
     POST /api/ba/check-in/
-    Body: { token, attendance_type?: 'store'|'training', latitude?, longitude?, accuracy? }
+    Body: { token, attendance_type?: 'store'|'training', latitude, longitude, accuracy? }
+    GPS latitude/longitude are required.
     """
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
@@ -1169,7 +1302,10 @@ def ba_check_in(request):
     if shift.checked_in_at:
         return Response(serialize_ba_shift(shift, ambassador))
 
-    lat, lng, accuracy = _geo_from_request(request.data)
+    geo = _require_geo(request.data)
+    if isinstance(geo, Response):
+        return geo
+    lat, lng, accuracy = geo
 
     shift.checked_in_at = timezone.now()
     shift.check_in_lat = lat
@@ -1200,7 +1336,7 @@ def ba_check_in(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def ba_check_out(request):
-    """POST /api/ba/check-out/  Body: { token, early_leave_reason?, latitude?, longitude?, accuracy? }"""
+    """POST /api/ba/check-out/  Body: { token, early_leave_reason?, latitude, longitude, accuracy? }. GPS required."""
     ambassador = _ambassador_from_token(request.data.get('token'))
     if not ambassador:
         return Response({'detail': 'Invalid or missing invite token.'}, status=status.HTTP_404_NOT_FOUND)
@@ -1241,7 +1377,10 @@ def ba_check_out(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    lat, lng, accuracy = _geo_from_request(request.data)
+    geo = _require_geo(request.data)
+    if isinstance(geo, Response):
+        return geo
+    lat, lng, accuracy = geo
     attendance_type = (shift.ba_attendance_type or '').strip().lower()
 
     shift.checked_out_at = timezone.now()
@@ -1362,8 +1501,11 @@ def ba_submit_daily_report(request):
         )
 
     # Checkout clock is set when the BA submits the last report (not at stock step).
-    lat, lng, accuracy = _geo_from_request(request.data)
     if not shift.checked_out_at:
+        geo = _require_geo(request.data)
+        if isinstance(geo, Response):
+            return geo
+        lat, lng, accuracy = geo
         shift.checked_out_at = timezone.now()
         shift.check_out_lat = lat
         shift.check_out_lng = lng
@@ -1382,6 +1524,7 @@ def ba_submit_daily_report(request):
         upsert_attendance_from_shift(shift)
     else:
         # Fill GPS if checkout already stamped but location was never stored.
+        lat, lng, accuracy = _geo_from_request(request.data)
         geo_fields: list[str] = []
         if shift.check_out_lat is None and lat is not None:
             shift.check_out_lat = lat

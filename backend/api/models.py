@@ -383,6 +383,12 @@ class Ambassador(models.Model):
         default='',
         help_text='Reason when status is Disabled (e.g. Weekly Off, Sick Leave).',
     )
+    preferred_weekly_off = models.CharField(
+        max_length=3,
+        blank=True,
+        default='',
+        help_text='Standing weekly off day (Mon…Sun). Auto-copied into each new week until the BA changes it.',
+    )
     invite_token = models.CharField(max_length=64, unique=True, blank=True)
     overall_score = models.FloatField(null=True, blank=True)
     report_json = models.JSONField(default=dict, blank=True)

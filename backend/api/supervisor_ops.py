@@ -11,7 +11,6 @@ from django.utils import timezone
 from .models import (
     Ambassador,
     BaDailyReport,
-    BaWeeklyOff,
     Consumer,
     ShiftAssignment,
     Store,
@@ -340,13 +339,9 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
 
     month = today.strftime('%Y-%m')
     week_start = today - timedelta(days=today.weekday())
-    weekly_offs = {
-        row.ambassador_id: row
-        for row in BaWeeklyOff.objects.filter(
-            week_start=week_start,
-            ambassador_id__in=[ba.id for ba in ambassadors],
-        ).only('ambassador_id', 'week_start', 'off_day')
-    }
+    from .ba_attendance_views import ensure_weekly_offs_for_ambassadors
+
+    weekly_offs = ensure_weekly_offs_for_ambassadors(ambassadors, week_start=week_start)
     for ba in ambassadors:
         sid = ba.store_id if ba.store_id in store_ids else shift_home.get(ba.id)
         store = next((s for s in stores if s.id == sid), ba.store)
