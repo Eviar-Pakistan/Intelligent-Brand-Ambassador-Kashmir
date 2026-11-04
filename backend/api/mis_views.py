@@ -422,8 +422,14 @@ def mis_patch_ambassador(request, ambassador_id: int):
         'city': ba.city,
         'phone': ba.phone,
         'email': ba.email,
-        'checkedInAt': (att.checked_in_at or (shift.checked_in_at if shift else None)),
-        'checkedOutAt': (att.checked_out_at or (shift.checked_out_at if shift else None)),
+        'checkedInAt': (
+            (att.checked_in_at if att else None)
+            or (shift.checked_in_at if shift else None)
+        ),
+        'checkedOutAt': (
+            (att.checked_out_at if att else None)
+            or (shift.checked_out_at if shift else None)
+        ),
     }
     if before['checkedInAt']:
         before['checkedInAt'] = before['checkedInAt'].isoformat()
