@@ -17,12 +17,14 @@ import {
 } from '../../lib/earlyCheckoutApi'
 import { peekDailyReportsCache, setDailyReportsCache } from '../../lib/hoDataCache'
 import {
+  canolaSalesFields,
   competitiveFields,
   DEFAULT_OTHER_BRANDS,
   gheeSalesFields,
   interceptionFields,
   oilSalesFields,
   STOCK_OPTIONS,
+  stockCanolaFields,
   stockGheeFields,
   stockOilFields,
   stockWaadiFields,
@@ -50,6 +52,7 @@ const STOCK_SECTIONS: { title: string; fields: FieldDef[] }[] = [
   { title: 'Kashmir Cooking Oil', fields: stockOilFields },
   { title: 'Kashmir Banaspati', fields: stockGheeFields },
   { title: 'Waadi Banaspati', fields: stockWaadiFields },
+  { title: 'Kashmir Canola', fields: stockCanolaFields },
 ]
 
 const SALES_SECTIONS: { title: string; fields: FieldDef[] }[] = [
@@ -59,6 +62,7 @@ const SALES_SECTIONS: { title: string; fields: FieldDef[] }[] = [
   { title: 'Kashmir Cooking Oil', fields: oilSalesFields },
   { title: 'Kashmir Banaspati', fields: gheeSalesFields },
   { title: 'Waadi Banaspati', fields: waadiSalesFields },
+  { title: 'Kashmir Canola', fields: canolaSalesFields },
 ]
 
 const STOCK_FIELDS: FieldDef[] = STOCK_SECTIONS.flatMap((s) => s.fields)

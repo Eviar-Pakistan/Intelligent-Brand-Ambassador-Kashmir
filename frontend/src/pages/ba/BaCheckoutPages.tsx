@@ -14,10 +14,12 @@ import {
   DEFAULT_OTHER_BRANDS,
   SESSION_KEYS,
   STOCK_OPTIONS,
+  canolaSalesFields,
   competitiveFields,
   gheeSalesFields,
   interceptionFields,
   oilSalesFields,
+  stockCanolaFields,
   stockGheeFields,
   stockOilFields,
   stockWaadiFields,
@@ -164,6 +166,8 @@ function categoryFromSkuLabel(sku: string): ProductCategory | null {
   const t = sku.trim().toLowerCase()
   if (!t) return null
   if (baPerformanceCategories.includes(sku as ProductCategory)) return sku as ProductCategory
+  // Canola before generic "oil" so it is not mapped to Cooking Oil.
+  if (t.includes('canola') || t.startsWith('canola')) return 'Kashmir Canola'
   if (t.includes('waadi') || t.startsWith('wbp')) return 'Waadi Banaspati'
   if (t.includes('banaspati') || t.startsWith('kbp')) return 'Kashmir Banaspati'
   if (t.includes('cooking oil') || t.startsWith('kpgo') || t.includes('oil')) return 'Kashmir Cooking Oil'
@@ -228,6 +232,9 @@ export function BaDailySalesPage() {
     }
     if (showCategory(targetCats, 'Waadi Banaspati')) {
       sections.push({ title: 'Waadi Banaspati', fields: waadiSalesFields })
+    }
+    if (showCategory(targetCats, 'Kashmir Canola')) {
+      sections.push({ title: 'Kashmir Canola', fields: canolaSalesFields })
     }
     return sections
   }, [targetCats])
@@ -319,12 +326,16 @@ export function BaStockReportPage() {
     if (showCategory(targetCats, 'Waadi Banaspati')) {
       sections.push({ title: 'Waadi Banaspati', fields: stockWaadiFields })
     }
+    if (showCategory(targetCats, 'Kashmir Canola')) {
+      sections.push({ title: 'Kashmir Canola', fields: stockCanolaFields })
+    }
     return sections.length
       ? sections
       : [
           { title: 'Kashmir Cooking Oil', fields: stockOilFields },
           { title: 'Kashmir Banaspati', fields: stockGheeFields },
           { title: 'Waadi Banaspati', fields: stockWaadiFields },
+          { title: 'Kashmir Canola', fields: stockCanolaFields },
         ]
   }, [targetCats])
 

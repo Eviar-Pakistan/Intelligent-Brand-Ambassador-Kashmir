@@ -41,6 +41,13 @@ export const WAADI_PACK_KEYS = [
   'wbpBkt16',
 ] as const
 
+export const CANOLA_PACK_KEYS = [
+  'canolaBox1x5',
+  'canolaPouch1',
+  'canolaBtl3',
+  'canolaBtl45',
+] as const
+
 /** kg (or LTR as kg) per form unit — BA still enters units; category totals convert here. */
 export const PACK_KG_PER_UNIT: Record<string, number> = {
   kpgoCan10: 10,
@@ -64,6 +71,10 @@ export const PACK_KG_PER_UNIT: Record<string, number> = {
   wbpPouch1: 1,
   wbpBkt25: 2.5,
   wbpBkt16: 16,
+  canolaBox1x5: 5,
+  canolaPouch1: 1,
+  canolaBtl3: 3,
+  canolaBtl45: 4.5,
 }
 
 export const interceptionFields: FieldDef[] = [
@@ -115,6 +126,13 @@ export const waadiSalesFields: FieldDef[] = [
   // { key: 'wbpBkt16', label: `WBP 16 KG BKT${UNITS}` },
 ]
 
+export const canolaSalesFields: FieldDef[] = [
+  { key: 'canolaBox1x5', label: `Canola 1x5L Box${UNITS}` },
+  { key: 'canolaPouch1', label: `Canola 1L Pouches${UNITS}` },
+  { key: 'canolaBtl3', label: `Canola 3L Bottle${UNITS}` },
+  { key: 'canolaBtl45', label: `Canola 4.5L Bottle${UNITS}` },
+]
+
 export const stockOilFields: FieldDef[] = [
   { key: 'stockKpgoCan10', label: 'KPGO 10 LTR CAN. RED' },
   { key: 'stockKpgoBtl3', label: 'KPGO 3.0 LTR BOTTLE. RED' },
@@ -143,6 +161,13 @@ export const stockWaadiFields: FieldDef[] = [
   { key: 'stockWbpPouch1', label: 'WBP POUCH 1 KG' },
   { key: 'stockWbpBkt25', label: 'WBP 2.5 KG BKT' },
   // { key: 'stockWbpBkt16', label: 'WBP 16 KG BKT' },
+]
+
+export const stockCanolaFields: FieldDef[] = [
+  { key: 'stockCanolaBox1x5', label: 'Canola 1x5L Box' },
+  { key: 'stockCanolaPouch1', label: 'Canola 1L Pouches' },
+  { key: 'stockCanolaBtl3', label: 'Canola 3L Bottle' },
+  { key: 'stockCanolaBtl45', label: 'Canola 4.5L Bottle' },
 ]
 
 export const STOCK_OPTIONS = ['In Stock', 'Out of Stock', 'Near Out of Stock'] as const
@@ -176,11 +201,13 @@ export function normalizeSalesPayload(
   const oil = sumPackKg(out, OIL_PACK_KEYS)
   const ghee = sumPackKg(out, GHEE_PACK_KEYS)
   const waadi = sumPackKg(out, WAADI_PACK_KEYS)
-  const skuSum = oil + ghee + waadi
+  const canola = sumPackKg(out, CANOLA_PACK_KEYS)
+  const skuSum = oil + ghee + waadi + canola
 
   out.salesOil = oil > 0 ? String(oil) : ''
   out.salesGhee = ghee > 0 ? String(ghee) : ''
   out.salesWaadi = waadi > 0 ? String(waadi) : ''
+  out.salesCanola = canola > 0 ? String(canola) : ''
 
   if (skuSum > 0) {
     delete out.totalSalesLtrKg
@@ -194,6 +221,7 @@ export const stockSections: ReportSection[] = [
   { title: 'Kashmir Cooking Oil', fields: stockOilFields },
   { title: 'Kashmir Banaspati', fields: stockGheeFields },
   { title: 'Waadi Banaspati', fields: stockWaadiFields },
+  { title: 'Kashmir Canola', fields: stockCanolaFields },
 ]
 
 export const salesSections: ReportSection[] = [
@@ -203,6 +231,7 @@ export const salesSections: ReportSection[] = [
   { title: 'Kashmir Cooking Oil', fields: oilSalesFields },
   { title: 'Kashmir Banaspati', fields: gheeSalesFields },
   { title: 'Waadi Banaspati', fields: waadiSalesFields },
+  { title: 'Kashmir Canola', fields: canolaSalesFields },
 ]
 
 export const SESSION_KEYS = {

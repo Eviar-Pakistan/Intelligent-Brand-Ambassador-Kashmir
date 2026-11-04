@@ -155,7 +155,7 @@ export async function downloadSalesBulkTemplate(opts?: {
       '4. Category — one of: Kashmir Cooking Oil (KCO), Kashmir Banaspati (KBP), Waadi Banaspati (WBP), Kashmir Canola.',
     ],
     [
-      '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category). For Kashmir Canola (no packs yet), put the category name in SKU or leave SKU blank.',
+      '5. SKU — one pack from that category, OR several packs in one cell separated by commas (then Target is for the whole category). Kashmir Canola packs: Canola 1x5L Box, Canola 1L Pouches, Canola 3L Bottle, Canola 4.5L Bottle.',
     ],
     [
       '6. Same BA Code can appear on many rows — e.g. four categories (Oil / Banaspati / Waadi / Canola).',
@@ -331,7 +331,7 @@ export async function parseSalesBulkFile(file: File): Promise<SalesParseResult> 
     let sku = skuRaw
     let assignedSkus: string[] = []
     if (category && categoryHasNoSkus) {
-      // Target-only categories (e.g. Kashmir Canola) — no pack list yet.
+      // Categories with no pack catalog yet — store target against the category name.
       sku = category
       assignedSkus = []
     } else if (category && skuRaw) {

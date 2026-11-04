@@ -1906,6 +1906,10 @@ _STOCK_SKU_CATALOG: list[tuple[str, str]] = [
     ('stockWbpPouch1x5', 'WBP POUCH (1KG X 5)'),
     ('stockWbpPouch1', 'WBP POUCH 1 KG'),
     ('stockWbpBkt25', 'WBP 2.5 KG BKT'),
+    ('stockCanolaBox1x5', 'Canola 1x5L Box'),
+    ('stockCanolaPouch1', 'Canola 1L Pouches'),
+    ('stockCanolaBtl3', 'Canola 3L Bottle'),
+    ('stockCanolaBtl45', 'Canola 4.5L Bottle'),
 ]
 
 

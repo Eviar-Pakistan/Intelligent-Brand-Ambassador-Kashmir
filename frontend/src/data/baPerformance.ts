@@ -49,7 +49,7 @@ export const baPerformanceCategories: ProductCategory[] = [
 ]
 export const baPerformanceBrands = ['Kashmir', 'Waadi'] as const
 
-/** LMT SKUs — packs across KCO / KBP / WBP. Canola packs TBD (target category only for now). */
+/** LMT SKUs — packs across KCO / KBP / WBP / Canola. */
 const OIL_SKUS = [
   'KPGO 10 LTR CAN. RED',
   'KPGO 3.0 LTR BOTTLE. RED',
@@ -79,6 +79,13 @@ const WAADI_SKUS = [
   'WBP 2.5 KG BKT',
 ] as const
 
+const CANOLA_SKUS = [
+  'Canola 1x5L Box',
+  'Canola 1L Pouches',
+  'Canola 3L Bottle',
+  'Canola 4.5L Bottle',
+] as const
+
 export type ProductFilters = {
   category: ProductCategory | null
   brand: string | null
@@ -89,13 +96,13 @@ export function getSkusForCategory(category: ProductCategory | null): string[] {
   if (category === 'Kashmir Cooking Oil') return [...OIL_SKUS]
   if (category === 'Kashmir Banaspati') return [...GHEE_SKUS]
   if (category === 'Waadi Banaspati') return [...WAADI_SKUS]
-  if (category === 'Kashmir Canola') return []
-  return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
+  if (category === 'Kashmir Canola') return [...CANOLA_SKUS]
+  return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS, ...CANOLA_SKUS]
 }
 
 /** Full LMT catalog for SKU pickers. */
 export function getAllSkus(): string[] {
-  return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS]
+  return [...OIL_SKUS, ...GHEE_SKUS, ...WAADI_SKUS, ...CANOLA_SKUS]
 }
 
 /** Placeholder chart series until live target data is loaded (Top 10 style). */

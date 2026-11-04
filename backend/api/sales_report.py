@@ -32,10 +32,18 @@ WAADI_PACK_KEYS = (
     'wbpBkt16',
 )
 
+CANOLA_PACK_KEYS = (
+    'canolaBox1x5',
+    'canolaPouch1',
+    'canolaBtl3',
+    'canolaBtl45',
+)
+
 CATEGORY_PACK_KEYS = {
     'Kashmir Cooking Oil': OIL_PACK_KEYS,
     'Kashmir Banaspati': GHEE_PACK_KEYS,
     'Waadi Banaspati': WAADI_PACK_KEYS,
+    'Kashmir Canola': CANOLA_PACK_KEYS,
 }
 
 # kg (or LTR treated as kg) per form unit. BA still enters units; totals convert here.
@@ -64,6 +72,11 @@ PACK_KG_PER_UNIT: dict[str, float] = {
     'wbpPouch1': 1.0,
     'wbpBkt25': 2.5,
     'wbpBkt16': 16.0,
+    # Kashmir Canola
+    'canolaBox1x5': 5.0,
+    'canolaPouch1': 1.0,
+    'canolaBtl3': 3.0,
+    'canolaBtl45': 4.5,
 }
 
 PACK_KEY_LABELS: dict[str, str] = {
@@ -87,13 +100,17 @@ PACK_KEY_LABELS: dict[str, str] = {
     'wbpPouch1x5': 'WBP POUCH (1KG X 5)',
     'wbpPouch1': 'WBP POUCH 1 KG',
     'wbpBkt25': 'WBP 2.5 KG BKT',
+    'canolaBox1x5': 'Canola 1x5L Box',
+    'canolaPouch1': 'Canola 1L Pouches',
+    'canolaBtl3': 'Canola 3L Bottle',
+    'canolaBtl45': 'Canola 4.5L Bottle',
 }
 
 PACK_LABEL_TO_KEY: dict[str, str] = {label: key for key, label in PACK_KEY_LABELS.items()}
 
 
 def all_pack_keys() -> tuple[str, ...]:
-    return OIL_PACK_KEYS + GHEE_PACK_KEYS + WAADI_PACK_KEYS
+    return OIL_PACK_KEYS + GHEE_PACK_KEYS + WAADI_PACK_KEYS + CANOLA_PACK_KEYS
 
 
 def _f(val) -> float:
@@ -123,21 +140,24 @@ def category_sales_from_json(sales: dict | None) -> dict[str, float]:
     oil_packs = _sum_pack_kg(sales, OIL_PACK_KEYS)
     ghee_packs = _sum_pack_kg(sales, GHEE_PACK_KEYS)
     waadi_packs = _sum_pack_kg(sales, WAADI_PACK_KEYS)
+    canola_packs = _sum_pack_kg(sales, CANOLA_PACK_KEYS)
 
     oil = oil_packs if oil_packs > 0 else _f(sales.get('salesOil'))
     ghee = ghee_packs if ghee_packs > 0 else _f(sales.get('salesGhee'))
     waadi = waadi_packs if waadi_packs > 0 else _f(sales.get('salesWaadi'))
+    canola = canola_packs if canola_packs > 0 else _f(sales.get('salesCanola'))
 
     return {
         'Kashmir Cooking Oil': round(oil, 1),
         'Kashmir Banaspati': round(ghee, 1),
         'Waadi Banaspati': round(waadi, 1),
+        'Kashmir Canola': round(canola, 1),
     }
 
 
 def normalize_sales_json(sales: dict | None) -> dict:
     """
-    Derive salesOil / salesGhee / salesWaadi in kg from pack unit fields.
+    Derive salesOil / salesGhee / salesWaadi / salesCanola in kg from pack unit fields.
     Raw SKU keys stay as unit counts entered by the BA.
     """
     if not isinstance(sales, dict):
@@ -148,11 +168,13 @@ def normalize_sales_json(sales: dict | None) -> dict:
     oil = cats['Kashmir Cooking Oil']
     ghee = cats['Kashmir Banaspati']
     waadi = cats['Waadi Banaspati']
-    sku_sum = oil + ghee + waadi
+    canola = cats['Kashmir Canola']
+    sku_sum = oil + ghee + waadi + canola
 
     out['salesOil'] = oil
     out['salesGhee'] = ghee
     out['salesWaadi'] = waadi
+    out['salesCanola'] = canola
 
     # Drop manual grand total when SKU units drive the report (legacy rows may still have it).
     if sku_sum > 0:

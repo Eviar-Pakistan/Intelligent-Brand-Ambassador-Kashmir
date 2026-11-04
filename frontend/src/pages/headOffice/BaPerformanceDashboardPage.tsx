@@ -781,7 +781,7 @@ export function BaPerformanceDashboardPage() {
   }, [town, storesByTown])
 
   const skuOptions = useMemo(() => {
-    // Always offer the full 14-SKU catalog; category still filters charts.
+    // Always offer the full SKU catalog; category still filters charts.
     return getAllSkus()
   }, [])
 

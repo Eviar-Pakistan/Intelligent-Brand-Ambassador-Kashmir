@@ -47,6 +47,13 @@ WAADI_SKU_KEYS = (
     'wbpBkt16',
     'salesWaadi',
 )
+CANOLA_SKU_KEYS = (
+    'canolaBox1x5',
+    'canolaPouch1',
+    'canolaBtl3',
+    'canolaBtl45',
+    'salesCanola',
+)
 
 SKU_LABELS = {
     'kpgoCan10': 'KPGO 10 LTR CAN. RED',
@@ -72,6 +79,11 @@ SKU_LABELS = {
     'wbpPouch1': 'WBP POUCH 1 KG',
     'wbpBkt25': 'WBP 2.5 KG BKT',
     'salesWaadi': 'Sales-Waadi (KG)',
+    'canolaBox1x5': 'Canola 1x5L Box',
+    'canolaPouch1': 'Canola 1L Pouches',
+    'canolaBtl3': 'Canola 3L Bottle',
+    'canolaBtl45': 'Canola 4.5L Bottle',
+    'salesCanola': 'Sales-Canola (LTR)',
 }
 
 
@@ -331,6 +343,7 @@ def build_ba_performance_dashboard(
     oil_sales = 0.0
     ghee_sales = 0.0
     waadi_sales = 0.0
+    canola_sales = 0.0
     uncategorized_sales = 0.0
     sales_by_store: dict[str, float] = defaultdict(float)
     sales_by_sku: dict[str, float] = defaultdict(float)
@@ -352,8 +365,9 @@ def build_ba_performance_dashboard(
         oil = cats['Kashmir Cooking Oil']
         ghee = cats['Kashmir Banaspati']
         waadi = cats['Waadi Banaspati']
+        canola = cats.get('Kashmir Canola', 0.0)
         total_line = _sales_num(sales, 'totalSalesLtrKg')
-        sku_sum = oil + ghee + waadi
+        sku_sum = oil + ghee + waadi + canola
 
         # Product filter — Total Sales only counts when no category/SKU split
         if category == 'Kashmir Cooking Oil':
@@ -362,6 +376,8 @@ def build_ba_performance_dashboard(
             row_sales = ghee
         elif category == 'Waadi Banaspati':
             row_sales = waadi
+        elif category == 'Kashmir Canola':
+            row_sales = canola
         else:
             row_sales = sku_sum if sku_sum > 0 else total_line
 
@@ -369,7 +385,7 @@ def build_ba_performance_dashboard(
             # Match by label or key — convert pack units to kg
             matched = 0.0
             for key, label in SKU_LABELS.items():
-                if key in ('salesOil', 'salesGhee', 'salesWaadi'):
+                if key in ('salesOil', 'salesGhee', 'salesWaadi', 'salesCanola'):
                     continue
                 if sku.lower() in (key.lower(), label.lower()) or label.lower() == sku.lower():
                     matched += kg_for_pack_units(key, sales.get(key))
@@ -386,6 +402,7 @@ def build_ba_performance_dashboard(
             oil_sales += oil
             ghee_sales += ghee
             waadi_sales += waadi
+            canola_sales += canola
         elif total_line > 0 and not category:
             uncategorized_sales += total_line
 
@@ -397,7 +414,7 @@ def build_ba_performance_dashboard(
 
         sku_vals_added = False
         for key, label in SKU_LABELS.items():
-            if key in ('salesOil', 'salesGhee', 'salesWaadi'):
+            if key in ('salesOil', 'salesGhee', 'salesWaadi', 'salesCanola'):
                 continue
             val = kg_for_pack_units(key, sales.get(key))
             if val <= 0:
@@ -407,6 +424,8 @@ def build_ba_performance_dashboard(
             if category == 'Kashmir Banaspati' and key not in GHEE_SKU_KEYS:
                 continue
             if category == 'Waadi Banaspati' and key not in WAADI_SKU_KEYS:
+                continue
+            if category == 'Kashmir Canola' and key not in CANOLA_SKU_KEYS:
                 continue
             if sku and sku.lower() not in (key.lower(), label.lower()):
                 continue
@@ -418,13 +437,15 @@ def build_ba_performance_dashboard(
             if not sku or 'uncategor' in sku.lower() or 'total sales' in sku.lower():
                 sales_by_sku['Total Sales (uncategorized)'] += row_sales
 
-    total_sales = oil_sales + ghee_sales + waadi_sales + uncategorized_sales
+    total_sales = oil_sales + ghee_sales + waadi_sales + canola_sales + uncategorized_sales
     if category == 'Kashmir Cooking Oil':
         scoped_sales = oil_sales
     elif category == 'Kashmir Banaspati':
         scoped_sales = ghee_sales
     elif category == 'Waadi Banaspati':
         scoped_sales = waadi_sales
+    elif category == 'Kashmir Canola':
+        scoped_sales = canola_sales
     else:
         scoped_sales = sum(sales_by_store.values()) if sales_by_store else total_sales
 
@@ -494,6 +515,7 @@ def build_ba_performance_dashboard(
         {'name': 'Kashmir Cooking Oil', 'value': round(oil_sales, 1)},
         {'name': 'Kashmir Banaspati', 'value': round(ghee_sales, 1)},
         {'name': 'Waadi Banaspati', 'value': round(waadi_sales, 1)},
+        {'name': 'Kashmir Canola', 'value': round(canola_sales, 1)},
     ]
     if uncategorized_sales > 0:
         category_sales.append(
@@ -505,8 +527,7 @@ def build_ba_performance_dashboard(
         'Kashmir Cooking Oil': oil_sales,
         'Kashmir Banaspati': ghee_sales,
         'Waadi Banaspati': waadi_sales,
-        # No Canola pack keys on checkout yet — sales stay 0 until SKUs are added.
-        'Kashmir Canola': 0.0,
+        'Kashmir Canola': canola_sales,
     }
     brand_target_vs_sales = []
     for name in CATEGORY_NAMES:

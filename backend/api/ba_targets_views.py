@@ -94,8 +94,13 @@ CATEGORY_SKU_KEYS = {
         'wbpBkt16',
         'salesWaadi',
     ),
-    # Pack keys TBD — target category only for now.
-    'Kashmir Canola': (),
+    'Kashmir Canola': (
+        'canolaBox1x5',
+        'canolaPouch1',
+        'canolaBtl3',
+        'canolaBtl45',
+        'salesCanola',
+    ),
 }
 
 # Catalog pack labels per category (for default assigned SKUs when HO sets category target).
@@ -126,7 +131,12 @@ CATEGORY_PACK_LABELS = {
         'WBP POUCH 1 KG',
         'WBP 2.5 KG BKT',
     ],
-    'Kashmir Canola': [],
+    'Kashmir Canola': [
+        'Canola 1x5L Box',
+        'Canola 1L Pouches',
+        'Canola 3L Bottle',
+        'Canola 4.5L Bottle',
+    ],
 }
 
 

@@ -740,8 +740,9 @@ function UploadTargetsModal({
           <p className="text-xs text-slate-500">
             Columns: BA Code, Month, Category, SKU, Target. BA Code is required — the ambassador name
             is taken from Ambassadors automatically. Same BA Code can have many rows (e.g. all four
-            categories including Kashmir Canola). SKU must match the category — for Canola leave SKU
-            blank or use the category name (no packs yet). See sheet &quot;Categories &amp; SKUs&quot;.
+            categories including Kashmir Canola). SKU must match the category — Canola packs:
+            Canola 1x5L Box, Canola 1L Pouches, Canola 3L Bottle, Canola 4.5L Bottle. See sheet
+            &quot;Categories &amp; SKUs&quot;.
           </p>
           <Button
             variant="secondary"
