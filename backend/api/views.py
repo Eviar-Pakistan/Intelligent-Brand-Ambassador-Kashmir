@@ -416,6 +416,7 @@ def intelligence_ba_performance(request):
             sku=(q.get('sku') or None),
             sales_period=(q.get('sales_period') or 'mom'),
             target_month=(q.get('target_month') or None),
+            request=request,
         )
     )
 

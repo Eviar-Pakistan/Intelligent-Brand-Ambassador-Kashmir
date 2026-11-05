@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bar, Doughnut } from 'react-chartjs-2'
-import { ChevronDown, Download, RotateCcw, Search } from 'lucide-react'
-import { Button, Card, CardHeader, cn, StatusBadge, TableScroll } from '../../components/ui'
+import { ChevronDown, Download, MapPin, RotateCcw, Search } from 'lucide-react'
+import { Button, Card, CardHeader, cn, Modal, StatusBadge, TableScroll } from '../../components/ui'
 import {
   MONTH_ORDER,
   baPerformanceCategories,
@@ -44,6 +44,32 @@ function EmptyRow({ cols }: { cols: number }) {
       </td>
     </tr>
   )
+}
+
+function mapsHref(lat?: number | null, lng?: number | null) {
+  if (
+    lat == null ||
+    lng == null ||
+    !Number.isFinite(Number(lat)) ||
+    !Number.isFinite(Number(lng))
+  ) {
+    return null
+  }
+  return `https://www.google.com/maps?q=${Number(lat)},${Number(lng)}`
+}
+
+function formatVisitDateLabel(isoDate: string, day?: string) {
+  try {
+    const d = new Date(`${isoDate}T12:00:00`)
+    const label = d.toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
+    return { label, day: day || d.toLocaleDateString(undefined, { weekday: 'short' }) }
+  } catch {
+    return { label: isoDate, day: day || '' }
+  }
 }
 
 function mixHex(from: string, to: string, t: number) {
@@ -671,6 +697,7 @@ export function BaPerformanceDashboardPage() {
   const [downloading, setDownloading] = useState(false)
   const [hoursCity, setHoursCity] = useState<string | null>(null)
   const [targetMonth, setTargetMonth] = useState<string>(() => yearMonthFromDate(new Date()))
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
 
   const range = useMemo(
     () => dateRangeForPreset(datePreset, customFrom, customTo),
@@ -883,6 +910,7 @@ export function BaPerformanceDashboardPage() {
 
   const cityStatus = dash?.baStatus ?? null
   const attendanceTable = dash?.attendance ?? []
+  const supervisorAttendanceTable = dash?.supervisorAttendance ?? []
   const workingHoursBase = dash?.workingHours ?? null
   const isSingleDay = (dash?.range.days ?? 0) === 1
   const targetVsAchievement = dash?.targetVsAchievement
@@ -1762,6 +1790,129 @@ export function BaPerformanceDashboardPage() {
           </table>
         </TableScroll>
       </Card>
+
+      <Card padding={false}>
+        <div className="border-b border-slate-50 px-4 py-3 sm:px-5">
+          <CardHeader
+            title="Supervisor check-in / check-out"
+            subtitle={`Store visits · ${dateRangeLabel}`}
+          />
+        </div>
+        <TableScroll minWidth={920} className="max-h-80 overflow-y-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Supervisor</th>
+                <th className="px-4 py-3">Store</th>
+                <th className="px-4 py-3">Check-in</th>
+                <th className="px-4 py-3">Check-out</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supervisorAttendanceTable.map((row, idx) => {
+                const { label, day } = formatVisitDateLabel(row.date, row.day)
+                const inMap = mapsHref(row.checkInLat, row.checkInLng)
+                const outMap = mapsHref(row.checkOutLat, row.checkOutLng)
+                const photoUrl = row.checkInPhotoUrl || null
+                return (
+                  <tr
+                    key={row.id ?? `${row.supervisor}-${row.store}-${row.date}-${row.checkIn}-${idx}`}
+                    className="border-t border-slate-100 align-top"
+                  >
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-medium text-slate-900">{label}</div>
+                      <div className="text-xs text-slate-400">{day}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        {photoUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setPhotoPreviewUrl(photoUrl)}
+                            className="h-9 w-9 shrink-0 overflow-hidden rounded-full ring-1 ring-slate-200 hover:ring-brand-400"
+                            title="View check-in photo"
+                          >
+                            <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+                          </button>
+                        ) : (
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-400">
+                            {(row.supervisor || '?').slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="font-medium text-slate-900">{row.supervisor}</div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <div className="max-w-[200px] truncate font-medium text-slate-800">
+                        {row.store}
+                      </div>
+                      <div className="text-xs text-slate-400">{row.city}</div>
+                    </td>
+                    <td className="px-4 py-3 tabular-nums whitespace-nowrap">{row.checkIn}</td>
+                    <td className="px-4 py-3 tabular-nums text-slate-600 whitespace-nowrap">
+                      {row.checkOut}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {inMap ? (
+                          <a
+                            href={inMap}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
+                            title="Check-in location"
+                          >
+                            <MapPin size={14} />
+                            In
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-400">In —</span>
+                        )}
+                        {outMap ? (
+                          <a
+                            href={outMap}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
+                            title="Check-out location"
+                          >
+                            <MapPin size={14} />
+                            Out
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-400">Out —</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={row.status ?? ''} />
+                    </td>
+                  </tr>
+                )
+              })}
+              {supervisorAttendanceTable.length === 0 && <EmptyRow cols={7} />}
+            </tbody>
+          </table>
+        </TableScroll>
+      </Card>
+
+      <Modal
+        open={!!photoPreviewUrl}
+        onClose={() => setPhotoPreviewUrl(null)}
+        title="Check-in photo"
+        size="md"
+      >
+        {photoPreviewUrl ? (
+          <img
+            src={photoPreviewUrl}
+            alt="Supervisor check-in"
+            className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg"
+          />
+        ) : null}
+      </Modal>
 
       <Card padding={false}>
         <div className="border-b border-slate-50 px-4 py-3 sm:px-5">

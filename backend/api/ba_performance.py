@@ -12,7 +12,14 @@ from calendar import month_name
 from django.db.models import Q, Sum
 from django.utils import timezone
 
-from .models import Ambassador, BaDailyReport, BaTarget, ShiftAssignment, Store
+from .models import (
+    Ambassador,
+    BaDailyReport,
+    BaTarget,
+    ShiftAssignment,
+    Store,
+    SupervisorStoreVisit,
+)
 from .sales_report import category_sales_from_json, kg_for_pack_units
 
 MONTH_NAMES = list(month_name)  # index 1..12
@@ -263,6 +270,7 @@ def build_ba_performance_dashboard(
     sku: str | None = None,
     sales_period: str = 'mom',
     target_month: str | None = None,
+    request=None,
 ) -> dict:
     today = timezone.localdate()
 
@@ -639,7 +647,85 @@ def build_ba_performance_dashboard(
             store_name=store_name,
             store_ids=store_ids if (town or store_name) else None,
         ),
+        'supervisorAttendance': _supervisor_visits_block(
+            date_from=date_from,
+            date_to=date_to,
+            town=town,
+            store_name=store_name,
+            store_ids=store_ids if (town or store_name) else None,
+            request=request,
+        ),
     }
+
+
+def _visit_photo_url(request, visit: SupervisorStoreVisit) -> str | None:
+    if not visit.check_in_photo:
+        return None
+    try:
+        url = visit.check_in_photo.url
+    except ValueError:
+        return None
+    if request is not None and hasattr(request, 'build_absolute_uri'):
+        return request.build_absolute_uri(url)
+    return url
+
+
+def _supervisor_visits_block(
+    *,
+    date_from: date,
+    date_to: date,
+    town: str | None,
+    store_name: str | None,
+    store_ids: list[int] | None,
+    request=None,
+) -> list[dict]:
+    """
+    Dashboard card: one row per supervisor store visit (never averages).
+    Same day + two stores → two rows; multi-day range → every visit listed.
+    """
+    start_dt = timezone.make_aware(datetime.combine(date_from, datetime.min.time()))
+    end_dt = timezone.make_aware(datetime.combine(date_to + timedelta(days=1), datetime.min.time()))
+    qs = (
+        SupervisorStoreVisit.objects.filter(
+            checked_in_at__gte=start_dt,
+            checked_in_at__lt=end_dt,
+        )
+        .select_related('supervisor', 'supervisor__user', 'store')
+        .order_by('-checked_in_at', '-id')
+    )
+    if store_ids is not None:
+        qs = qs.filter(store_id__in=store_ids)
+    elif town:
+        qs = qs.filter(store__city__iexact=town)
+    if store_name:
+        qs = qs.filter(store__name__iexact=store_name)
+
+    rows: list[dict] = []
+    for v in qs:
+        cin_local = timezone.localtime(v.checked_in_at)
+        cin_day = cin_local.date()
+        open_visit = v.checked_out_at is None
+        rows.append(
+            {
+                'id': v.id,
+                'date': cin_day.isoformat(),
+                'day': cin_local.strftime('%a'),
+                'supervisor': (v.supervisor.name if v.supervisor_id else '') or '—',
+                'store': v.store.name if v.store_id else '—',
+                'city': (v.store.city if v.store_id else None) or '—',
+                'checkIn': _format_clock(_minutes_of_day(v.checked_in_at)),
+                'checkOut': _format_clock(
+                    _minutes_of_day(v.checked_out_at) if v.checked_out_at else None
+                ),
+                'status': 'Open' if open_visit else 'Completed',
+                'checkInLat': v.check_in_lat,
+                'checkInLng': v.check_in_lng,
+                'checkOutLat': v.check_out_lat,
+                'checkOutLng': v.check_out_lng,
+                'checkInPhotoUrl': _visit_photo_url(request, v),
+            }
+        )
+    return rows
 
 
 def _weekly_off_block(

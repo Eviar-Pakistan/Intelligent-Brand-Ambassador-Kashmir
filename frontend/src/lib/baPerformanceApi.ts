@@ -73,6 +73,24 @@ export type AttendanceRowLive = {
   status: 'Active' | 'Checked Out' | null
 }
 
+/** Supervisor store visits on the HO/MIS dashboard — one row per visit (never averages). */
+export type SupervisorAttendanceRowLive = {
+  id?: number
+  date: string
+  day?: string
+  supervisor: string
+  store: string
+  city: string
+  checkIn: string
+  checkOut: string
+  status: 'Open' | 'Completed' | null
+  checkInLat?: number | null
+  checkInLng?: number | null
+  checkOutLat?: number | null
+  checkOutLng?: number | null
+  checkInPhotoUrl?: string | null
+}
+
 export type WorkingHoursLive = {
   avgHours: number | null
   points: { label: string; hours: number; count: number }[]
@@ -139,6 +157,7 @@ export type BaPerformanceDashboard = {
   periodSales: { label: string; sales: number; target: number }[]
   baStatus: BaStatusPayload
   attendance: AttendanceRowLive[]
+  supervisorAttendance?: SupervisorAttendanceRowLive[]
   workingHours: WorkingHoursLive
   targetVsAchievement?: TargetVsAchievementPayload
   weeklyOff?: WeeklyOffPayload
@@ -249,6 +268,23 @@ export async function downloadBaPerformanceExcel(
       })),
     ),
     'Attendance',
+  )
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      (dash.supervisorAttendance ?? []).map((r) => ({
+        Date: r.date,
+        Day: r.day ?? '',
+        Supervisor: r.supervisor,
+        Store: r.store,
+        City: r.city,
+        'Check In': r.checkIn,
+        'Check Out': r.checkOut,
+        Status: r.status ?? '',
+      })),
+    ),
+    'Supervisor Visits',
   )
 
   XLSX.utils.book_append_sheet(
