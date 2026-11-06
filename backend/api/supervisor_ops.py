@@ -497,6 +497,7 @@ def build_supervisor_ba_attendance(
             'results': [],
         }
 
+    # Active roster only — Disabled (ON_LEAVE) BAs are hidden from supervisor attendance.
     home_bas = list(
         Ambassador.objects.filter(
             store_id__in=store_ids,
@@ -504,7 +505,6 @@ def build_supervisor_ba_attendance(
                 Ambassador.Status.CERTIFIED,
                 Ambassador.Status.DEPLOYED,
                 Ambassador.Status.TRAINING,
-                Ambassador.Status.ON_LEAVE,
             ),
         ).select_related('store')
     )
@@ -518,6 +518,7 @@ def build_supervisor_ba_attendance(
             date__lte=date_to,
         )
         .exclude(status=ShiftAssignment.Status.OPEN)
+        .exclude(ambassador__status=Ambassador.Status.ON_LEAVE)
         .select_related('store', 'ambassador', 'ambassador__store')
     )
     shift_ba_ids = {s.ambassador_id for s in shifts if s.ambassador_id}
@@ -528,6 +529,7 @@ def build_supervisor_ba_attendance(
             date__lte=date_to,
         )
         .filter(Q(store_id__in=store_ids) | Q(ambassador_id__in=home_ids | shift_ba_ids))
+        .exclude(ambassador__status=Ambassador.Status.ON_LEAVE)
         .select_related('store', 'ambassador', 'ambassador__store')
     )
     log_ba_ids = {r.ambassador_id for r in attendance_logs}
@@ -542,7 +544,9 @@ def build_supervisor_ba_attendance(
 
     ambassadors = {
         ba.id: ba
-        for ba in Ambassador.objects.filter(id__in=all_ids).select_related('store')
+        for ba in Ambassador.objects.filter(id__in=all_ids)
+        .exclude(status=Ambassador.Status.ON_LEAVE)
+        .select_related('store')
     }
     # Ensure home_bas already loaded are used
     for ba in home_bas:
@@ -588,13 +592,15 @@ def build_supervisor_ba_attendance(
         day = date_from + timedelta(days=i)
         day_key = DAY_KEYS[day.weekday()]
         for ba_id, ba in ambassadors.items():
+            if ba.status == Ambassador.Status.ON_LEAVE:
+                continue
             log = logs_by_ba_day.get((ba_id, day))
             shift = shifts_by_ba_day.get((ba_id, day))
             on_weekly_off = day in weekly_off_map.get(ba_id, set())
-            status_on_leave = ba.status == Ambassador.Status.ON_LEAVE
-            on_leave = on_weekly_off or status_on_leave
+            # Weekly off only (Disabled BAs are excluded above).
+            on_leave = on_weekly_off
 
-            # Include row if BA is home-roster, has shift/attendance that day, or on leave that day
+            # Include row if BA is home-roster, has shift/attendance that day, or weekly off that day
             is_home = ba.store_id in store_ids if ba.store_id else False
             if not (is_home or shift or log or on_weekly_off):
                 continue
