@@ -413,6 +413,12 @@ def build_attendance_chart(
             return sorted(month, key=lambda s: (s.date, s.id))[0]
         return None
 
+    def exact_shift(d: date) -> ShiftAssignment | None:
+        for s in shifts:
+            if s.date == d:
+                return s
+        return None
+
     fallback_store = ambassador.store
     fallback_label = '9:00 AM – 6:00 PM'
     if shifts:
@@ -428,6 +434,10 @@ def build_attendance_chart(
         if d < start:
             break
         log = logs.get(d)
+        # Past days: only real attendance / exact-date shift — not store-fallback or
+        # remapped reports alone (those were inventing Present/Absent rows after remap).
+        if d < today and not log and not exact_shift(d):
+            continue
         cover = covering_shift(d)
 
         store = None
