@@ -914,7 +914,7 @@ def mis_revamp_bas(request):
 
     if not plan.get('ok'):
         return Response(
-            {'detail': plan.get('collisionMessage') or 'Revamp did not run.', **public},
+            {'detail': plan.get('collisionMessage') or 'Remap did not run.', **public},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -923,7 +923,7 @@ def mis_revamp_bas(request):
     except IntegrityError:
         return Response(
             {
-                'detail': 'Revamp did not run because records collide.',
+                'detail': 'Remap did not run because records collide.',
                 **public,
             },
             status=status.HTTP_400_BAD_REQUEST,
@@ -936,16 +936,23 @@ def mis_revamp_bas(request):
     range_label = 'all history'
     if result.get('fromDate') or result.get('toDate'):
         range_label = f'{result.get("fromDate") or "…"} → {result.get("toDate") or "…"}'
+    kept = result.get('attendanceKept') or 0
     log_mis_action(
         user=request.user,
         action=MisAuditLog.Action.REVAMP_BAS,
         summary=(
-            f'Revamped {old_obj.name if old_obj else old_id} → '
+            f'Remapped {old_obj.name if old_obj else old_id} → '
             f'{new_obj.name if new_obj else new_id} ({range_label}); '
-            f'{moved.get("reports", 0)} reports, {moved.get("targets", 0)} targets.'
+            f'{moved.get("reports", 0)} reports, {moved.get("targets", 0)} targets; '
+            f'attendance kept on old BA ({kept} days).'
         ),
         before=result.get('before') or {},
-        after={'moved': moved, 'old': result.get('old'), 'new': result.get('new')},
+        after={
+            'moved': moved,
+            'attendanceKept': kept,
+            'old': result.get('old'),
+            'new': result.get('new'),
+        },
         ambassador=new_obj,
         store=store,
     )

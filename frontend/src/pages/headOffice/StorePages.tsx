@@ -675,7 +675,7 @@ function RevampBasModal({
           } else {
             setPlan(null)
           }
-          setError(e instanceof Error ? e.message : 'Could not preview revamp')
+          setError(e instanceof Error ? e.message : 'Could not preview remap')
         })
         .finally(() => {
           if (!cancelled) setPreviewing(false)
@@ -700,7 +700,7 @@ function RevampBasModal({
       onDone()
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Revamp failed')
+      setError(e instanceof Error ? e.message : 'Remap failed')
     } finally {
       setBusy(false)
     }
@@ -710,11 +710,12 @@ function RevampBasModal({
   const canConfirm = Boolean(plan?.ok && oldId && newId && !previewing && !busy)
 
   return (
-    <Modal open={open} onClose={onClose} title="Revamp BAs">
+    <Modal open={open} onClose={onClose} title="Remap BAs">
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Move the old BA’s full history — targets, sales, reports, attendance, shifts, and related
-          field data — onto the new BA. The store moves with them. If both already have a report on
+          Move the old BA’s history — targets, sales, reports, shifts, and related field data — onto
+          the new BA. Attendance stays with the old BA; the new BA starts attendance from scratch
+          (shift clocks are cleared). The store moves with them. If both already have a report on
           the same date, nothing is moved.
         </p>
         {loading ? (
@@ -761,14 +762,16 @@ function RevampBasModal({
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
             <p className="font-semibold text-slate-800">Will move (full history)</p>
             <p className="mt-1">
-              {counts.reports} reports · {counts.targets} targets · {counts.attendance} attendance
-              days · {counts.shifts} shifts
+              {counts.reports} reports · {counts.targets} targets · {counts.shifts} shifts
             </p>
             <p className="text-xs text-slate-500">
               {counts.interceptions} interceptions · {counts.complaints} complaints ·{' '}
               {counts.incentives} incentive weeks
             </p>
             <p className="mt-2 text-xs text-slate-500">
+              {(counts.attendanceKept ?? counts.attendance) > 0
+                ? `${counts.attendanceKept ?? counts.attendance} attendance day(s) stay with the old BA.`
+                : 'No attendance days on the old BA in this range.'}{' '}
               Old BA will be Disabled. New BA takes the store if the old BA had one.
             </p>
           </div>
@@ -779,7 +782,7 @@ function RevampBasModal({
             Cancel
           </Button>
           <Button onClick={() => void confirm()} disabled={!canConfirm}>
-            {busy ? 'Revamping…' : 'Confirm revamp'}
+            {busy ? 'Remapping…' : 'Confirm remap'}
           </Button>
         </div>
       </div>
@@ -1287,7 +1290,7 @@ function SchedulerPanel() {
                   <ArrowLeftRight size={14} /> Swap BAs
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setRevampOpen(true)}>
-                  <RefreshCw size={14} /> Revamp BAs
+                  <RefreshCw size={14} /> Remap BAs
                 </Button>
               </>
             )}
@@ -1795,7 +1798,7 @@ function SchedulerPanel() {
         onDone={() => {
           void syncAmbassadorsFromApi()
           void refreshSchedule(monthYm)
-          setToast('BA data revamped')
+          setToast('BA data remapped')
           setTimeout(() => setToast(null), 3000)
         }}
       />

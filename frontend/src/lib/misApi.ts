@@ -199,7 +199,9 @@ export type MisRevampPlan = {
   counts: {
     reports: number
     targets: number
+    /** Attendance days kept on the old BA (not moved). */
     attendance: number
+    attendanceKept?: number
     shifts: number
     interceptions: number
     complaints: number

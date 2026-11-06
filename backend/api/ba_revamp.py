@@ -1,4 +1,9 @@
-"""MIS Revamp BAs: cut operational history from an old BA onto a new BA."""
+"""MIS Revamp BAs: cut operational history from an old BA onto a new BA.
+
+Attendance (BaAttendanceDay) stays with the old BA. Moved shifts keep the
+schedule but check-in/out clocks are cleared so the new BA starts attendance
+from scratch.
+"""
 
 from __future__ import annotations
 
@@ -85,10 +90,6 @@ def _collision_message(collisions: dict[str, list]) -> str:
     if reports:
         noun = 'date' if len(reports) == 1 else 'dates'
         parts.append(f'Reports are colliding with the {noun} {_fmt_dates(reports)}')
-    attendance = collisions.get('attendance') or []
-    if attendance:
-        noun = 'date' if len(attendance) == 1 else 'dates'
-        parts.append(f'Attendance is colliding with the {noun} {_fmt_dates(attendance)}')
     targets = collisions.get('targets') or []
     if targets:
         parts.append(f'Targets are colliding: {", ".join(targets)}')
@@ -100,8 +101,23 @@ def _collision_message(collisions: dict[str, list]) -> str:
         noun = 'date' if len(shifts) == 1 else 'dates'
         parts.append(f'Shifts are colliding with the {noun} {_fmt_dates(shifts)}')
     if not parts:
-        return 'Revamp did not run because records collide.'
-    return f'{". ".join(parts)}. Revamp did not run.'
+        return 'Remap did not run because records collide.'
+    return f'{". ".join(parts)}. Remap did not run.'
+
+
+# Cleared when shifts are reassigned so the new BA does not inherit old clocks.
+_SHIFT_CLOCK_CLEAR = {
+    'checked_in_at': None,
+    'checked_out_at': None,
+    'check_in_lat': None,
+    'check_in_lng': None,
+    'check_in_accuracy_m': None,
+    'check_out_lat': None,
+    'check_out_lng': None,
+    'check_out_accuracy_m': None,
+    'early_leave_reason': '',
+    'ba_attendance_type': '',
+}
 
 
 def _target_qs(ba_id: int, from_date: date | None, to_date: date | None) -> QuerySet:
@@ -226,13 +242,6 @@ def plan_revamp(
         ).values_list('date', flat=True)
     ) if old_report_dates else set()
 
-    old_att_dates = set(attendance_qs.values_list('date', flat=True))
-    new_att_dates = set(
-        BaAttendanceDay.objects.filter(
-            ambassador_id=new.id, date__in=old_att_dates
-        ).values_list('date', flat=True)
-    ) if old_att_dates else set()
-
     old_shift_dates = set(shift_qs.values_list('date', flat=True))
     new_shift_dates = set(
         ShiftAssignment.objects.filter(
@@ -260,9 +269,10 @@ def plan_revamp(
         )
         colliding_weeks = [d.isoformat() for d in sorted(new_weeks)]
 
+    # Attendance is never moved — collisions for attendance are irrelevant.
     collisions = {
         'reports': sorted(new_report_dates),
-        'attendance': sorted(new_att_dates),
+        'attendance': [],
         'shifts': sorted(new_shift_dates),
         'targets': colliding_targets,
         'incentives': colliding_weeks,
@@ -280,12 +290,13 @@ def plan_revamp(
             'storeName': ba.store.name if ba.store else '',
         }
 
+    attendance_kept = attendance_qs.count()
     return {
         'ok': not has_collision,
         'errors': [],
         'collisions': {
             'reports': [d.isoformat() for d in collisions['reports']],
-            'attendance': [d.isoformat() for d in collisions['attendance']],
+            'attendance': [],
             'shifts': [d.isoformat() for d in collisions['shifts']],
             'targets': collisions['targets'],
             'incentives': collisions['incentives'],
@@ -294,7 +305,9 @@ def plan_revamp(
         'counts': {
             'reports': report_qs.count(),
             'targets': target_qs.count(),
-            'attendance': attendance_qs.count(),
+            # Kept on old BA (not moved). Preview UI labels this clearly.
+            'attendance': attendance_kept,
+            'attendanceKept': attendance_kept,
             'shifts': shift_qs.count(),
             'interceptions': interception_qs.count(),
             'complaints': complaint_qs.count(),
@@ -307,7 +320,6 @@ def plan_revamp(
         '_qs': {
             'reports': report_qs,
             'targets': target_qs,
-            'attendance': attendance_qs,
             'shifts': shift_qs,
             'interceptions': interception_qs,
             'complaints': complaint_qs,
@@ -334,8 +346,8 @@ def apply_revamp(plan: dict) -> dict:
 
         qs['reports'].update(ambassador_id=new.id)
         qs['targets'].update(ambassador_id=new.id)
-        qs['attendance'].update(ambassador_id=new.id)
-        qs['shifts'].update(ambassador_id=new.id)
+        # Attendance stays on the old BA — new BA starts clocks from scratch.
+        qs['shifts'].update(ambassador_id=new.id, **_SHIFT_CLOCK_CLEAR)
         qs['interceptions'].update(ambassador_id=new.id, ba_name=new.name)
         qs['complaints'].update(ambassador_id=new.id)
         qs['incentives'].update(ambassador_id=new.id)
@@ -349,7 +361,10 @@ def apply_revamp(plan: dict) -> dict:
                 ambassador_id=new.id, date__in=leftover_dates
             ).values_list('date', flat=True)
         ) if leftover_dates else set()
-        leftover.exclude(date__in=occupied).update(ambassador_id=new.id)
+        leftover.exclude(date__in=occupied).update(
+            ambassador_id=new.id,
+            **_SHIFT_CLOCK_CLEAR,
+        )
 
         old.status = Ambassador.Status.ON_LEAVE
         old.save(update_fields=['status', 'updated_at'])
@@ -375,7 +390,9 @@ def apply_revamp(plan: dict) -> dict:
 
     new.refresh_from_db()
     old.refresh_from_db()
-    after_counts = plan['counts']
+    after_counts = dict(plan['counts'] or {})
+    # Attendance is never transferred.
+    after_counts['attendance'] = 0
     return {
         'ok': True,
         'old': {
@@ -395,6 +412,7 @@ def apply_revamp(plan: dict) -> dict:
         'fromDate': plan.get('fromDate'),
         'toDate': plan.get('toDate'),
         'moved': after_counts,
+        'attendanceKept': plan.get('counts', {}).get('attendanceKept', 0),
         'before': {
             'oldStatus': old_status,
             'newStatus': new_status,
