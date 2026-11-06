@@ -1337,6 +1337,18 @@ def ba_check_in(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    today = timezone.localdate()
+    ensure_weekly_off_for_ambassador(ambassador)
+    if is_weekly_off_day(ambassador.id, today):
+        return Response(
+            {
+                'detail': (
+                    'Today is your weekly off. Store and training check-in are not allowed.'
+                ),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     raw_type = str(
         request.data.get('attendance_type')
         or request.data.get('attendanceType')

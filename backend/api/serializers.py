@@ -652,6 +652,7 @@ class AmbassadorSerializer(serializers.ModelSerializer):
     store_city = serializers.SerializerMethodField()
     lifecycle = serializers.SerializerMethodField()
     lifecycle_current = serializers.SerializerMethodField()
+    isWeeklyOffToday = serializers.SerializerMethodField()
 
     class Meta:
         model = Ambassador
@@ -675,6 +676,7 @@ class AmbassadorSerializer(serializers.ModelSerializer):
             'deployed_at',
             'lifecycle',
             'lifecycle_current',
+            'isWeeklyOffToday',
             'created_by',
             'created_by_email',
             'created_at',
@@ -695,6 +697,7 @@ class AmbassadorSerializer(serializers.ModelSerializer):
             'deployed_at',
             'lifecycle',
             'lifecycle_current',
+            'isWeeklyOffToday',
             'created_by',
             'created_by_email',
             'created_at',
@@ -709,6 +712,18 @@ class AmbassadorSerializer(serializers.ModelSerializer):
 
     def get_store_city(self, obj):
         return obj.store.city if obj.store_id else None
+
+    def get_isWeeklyOffToday(self, obj):
+        """Display-only: today is this BA's chosen weekly off (DB status unchanged)."""
+        ids = self.context.get('weekly_off_today_ids')
+        if isinstance(ids, set):
+            return obj.id in ids
+        from django.utils import timezone
+
+        from .ba_attendance_views import ensure_weekly_off_for_ambassador, is_weekly_off_day
+
+        ensure_weekly_off_for_ambassador(obj)
+        return is_weekly_off_day(obj.id, timezone.localdate())
 
     def _lifecycle_reached(self, obj):
         """Cumulative stages from DB status / certification / store / today's clock."""

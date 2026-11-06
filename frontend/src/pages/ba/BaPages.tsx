@@ -167,6 +167,10 @@ export function BaHomePage() {
     }
   }
 
+  const isWeeklyOffToday = Boolean(
+    weeklyOff?.offDate && weeklyOff?.today && weeklyOff.offDate === weeklyOff.today,
+  )
+
   useEffect(() => {
     if (shiftError && isLocationOrNetworkErrorMessage(shiftError)) {
       setLocationHelpOpen(true)
@@ -176,6 +180,10 @@ export function BaHomePage() {
   useEffect(() => {
     if (checkedIn && faceCheckInType) setFaceCheckInType(null)
   }, [checkedIn, faceCheckInType])
+
+  useEffect(() => {
+    if (isWeeklyOffToday && faceCheckInType) setFaceCheckInType(null)
+  }, [isWeeklyOffToday, faceCheckInType])
 
   // Reload today's shift whenever Home opens (any BA status).
   useEffect(() => {
@@ -359,7 +367,12 @@ export function BaHomePage() {
                   <div className="mt-0.5 text-xs text-slate-400">Location after store assignment</div>
                 )}
               </div>
-              {hasShift && !checkedIn && !checkedOut ? (
+              {hasShift && !checkedIn && !checkedOut && isWeeklyOffToday ? (
+                <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800">
+                  Weekly off
+                </span>
+              ) : null}
+              {hasShift && !checkedIn && !checkedOut && !isWeeklyOffToday ? (
                 <button
                   type="button"
                   disabled={shiftBusy}
@@ -769,7 +782,12 @@ export function BaHomePage() {
         <p className="mt-2 text-sm text-slate-500">
           Use this check-in when you are attending training instead of working at your store.
         </p>
-        {hasShift && !checkedIn && !checkedOut ? (
+        {hasShift && !checkedIn && !checkedOut && isWeeklyOffToday ? (
+          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-medium text-amber-900">
+            Today is your weekly off. Store and training check-in are not available.
+          </p>
+        ) : null}
+        {hasShift && !checkedIn && !checkedOut && !isWeeklyOffToday ? (
           <button
             type="button"
             disabled={shiftBusy}

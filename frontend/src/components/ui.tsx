@@ -100,6 +100,7 @@ export function StatusBadge({ status }: { status: string }) {
     Active: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Certified: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Deployed: 'bg-sky-50 text-sky-700 ring-sky-200',
+    'Weekly Off': 'bg-amber-50 text-amber-800 ring-amber-200',
     Disabled: 'bg-amber-50 text-amber-800 ring-amber-200',
     'On leave': 'bg-amber-50 text-amber-800 ring-amber-200',
     Inactive: 'bg-slate-100 text-slate-600 ring-slate-200',

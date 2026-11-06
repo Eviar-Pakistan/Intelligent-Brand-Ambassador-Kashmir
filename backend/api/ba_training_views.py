@@ -26,6 +26,7 @@ from .models import (
     AssessmentAnswer,
     AssessmentQuestion,
     AssessmentSession,
+    BaWeeklyOff,
     Store,
     TrainingVideo,
 )
@@ -208,7 +209,31 @@ class AmbassadorViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         reconcile_ambassador_deployments()
-        return super().list(request, *args, **kwargs)
+        queryset = self.filter_queryset(self.get_queryset())
+        from .ba_attendance_views import (
+            DAY_KEYS,
+            ensure_weekly_offs_for_ambassadors,
+            week_start_monday,
+        )
+
+        today = timezone.localdate()
+        week_start = week_start_monday(today)
+        bas = list(queryset)
+        ensure_weekly_offs_for_ambassadors(bas, week_start=week_start)
+        today_key = DAY_KEYS[today.weekday()]
+        off_ids = set(
+            BaWeeklyOff.objects.filter(
+                week_start=week_start,
+                off_day=today_key,
+                ambassador_id__in=[b.id for b in bas],
+            ).values_list('ambassador_id', flat=True)
+        )
+        serializer = self.get_serializer(
+            bas,
+            many=True,
+            context={**self.get_serializer_context(), 'weekly_off_today_ids': off_ids},
+        )
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = AmbassadorCreateSerializer(data=request.data)

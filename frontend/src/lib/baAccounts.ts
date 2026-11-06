@@ -32,6 +32,8 @@ export type BaAccount = {
   storeName: string
   /** Reason when status is Disabled (Weekly Off, Sick Leave, …). */
   inactiveReason?: string
+  /** True when today is this BA's weekly off (display-only; DB status stays Deployed etc.). */
+  isWeeklyOffToday?: boolean
   /** Today's shift attendance clocks (filled when HO syncs shifts). */
   checkIn: string | null
   checkOut: string | null
@@ -302,6 +304,7 @@ type ApiAmbassador = {
   store_name?: string | null
   store_city?: string | null
   inactive_reason?: string | null
+  isWeeklyOffToday?: boolean
   created_at?: string
 }
 
@@ -407,6 +410,7 @@ function apiAmbassadorToAccount(a: ApiAmbassador, existing?: BaAccount | null): 
     storeId,
     storeName,
     inactiveReason: (a.inactive_reason || '').trim() || undefined,
+    isWeeklyOffToday: Boolean(a.isWeeklyOffToday),
     checkIn: existing?.checkIn ?? null,
     checkOut: existing?.checkOut ?? null,
   }

@@ -1014,7 +1014,7 @@ function AmbassadorDetailModal({
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <StatusBadge status={account.status} />
+                <StatusBadge status={account.isWeeklyOffToday ? 'Weekly Off' : account.status} />
                 <span className="text-xs text-slate-500">
                   {[account.city, account.email, account.phone].filter(Boolean).join(' · ') ||
                     'No contact details'}
@@ -1331,7 +1331,7 @@ export function AmbassadorsPage() {
                 <td className="px-4 py-3 text-slate-600">{a.city || '—'}</td>
                 <td className="px-4 py-3 font-semibold">{a.result ? `${a.result.quality}%` : '—'}</td>
                 <td className="px-4 py-3">
-                  <StatusBadge status={a.status} />
+                  <StatusBadge status={a.isWeeklyOffToday ? 'Weekly Off' : a.status} />
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   {a.storeName
@@ -1745,7 +1745,7 @@ export function AmbassadorProfilePage() {
               <span className="rounded-lg bg-brand-50 px-2.5 py-1 text-sm font-bold text-brand-700">
                 {certificationGrade(account.result?.quality)}
               </span>
-              <StatusBadge status={account.status} />
+              <StatusBadge status={account.isWeeklyOffToday ? 'Weekly Off' : account.status} />
             </div>
             {account.code && (
               <p className="mt-2 font-mono text-xs font-semibold text-slate-500">{account.code}</p>
