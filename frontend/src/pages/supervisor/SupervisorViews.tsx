@@ -407,11 +407,6 @@ export function SupervisorStoreCards({
                 <ProgressBar value={s.coverage} />
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-                <Stat label="Engagement" value={`${s.engagement}%`} />
-                <Stat label="Conversion" value={`${s.conversion}%`} />
-              </div>
-
               <dl className="mt-4 space-y-1.5 text-xs">
                 <Row label="Peak hours" value={s.peak.join(' · ') || '—'} />
                 <Row
@@ -618,15 +613,6 @@ export function SupervisorIncentiveCard({ supervisor }: { supervisor: Supervisor
         </div>
       </div>
     </Card>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-slate-50 px-2 py-2">
-      <div className="text-sm font-bold text-slate-900">{value}</div>
-      <div className="text-[10px] text-slate-500">{label}</div>
-    </div>
   )
 }
 
