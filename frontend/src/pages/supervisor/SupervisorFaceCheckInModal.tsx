@@ -4,6 +4,7 @@ type Props = {
   open: boolean
   storeName: string
   busy?: boolean
+  submitError?: string | null
   onClose: () => void
   onConfirmed: (photo: Blob) => void
 }
@@ -13,6 +14,7 @@ export function SupervisorFaceCheckInModal({
   open,
   storeName,
   busy = false,
+  submitError = null,
   onClose,
   onConfirmed,
 }: Props) {
@@ -21,6 +23,8 @@ export function SupervisorFaceCheckInModal({
       open={open}
       title={`Check in · ${storeName}`}
       busy={busy}
+      maxPhotoEdge={512}
+      submitError={submitError}
       onClose={onClose}
       onConfirmed={onConfirmed}
     />

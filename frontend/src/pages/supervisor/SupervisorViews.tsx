@@ -373,7 +373,7 @@ export function SupervisorStoreCards({
         </Card>
       ) : null}
 
-      {actionError ? (
+      {actionError && !checkInStore ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {actionError}
         </div>
@@ -481,8 +481,12 @@ export function SupervisorStoreCards({
           open
           storeName={checkInStore.name}
           busy={busy}
+          submitError={actionError}
           onClose={() => {
-            if (!busy) setCheckInStore(null)
+            if (!busy) {
+              setCheckInStore(null)
+              setActionError(null)
+            }
           }}
           onConfirmed={(photo) => void handleFaceConfirmed(photo)}
         />

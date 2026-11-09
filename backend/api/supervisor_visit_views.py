@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 
 from django.db import IntegrityError, transaction
@@ -14,6 +15,9 @@ from rest_framework.response import Response
 
 from .models import Store, SupervisorStoreVisit
 from .supervisor_views import _supervisor_profile_or_error
+
+# Max distance from store GPS for supervisor visit check-in / check-out.
+STORE_GEOFENCE_M = 200.0
 
 
 def _parse_float(raw, label: str):
@@ -38,6 +42,46 @@ def _optional_float(raw):
     if value != value:
         return None
     return value
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in meters between two WGS84 points."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _geofence_error(store: Store, lat: float, lng: float, action: str) -> Response | None:
+    """
+    If the store has coordinates, require GPS within STORE_GEOFENCE_M.
+    Stores without lat/lng skip this check (allow check-in/out).
+    """
+    store_lat = store.latitude
+    store_lng = store.longitude
+    if store_lat is None or store_lng is None:
+        return None
+    try:
+        store_lat_f = float(store_lat)
+        store_lng_f = float(store_lng)
+    except (TypeError, ValueError):
+        return None
+    distance = _haversine_m(lat, lng, store_lat_f, store_lng_f)
+    if distance <= STORE_GEOFENCE_M:
+        return None
+    return Response(
+        {
+            'detail': (
+                f'You must be within {int(STORE_GEOFENCE_M)}m of the store to {action}. '
+                f'You are about {int(round(distance))}m away.'
+            ),
+            'distanceM': round(distance, 1),
+            'maxDistanceM': STORE_GEOFENCE_M,
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _parse_date(raw: str | None) -> date | None:
@@ -151,6 +195,10 @@ def supervisor_me_visit_check_in(request):
     if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
         return Response({'detail': 'Invalid GPS coordinates.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    geo_err = _geofence_error(store, lat, lng, 'check in')
+    if geo_err:
+        return geo_err
+
     accuracy = _optional_float(request.data.get('accuracy') or request.data.get('accuracy_m'))
     photo = request.FILES.get('photo') or request.FILES.get('image')
     if not photo:
@@ -255,6 +303,10 @@ def supervisor_me_visit_check_out(request):
                 {'detail': 'This visit is already checked out.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        geo_err = _geofence_error(visit.store, lat, lng, 'check out')
+        if geo_err:
+            return geo_err
 
         visit.checked_out_at = timezone.now()
         visit.check_out_lat = lat

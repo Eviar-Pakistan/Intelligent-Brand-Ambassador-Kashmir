@@ -13,6 +13,10 @@ type Props = {
   subtitle?: string
   busy?: boolean
   confirmLabel?: string
+  /** Cap longest photo edge (px). Omit = full camera frame. */
+  maxPhotoEdge?: number
+  /** Server/API error (e.g. geofence) shown above Confirm — does not block retry. */
+  submitError?: string | null
   onClose: () => void
   onConfirmed: (photo: Blob) => void
 }
@@ -24,6 +28,8 @@ export function FaceCheckInModal({
   subtitle = 'Look at the camera so your face is detected, then confirm. GPS and this photo are saved with check-in.',
   busy = false,
   confirmLabel = 'Confirm check-in',
+  maxPhotoEdge,
+  submitError = null,
   onClose,
   onConfirmed,
 }: Props) {
@@ -139,11 +145,17 @@ export function FaceCheckInModal({
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas || video.videoWidth < 8) return null
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+    const vw = video.videoWidth
+    const vh = video.videoHeight
+    const scale =
+      maxPhotoEdge && maxPhotoEdge > 0
+        ? Math.min(1, maxPhotoEdge / Math.max(vw, vh))
+        : 1
+    canvas.width = Math.max(1, Math.round(vw * scale))
+    canvas.height = Math.max(1, Math.round(vh * scale))
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
-    ctx.drawImage(video, 0, 0)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.88)
     const comma = dataUrl.indexOf(',')
     if (comma < 0) return null
@@ -206,6 +218,14 @@ export function FaceCheckInModal({
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         {!error && ready && !faceOk ? (
           <p className="text-sm text-amber-700">No face detected. Face the camera to continue.</p>
+        ) : null}
+        {submitError ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700"
+          >
+            {submitError}
+          </div>
         ) : null}
       </div>
     </Modal>
