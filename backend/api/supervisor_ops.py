@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from django.db.models import Count, Q
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
@@ -215,10 +215,22 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
     stores = list(supervisor.stores.all().order_by('name'))
     store_ids = [s.id for s in stores]
 
-    consumer_counts = {
-        row['store_id']: row['c']
-        for row in Consumer.objects.filter(store_id__in=store_ids).values('store_id').annotate(c=Count('id'))
-    }
+    # Today's consumers for live engagement (answered ÷ total today).
+    consumers_today_by_store: dict[int, int] = defaultdict(int)
+    answered_today_by_store: dict[int, int] = defaultdict(int)
+    if store_ids:
+        tz = timezone.get_current_timezone()
+        start_dt = timezone.make_aware(datetime.combine(today, time.min), tz)
+        end_dt = timezone.make_aware(datetime.combine(today, time.max), tz)
+        for c in Consumer.objects.filter(
+            store_id__in=store_ids,
+            created_at__gte=start_dt,
+            created_at__lte=end_dt,
+        ).only('store_id', 'answers'):
+            consumers_today_by_store[c.store_id] += 1
+            ans = c.answers if isinstance(c.answers, dict) else {}
+            if any(str(v).strip() for v in ans.values()):
+                answered_today_by_store[c.store_id] += 1
 
     switch_q = SurveyQuestion.objects.filter(is_active=True, order=5).first()
     switch_id = str(switch_q.id) if switch_q else None
@@ -289,16 +301,30 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
         if sid in store_ids:
             store_bas[sid].append(ba)
 
+    # Staffed today: store has ≥1 BA checked in today (not on leave).
+    staffed_store_ids: set[int] = set()
+    if store_ids:
+        staffed_store_ids = set(
+            ShiftAssignment.objects.filter(
+                store_id__in=store_ids,
+                date=today,
+                checked_in_at__isnull=False,
+                ambassador_id__isnull=False,
+            )
+            .exclude(ambassador_id__in=on_leave_ids)
+            .values_list('store_id', flat=True)
+            .distinct()
+        )
+
     store_rows = []
     for store in stores:
-        shoppers = consumer_counts.get(store.id, 0)
         answered = answered_by_store.get(store.id, 0)
         yes = yes_by_store.get(store.id, 0)
         conversion = _pct(yes, answered) if answered else 0.0
         footfall = store.today_footfall or 0
-        engagement = _pct(shoppers, footfall) if footfall else (100.0 if shoppers else 0.0)
-        if engagement > 100:
-            engagement = 100.0
+        today_total = consumers_today_by_store.get(store.id, 0)
+        today_answered = answered_today_by_store.get(store.id, 0)
+        engagement = _pct(today_answered, today_total) if today_total else 0.0
         assigned = [
             {
                 'id': str(ba.id),
@@ -309,17 +335,14 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
             for ba in store_bas.get(store.id, [])
         ]
         peak = [p.strip() for p in (store.peak_hours or '').split(',') if p.strip()]
-        status = store.status
-        # Map API store status to FE-ish labels when needed
-        if status == Store.Status.LIVE:
-            ui_status = 'Covered' if assigned else 'NEEDS BA'
-        elif status == Store.Status.PARTIAL:
-            ui_status = 'PARTIAL'
-        elif status == Store.Status.INACTIVE:
+        store_coverage = 100 if store.id in staffed_store_ids else 0
+        # Covered when a BA is checked in today (same rule as coverage 100%).
+        if store.id in staffed_store_ids:
+            ui_status = 'Covered'
+        elif not assigned:
             ui_status = 'NEEDS BA'
         else:
-            ui_status = status
-
+            ui_status = 'Pending'
         store_rows.append(
             {
                 'id': store.id,
@@ -328,7 +351,7 @@ def build_supervisor_overview(supervisor: Supervisor) -> dict:
                 'address': store.address,
                 'footfall': store.footfall,
                 'bas': len(assigned),
-                'coverage': store.coverage,
+                'coverage': store_coverage,
                 'status': ui_status,
                 'todayFootfall': footfall,
                 'engagement': engagement,

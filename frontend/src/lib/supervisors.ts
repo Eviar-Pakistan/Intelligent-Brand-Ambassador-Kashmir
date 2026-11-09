@@ -368,6 +368,7 @@ export function signOut() {
     // ignore
   }
   sessionCache = undefined
+  clearSupervisorOverviewCache()
   sessionListeners.forEach((l) => l())
 }
 
@@ -461,6 +462,33 @@ export type SupervisorOverview = {
   teamConversion: number
   coverage: number
   todayFootfall: number
+}
+
+/** In-memory overview cache — survives SPA route changes; cleared on sign-out. */
+const OVERVIEW_FRESH_MS = 60_000
+type OverviewCacheEntry = { data: SupervisorOverview; at: number }
+let overviewByKey = new Map<string, OverviewCacheEntry>()
+
+export function supervisorOverviewCacheKey(mode: 'ho' | 'me', supervisorId: string): string {
+  return mode === 'me' ? 'me' : `ho:${supervisorId}`
+}
+
+export function peekSupervisorOverviewCache(key: string): SupervisorOverview | null {
+  return overviewByKey.get(key)?.data ?? null
+}
+
+export function isSupervisorOverviewCacheFresh(key: string): boolean {
+  const e = overviewByKey.get(key)
+  if (!e) return false
+  return Date.now() - e.at < OVERVIEW_FRESH_MS
+}
+
+export function setSupervisorOverviewCache(key: string, data: SupervisorOverview) {
+  overviewByKey.set(key, { data, at: Date.now() })
+}
+
+export function clearSupervisorOverviewCache() {
+  overviewByKey = new Map()
 }
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0)

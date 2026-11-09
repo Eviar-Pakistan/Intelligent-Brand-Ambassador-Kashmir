@@ -6,6 +6,7 @@ import {
   Card,
   CardHeader,
   KpiCard,
+  LoadingState,
   Modal,
   ProgressBar,
   Select,
@@ -28,7 +29,11 @@ import {
   fetchSupervisorOverview,
   fetchSupervisorReportDates,
   fetchSupervisorReportsForDate,
+  isSupervisorOverviewCacheFresh,
+  peekSupervisorOverviewCache,
+  setSupervisorOverviewCache,
   supervisorOverview,
+  supervisorOverviewCacheKey,
   type Supervisor,
   type SupervisorOverview,
 } from '../../lib/supervisors'
@@ -38,12 +43,31 @@ import { SupervisorFaceCheckInModal } from './SupervisorFaceCheckInModal'
 
 function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
   const fallback = supervisorOverview(supervisor)
-  const [live, setLive] = useState<SupervisorOverview | null>(null)
+  const cacheKey = supervisorOverviewCacheKey(mode, supervisor.id)
+  const cached = peekSupervisorOverviewCache(cacheKey)
+  const [live, setLive] = useState<SupervisorOverview | null>(cached)
+  const [loading, setLoading] = useState(!cached)
 
   useEffect(() => {
     let cancelled = false
     let attempts = 0
     let timer: ReturnType<typeof setTimeout> | undefined
+    const existing = peekSupervisorOverviewCache(cacheKey)
+    if (existing) {
+      setLive(existing)
+      setLoading(false)
+      // Still fresh — skip network this visit.
+      if (isSupervisorOverviewCacheFresh(cacheKey)) return () => {
+        cancelled = true
+      }
+    } else {
+      setLive(null)
+      setLoading(true)
+    }
+
+    const finish = () => {
+      if (!cancelled) setLoading(false)
+    }
 
     const load = () => {
       const req =
@@ -52,13 +76,17 @@ function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
         .then((data) => {
           if (cancelled) return
           if (data) {
+            setSupervisorOverviewCache(cacheKey, data)
             setLive(data)
+            finish()
             return
           }
           // Auth/token not ready yet — retry briefly instead of sticking on nameless fallback.
           if (attempts < 6) {
             attempts += 1
             timer = setTimeout(load, 150 * attempts)
+          } else {
+            finish()
           }
         })
         .catch(() => {
@@ -66,6 +94,8 @@ function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
           if (attempts < 6) {
             attempts += 1
             timer = setTimeout(load, 150 * attempts)
+          } else {
+            finish()
           }
         })
     }
@@ -75,9 +105,9 @@ function useLiveOverview(supervisor: Supervisor, mode: 'ho' | 'me') {
       cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [supervisor.id, mode, supervisor.storeIds.join(',')])
+  }, [supervisor.id, mode, cacheKey, supervisor.storeIds.join(',')])
 
-  return live ?? fallback
+  return { overview: live ?? fallback, loading }
 }
 
 function formatReportDateLabel(iso: string) {
@@ -217,14 +247,17 @@ export function SupervisorSummary({
   mode?: 'ho' | 'me'
 }) {
   useCreatedStores()
-  const o = useLiveOverview(supervisor, mode)
+  const { overview: o, loading } = useLiveOverview(supervisor, mode)
+  if (loading) return <LoadingState label="Loading overview…" />
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <KpiCard label="Stores" value={o.stores.length} />
       <KpiCard label="Ambassadors" value={new Set(o.bas.map((b) => b.id)).size} />
-      <KpiCard label="Team conversion" value={`${o.teamConversion}%`} hint="Average of their BA's" />
-      <KpiCard label="Store coverage" value={`${o.coverage}%`} hint="Average of their stores" />
-      <KpiCard label="Today's footfall" value={o.todayFootfall.toLocaleString()} />
+      <KpiCard
+        label="Store coverage"
+        value={`${o.coverage}%`}
+        hint="Stores with BA checked in today"
+      />
     </div>
   )
 }
@@ -246,7 +279,8 @@ export function SupervisorStoreCards({
   mode?: 'ho' | 'me'
 }) {
   useCreatedStores()
-  const { stores } = useLiveOverview(supervisor, mode)
+  const { overview, loading } = useLiveOverview(supervisor, mode)
+  const stores = overview.stores
   const canVisit = mode === 'me'
 
   const [openVisit, setOpenVisit] = useState<SupervisorStoreVisit | null>(null)
@@ -300,6 +334,8 @@ export function SupervisorStoreCards({
       setBusy(false)
     }
   }
+
+  if (loading) return <LoadingState label="Loading stores…" />
 
   if (stores.length === 0) {
     return (
@@ -360,7 +396,6 @@ export function SupervisorStoreCards({
                 <div className="flex flex-wrap justify-end gap-1.5">
                   {isHere ? <StatusBadge status="LIVE" /> : null}
                   <StatusBadge status={s.status} />
-                  <StatusBadge status={s.footfall} />
                 </div>
               </div>
 
@@ -372,10 +407,9 @@ export function SupervisorStoreCards({
                 <ProgressBar value={s.coverage} />
               </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                 <Stat label="Engagement" value={`${s.engagement}%`} />
                 <Stat label="Conversion" value={`${s.conversion}%`} />
-                <Stat label="Footfall today" value={s.todayFootfall.toLocaleString()} />
               </div>
 
               <dl className="mt-4 space-y-1.5 text-xs">
@@ -465,13 +499,16 @@ export function SupervisorBaTable({
   mode?: 'ho' | 'me'
 }) {
   useCreatedStores()
-  const { bas } = useLiveOverview(supervisor, mode)
+  const { overview, loading } = useLiveOverview(supervisor, mode)
+  const bas = overview.bas
   const sorted = [...bas].sort((a, b) => {
     const aAch = a.targetAchievement ?? -1
     const bAch = b.targetAchievement ?? -1
     if (bAch !== aAch) return bAch - aAch
     return b.conversion - a.conversion
   })
+
+  if (loading) return <LoadingState label="Loading BA performance…" />
 
   if (!sorted.length) {
     return (
