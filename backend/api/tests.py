@@ -144,3 +144,62 @@ class RevampBasTests(TestCase):
         self.assertEqual(shift.ba_attendance_type, '')
         self.assertEqual(applied.data.get('moved', {}).get('attendance'), 0)
         self.assertEqual(applied.data.get('attendanceKept'), 1)
+
+    def test_revamp_soft_shift_overlap_deletes_empty_new_and_proceeds(self):
+        day = date(2026, 10, 5)
+        old_shift = ShiftAssignment.objects.create(
+            store=self.store,
+            ambassador=self.old,
+            date=day,
+            day_key='Mon',
+            shift_label='Morning',
+            status=ShiftAssignment.Status.SCHEDULED,
+            checked_in_at=timezone.make_aware(datetime(2026, 10, 5, 9, 0)),
+            checked_out_at=timezone.make_aware(datetime(2026, 10, 5, 17, 0)),
+        )
+        new_empty = ShiftAssignment.objects.create(
+            store=self.store,
+            ambassador=self.new,
+            date=day,
+            day_key='Mon',
+            shift_label='Morning',
+            status=ShiftAssignment.Status.SCHEDULED,
+        )
+        preview = self._post(confirm=False)
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(preview.data['ok'], preview.data)
+        self.assertEqual(preview.data['collisions'].get('shifts'), [])
+
+        applied = self._post(confirm=True)
+        self.assertEqual(applied.status_code, 200, applied.data)
+        self.assertFalse(ShiftAssignment.objects.filter(pk=new_empty.pk).exists())
+        old_shift.refresh_from_db()
+        self.assertEqual(old_shift.ambassador_id, self.new.id)
+        self.assertIsNone(old_shift.checked_in_at)
+
+    def test_revamp_hard_shift_collision_when_both_clocked(self):
+        day = date(2026, 10, 5)
+        ShiftAssignment.objects.create(
+            store=self.store,
+            ambassador=self.old,
+            date=day,
+            day_key='Mon',
+            shift_label='Morning',
+            status=ShiftAssignment.Status.SCHEDULED,
+            checked_in_at=timezone.make_aware(datetime(2026, 10, 5, 9, 0)),
+        )
+        ShiftAssignment.objects.create(
+            store=self.store,
+            ambassador=self.new,
+            date=day,
+            day_key='Mon',
+            shift_label='Morning',
+            status=ShiftAssignment.Status.SCHEDULED,
+            checked_in_at=timezone.make_aware(datetime(2026, 10, 5, 10, 0)),
+        )
+        preview = self._post(confirm=False)
+        self.assertEqual(preview.status_code, 200)
+        self.assertFalse(preview.data['ok'])
+        self.assertIn('check-in/out', preview.data['collisionMessage'].lower())
+        blocked = self._post(confirm=True)
+        self.assertEqual(blocked.status_code, 400)

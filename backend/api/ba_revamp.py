@@ -99,7 +99,10 @@ def _collision_message(collisions: dict[str, list]) -> str:
     shifts = collisions.get('shifts') or []
     if shifts:
         noun = 'date' if len(shifts) == 1 else 'dates'
-        parts.append(f'Shifts are colliding with the {noun} {_fmt_dates(shifts)}')
+        parts.append(
+            f'Shifts are colliding with the {noun} {_fmt_dates(shifts)} '
+            f'(both BAs have check-in/out)'
+        )
     if not parts:
         return 'Remap did not run because records collide.'
     return f'{". ".join(parts)}. Remap did not run.'
@@ -118,6 +121,57 @@ _SHIFT_CLOCK_CLEAR = {
     'early_leave_reason': '',
     'ba_attendance_type': '',
 }
+
+
+def _shift_has_clock(*, checked_in_at, checked_out_at) -> bool:
+    return checked_in_at is not None or checked_out_at is not None
+
+
+def _shift_dates_with_clock(ba_id: int, dates) -> set[date]:
+    """Dates where the BA has at least one shift with check-in and/or check-out."""
+    if not dates:
+        return set()
+    clocked: set[date] = set()
+    for d, cin, cout in ShiftAssignment.objects.filter(
+        ambassador_id=ba_id, date__in=dates
+    ).values_list('date', 'checked_in_at', 'checked_out_at'):
+        if _shift_has_clock(checked_in_at=cin, checked_out_at=cout):
+            clocked.add(d)
+    return clocked
+
+
+def _hard_shift_collision_dates(old_id: int, new_id: int, overlap_dates) -> list[date]:
+    """Overlap dates where BOTH BAs have a clocked shift — remap must block."""
+    if not overlap_dates:
+        return []
+    old_clocked = _shift_dates_with_clock(old_id, overlap_dates)
+    new_clocked = _shift_dates_with_clock(new_id, overlap_dates)
+    return sorted(old_clocked & new_clocked)
+
+
+def _resolve_shift_overlaps(old_id: int, new_id: int, overlap_dates) -> None:
+    """
+    Auto-clean soft shift collisions before moving old → new:
+
+    - both clocked → caller must block (no-op here)
+    - only new clocked → delete old empty shifts that day
+    - only old clocked → delete new empty shifts that day
+    - both empty → delete new empty shifts that day (keep old to move)
+    """
+    if not overlap_dates:
+        return
+    old_clocked = _shift_dates_with_clock(old_id, overlap_dates)
+    new_clocked = _shift_dates_with_clock(new_id, overlap_dates)
+    for d in overlap_dates:
+        old_has = d in old_clocked
+        new_has = d in new_clocked
+        if old_has and new_has:
+            continue
+        if new_has and not old_has:
+            ShiftAssignment.objects.filter(ambassador_id=old_id, date=d).delete()
+        else:
+            # only old clocked, or both empty → drop new placeholder
+            ShiftAssignment.objects.filter(ambassador_id=new_id, date=d).delete()
 
 
 def _target_qs(ba_id: int, from_date: date | None, to_date: date | None) -> QuerySet:
@@ -248,6 +302,10 @@ def plan_revamp(
             ambassador_id=new.id, date__in=old_shift_dates
         ).values_list('date', flat=True)
     ) if old_shift_dates else set()
+    # Soft overlaps (empty vs clocked / both empty) auto-resolve on apply.
+    # Hard block only when both BAs have check-in/out on the same date.
+    overlap_shift_dates = old_shift_dates & new_shift_dates
+    hard_shift_dates = _hard_shift_collision_dates(old.id, new.id, overlap_shift_dates)
 
     old_targets = list(target_qs.values_list('month', 'sku'))
     colliding_targets: list[str] = []
@@ -273,7 +331,7 @@ def plan_revamp(
     collisions = {
         'reports': sorted(new_report_dates),
         'attendance': [],
-        'shifts': sorted(new_shift_dates),
+        'shifts': hard_shift_dates,
         'targets': colliding_targets,
         'incentives': colliding_weeks,
     }
@@ -325,6 +383,7 @@ def plan_revamp(
             'complaints': complaint_qs,
             'incentives': incentive_qs,
         },
+        '_overlap_shift_dates': sorted(overlap_shift_dates),
         '_old': old,
         '_new': new,
     }
@@ -335,6 +394,7 @@ def apply_revamp(plan: dict) -> dict:
     new: Ambassador = plan['_new']
     qs = plan['_qs']
     to_date = date.fromisoformat(plan['toDate']) if plan.get('toDate') else None
+    overlap_shift_dates = plan.get('_overlap_shift_dates') or []
 
     old_store_id = old.store_id
     old_status = old.status
@@ -344,9 +404,13 @@ def apply_revamp(plan: dict) -> dict:
     with transaction.atomic():
         _checkout_open_shifts(old)
 
+        # Drop empty placeholders so soft shift overlaps do not block the move.
+        _resolve_shift_overlaps(old.id, new.id, overlap_shift_dates)
+
         qs['reports'].update(ambassador_id=new.id)
         qs['targets'].update(ambassador_id=new.id)
         # Attendance stays on the old BA — new BA starts clocks from scratch.
+        # Remaining old shifts (after soft-resolve) move with clocks cleared.
         qs['shifts'].update(ambassador_id=new.id, **_SHIFT_CLOCK_CLEAR)
         qs['interceptions'].update(ambassador_id=new.id, ba_name=new.name)
         qs['complaints'].update(ambassador_id=new.id)
@@ -356,15 +420,20 @@ def apply_revamp(plan: dict) -> dict:
         if to_date:
             leftover = ShiftAssignment.objects.filter(ambassador_id=old.id, date__gt=to_date)
         leftover_dates = set(leftover.values_list('date', flat=True))
-        occupied = set(
+        leftover_overlap = leftover_dates & set(
             ShiftAssignment.objects.filter(
                 ambassador_id=new.id, date__in=leftover_dates
             ).values_list('date', flat=True)
         ) if leftover_dates else set()
-        leftover.exclude(date__in=occupied).update(
-            ambassador_id=new.id,
-            **_SHIFT_CLOCK_CLEAR,
-        )
+        hard_leftover = _hard_shift_collision_dates(old.id, new.id, leftover_overlap)
+        if hard_leftover:
+            # Should be rare after preview; refuse rather than merge two clocked shifts.
+            raise ValueError(
+                _collision_message({'shifts': hard_leftover, 'reports': [], 'targets': [], 'incentives': []})
+            )
+        _resolve_shift_overlaps(old.id, new.id, leftover_overlap)
+        leftover = ShiftAssignment.objects.filter(ambassador_id=old.id, date__gt=to_date) if to_date else ShiftAssignment.objects.none()
+        leftover.update(ambassador_id=new.id, **_SHIFT_CLOCK_CLEAR)
 
         old.status = Ambassador.Status.ON_LEAVE
         old.save(update_fields=['status', 'updated_at'])

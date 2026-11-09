@@ -920,10 +920,15 @@ def mis_revamp_bas(request):
 
     try:
         result = apply_revamp(plan)
-    except IntegrityError:
+    except (IntegrityError, ValueError) as exc:
+        detail = (
+            str(exc)
+            if isinstance(exc, ValueError) and str(exc)
+            else 'Remap did not run because records collide.'
+        )
         return Response(
             {
-                'detail': 'Remap did not run because records collide.',
+                'detail': detail,
                 **public,
             },
             status=status.HTTP_400_BAD_REQUEST,
