@@ -17,7 +17,7 @@ from .models import Store, SupervisorStoreVisit
 from .supervisor_views import _supervisor_profile_or_error
 
 # Max distance from store GPS for supervisor visit check-in / check-out.
-STORE_GEOFENCE_M = 200.0
+STORE_GEOFENCE_M = 300.0
 
 
 def _parse_float(raw, label: str):
