@@ -88,8 +88,8 @@ def ensure_weekly_off_for_ambassador(
     week_start: date | None = None,
 ) -> BaWeeklyOff | None:
     """
-    If this week has no BaWeeklyOff row, create one from preferred_weekly_off
-    (fallback: previous week's off_day). No-op for Disabled / hiring pending.
+    If this week has no BaWeeklyOff row, create one from preferred_weekly_off only.
+    No-op when preference is cleared (BA chose to work a full week) or Disabled / hiring pending.
     """
     if _skip_weekly_off_auto(ambassador):
         return None
@@ -99,13 +99,6 @@ def ensure_weekly_off_for_ambassador(
         return existing
 
     pref = (ambassador.preferred_weekly_off or '').strip()
-    if pref not in DAY_KEYS:
-        prev = (
-            BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start - timedelta(days=7))
-            .only('off_day')
-            .first()
-        )
-        pref = (prev.off_day if prev else '') or ''
     if pref not in DAY_KEYS:
         return None
 
@@ -135,19 +128,9 @@ def ensure_weekly_offs_for_ambassadors(
     if not missing:
         return existing
 
-    prev_week = start - timedelta(days=7)
-    prev_offs = {
-        row.ambassador_id: row.off_day
-        for row in BaWeeklyOff.objects.filter(
-            week_start=prev_week,
-            ambassador_id__in=[ba.id for ba in missing],
-        ).only('ambassador_id', 'off_day')
-    }
     to_create: list[BaWeeklyOff] = []
     for ba in missing:
         pref = (ba.preferred_weekly_off or '').strip()
-        if pref not in DAY_KEYS:
-            pref = (prev_offs.get(ba.id) or '').strip()
         if pref not in DAY_KEYS:
             continue
         to_create.append(
@@ -174,6 +157,20 @@ def set_preferred_weekly_off(ambassador: Ambassador, off_day: str) -> None:
         return
     ambassador.preferred_weekly_off = off_day
     ambassador.save(update_fields=['preferred_weekly_off', 'updated_at'])
+
+
+def clear_preferred_weekly_off(ambassador: Ambassador) -> None:
+    if not (ambassador.preferred_weekly_off or '').strip():
+        return
+    ambassador.preferred_weekly_off = ''
+    ambassador.save(update_fields=['preferred_weekly_off', 'updated_at'])
+
+
+def clear_weekly_off_for_ambassador(ambassador: Ambassador, *, week_start: date | None = None) -> None:
+    """Remove this week's off day and standing preference so BA can work a full week."""
+    start = week_start or week_start_monday()
+    BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).delete()
+    clear_preferred_weekly_off(ambassador)
 
 
 def _float_or_none(v):
@@ -890,6 +887,7 @@ def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None 
             }
         )
     row = ensure_weekly_off_for_ambassador(ambassador, week_start=start)
+    pref = (ambassador.preferred_weekly_off or '').strip()
     return {
         'weekStart': start.isoformat(),
         'weekEnd': (start + timedelta(days=6)).isoformat(),
@@ -897,7 +895,7 @@ def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None 
         'days': days,
         'offDay': row.off_day if row else None,
         'offDate': row.off_date.isoformat() if row else None,
-        'preferredOffDay': (ambassador.preferred_weekly_off or None) or (row.off_day if row else None),
+        'preferredOffDay': pref if pref in DAY_KEYS else None,
         # Kept for older clients; BA may change the day within the same week.
         'locked': False,
         'status': row.off_day if row else 'Not set',
@@ -910,8 +908,9 @@ def ba_weekly_off(request):
     """
     GET  /api/ba/weekly-off/?token=…
     POST /api/ba/weekly-off/  Body: { token, offDay: 'Mon'|'Tue'|… }
+         or { token, clear: true } / { token, offDay: null } to remove weekly off.
     One day per BA per week. BA may change the day anytime this week (updates same row).
-    New calendar week → new row.
+    New calendar week → new row. Clear removes this week's off so BA can work all days.
     """
     token = request.query_params.get('token') if request.method == 'GET' else request.data.get('token')
     ambassador = _ambassador_from_token(token)
@@ -926,7 +925,30 @@ def ba_weekly_off(request):
     if request.method == 'GET':
         return Response(_weekly_off_week_payload(ambassador))
 
-    off_day = str(request.data.get('offDay') or request.data.get('off_day') or '').strip()
+    clear_raw = request.data.get('clear')
+    clear = (
+        clear_raw is True
+        or str(clear_raw or '').strip().lower() in ('1', 'true', 'yes')
+    )
+    if 'offDay' in request.data or 'off_day' in request.data:
+        off_raw = request.data.get('offDay', request.data.get('off_day'))
+        if off_raw is None:
+            clear = True
+            off_day = ''
+        else:
+            off_day = str(off_raw).strip()
+            if off_day.lower() in ('', 'none', 'null'):
+                clear = True
+                off_day = ''
+    else:
+        off_day = ''
+
+    if clear:
+        start = week_start_monday(timezone.localdate())
+        clear_weekly_off_for_ambassador(ambassador, week_start=start)
+        ambassador.refresh_from_db(fields=['preferred_weekly_off'])
+        return Response(_weekly_off_week_payload(ambassador, week_start=start))
+
     if off_day not in DAY_KEYS:
         return Response(
             {'detail': 'Select exactly one day (Mon–Sun).'},

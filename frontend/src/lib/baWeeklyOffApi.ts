@@ -35,3 +35,11 @@ export async function saveBaWeeklyOff(
     body: { token, offDay },
   })
 }
+
+/** Clear this week's weekly off so the BA can work all 7 days. */
+export async function clearBaWeeklyOff(token: string): Promise<BaWeeklyOffPayload> {
+  return apiRequest<BaWeeklyOffPayload>(`/api/ba/weekly-off/`, {
+    method: 'POST',
+    body: { token, clear: true },
+  })
+}

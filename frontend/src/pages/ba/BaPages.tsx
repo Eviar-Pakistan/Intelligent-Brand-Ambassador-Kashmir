@@ -28,6 +28,7 @@ import {
 import type { AnswerMetrics, AssessmentResult } from '../../lib/baAssessment'
 import { formatMonthLabel, fetchBaOwnTargets, monthInputValue, sumBaTargetsForMonth } from '../../lib/baTargets'
 import {
+  clearBaWeeklyOff,
   fetchBaWeeklyOff,
   saveBaWeeklyOff,
   type BaWeeklyOffPayload,
@@ -162,6 +163,22 @@ export function BaHomePage() {
       setPickedOffDay(data.offDay)
     } catch (err) {
       setWeeklyOffError(err instanceof Error ? err.message : 'Could not save weekly off')
+    } finally {
+      setWeeklyOffBusy(false)
+    }
+  }
+
+  async function removeWeeklyOff() {
+    const token = account?.accessToken
+    if (!token || token.startsWith('demo-') || !weeklyOff?.offDay) return
+    setWeeklyOffBusy(true)
+    setWeeklyOffError(null)
+    try {
+      const data = await clearBaWeeklyOff(token)
+      setWeeklyOff(data)
+      setPickedOffDay(data.offDay)
+    } catch (err) {
+      setWeeklyOffError(err instanceof Error ? err.message : 'Could not remove weekly off')
     } finally {
       setWeeklyOffBusy(false)
     }
@@ -707,9 +724,20 @@ export function BaHomePage() {
                           : 'Weekly off saved'
                         : 'Confirm weekly off'}
                   </button>
+                  {hasSaved ? (
+                    <button
+                      type="button"
+                      disabled={weeklyOffBusy}
+                      onClick={() => void removeWeeklyOff()}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {weeklyOffBusy ? 'Saving…' : 'Remove weekly off'}
+                    </button>
+                  ) : null}
                   {hasSaved && !dirty ? (
                     <p className="mt-2 text-xs text-slate-500">
-                      Past days are locked. Pick today or a later day to change this week.
+                      Past days are locked. Pick today or a later day to change this week. Or remove
+                      weekly off to work all 7 days.
                     </p>
                   ) : (
                     <p className="mt-2 text-xs text-slate-500">
