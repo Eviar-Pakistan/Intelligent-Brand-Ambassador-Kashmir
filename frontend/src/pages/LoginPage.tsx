@@ -15,10 +15,17 @@ import {
 } from '../lib/supervisors'
 import { baEmailInUse, baSignOut, syncAmbassadorsFromApi } from '../lib/baAccounts'
 import { loginWithEmail, logoutApi } from '../lib/auth'
-import { ApiError } from '../lib/api'
+import { ApiError, setStoredTokens } from '../lib/api'
 import { USER_TYPE_MIS } from '../lib/misApi'
 import { clearHoDataCache } from '../lib/hoDataCache'
 import { syncStoresFromApi } from '../lib/storeRegistry'
+import {
+  DEMO_ACCESS_TOKEN,
+  DEMO_REFRESH_TOKEN,
+  enterDemoMode,
+  exitDemoMode,
+  isDemoHoCredentials,
+} from '../lib/demoMode'
 
 type LoginMode = 'headOffice' | 'supervisor'
 
@@ -155,6 +162,23 @@ export function LoginPage() {
         return
       }
 
+      // Demo Head Office — same /ho shell, fixtures only (no backend).
+      if (mode === 'headOffice' && isDemoHoCredentials(email, password)) {
+        signOut()
+        baSignOut()
+        clearHoDataCache()
+        exitDemoMode()
+        enterDemoMode()
+        setStoredTokens(DEMO_ACCESS_TOKEN, DEMO_REFRESH_TOKEN)
+        await Promise.all([
+          syncStoresFromApi(),
+          syncAmbassadorsFromApi(),
+          syncSupervisorsFromApi(),
+        ]).catch(() => {})
+        enter('headOffice')
+        return
+      }
+
       // Only hit supervisor login when this email looks like a supervisor
       const emailNorm = email.trim().toLowerCase()
       const mightBeSupervisor =
@@ -165,6 +189,7 @@ export function LoginPage() {
         try {
           const supervisor = await loginSupervisorWithApi(email, password)
           if (supervisor) {
+            exitDemoMode()
             setRole('supervisor')
             navigate(roleMeta.supervisor.home)
             return
@@ -180,6 +205,7 @@ export function LoginPage() {
             return
           }
           logoutApi()
+          exitDemoMode()
           setRole('supervisor')
           signIn(supervisor.id)
           navigate(roleMeta.supervisor.home)
@@ -188,6 +214,7 @@ export function LoginPage() {
       }
 
       const { user } = await loginWithEmail(email, password)
+      exitDemoMode()
       signOut()
       baSignOut()
       clearHoDataCache()

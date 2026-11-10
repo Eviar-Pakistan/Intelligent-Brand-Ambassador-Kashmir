@@ -1,5 +1,8 @@
 /** Thin fetch helper for the Kashmir Django API. */
 
+import { isDemoMode } from './demoMode'
+import { resolveDemoApiResponse } from './demoApi'
+
 const API_BASE = (() => {
   const raw = import.meta.env.VITE_API_URL as string | undefined
   // Empty string = same-origin (Vite proxy). Unset = local Django default.
@@ -118,6 +121,9 @@ let refreshInFlight: Promise<string | null> | null = null
 
 /** Exchange refresh token for a new access token. Returns null if refresh fails. */
 export async function refreshAccessToken(): Promise<string | null> {
+  if (isDemoMode()) {
+    return getStoredAccessToken()
+  }
   const refresh = getStoredRefreshToken()
   if (!refresh) {
     clearStoredTokens()
@@ -171,6 +177,12 @@ export async function refreshAccessToken(): Promise<string | null> {
 }
 
 export async function apiRequest<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+  // Head Office demo session: never hit the network.
+  if (isDemoMode()) {
+    const method = options.method || (options.body || options.formData ? 'POST' : 'GET')
+    return resolveDemoApiResponse(path, { method, body: options.body }) as T
+  }
+
   const headers: Record<string, string> = {}
   const token = options.token !== undefined ? options.token : options.auth === false ? null : getStoredAccessToken()
 

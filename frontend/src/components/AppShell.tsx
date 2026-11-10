@@ -28,6 +28,9 @@ import { useEffect, useState } from 'react'
 import { cn } from './ui'
 import { RoleSync } from './RoleLayouts'
 import { getPreviewReturnTo, signOut, useSupervisorSession } from '../lib/supervisors'
+import { exitDemoMode, isDemoMode } from '../lib/demoMode'
+import { clearStoredTokens } from '../lib/api'
+import { clearHoDataCache } from '../lib/hoDataCache'
 import { useBrand } from '../context/BrandContext'
 
 type NavItem = {
@@ -209,6 +212,10 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const meta = roleMeta[role]
   const navGroups = groupNav(cfg.nav)
+  const showAsDemo = kind === 'headOffice' && isDemoMode()
+  const displayBrand = showAsDemo ? 'Demo' : cfg.brand
+  const displayLabel = showAsDemo ? 'Demo' : meta.label
+  const displayShort = showAsDemo ? 'DM' : meta.short
 
   useEffect(() => {
     setRole(cfg.role)
@@ -244,6 +251,11 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
       signOut()
       navigate('/login')
       return
+    }
+    if (isDemoMode()) {
+      exitDemoMode()
+      clearStoredTokens()
+      clearHoDataCache()
     }
     navigate('/login')
   }
@@ -357,11 +369,11 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
         <div className="relative z-[1] border-t border-white/10 bg-black/20 p-3 backdrop-blur-sm">
           <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-white/8 px-2.5 py-2.5 ring-1 ring-white/10">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gold-400 to-gold-600 text-[11px] font-bold text-navy-950 shadow-md shadow-gold-500/25">
-              {meta.short}
+              {displayShort}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-white">{cfg.brand}</div>
-              <div className="truncate text-[10px] text-white/55">{meta.label}</div>
+              <div className="truncate text-xs font-semibold text-white">{displayBrand}</div>
+              <div className="truncate text-[10px] text-white/55">{displayLabel}</div>
             </div>
           </div>
         </div>
@@ -379,8 +391,15 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
               <Menu size={18} />
             </button>
             <div className="min-w-0">
-              <div className="truncate text-xs font-bold tracking-wide text-slate-800 uppercase sm:text-sm">
-                Intelligent Brand Ambassador Ecosystem
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="truncate text-xs font-bold tracking-wide text-slate-800 uppercase sm:text-sm">
+                  Intelligent Brand Ambassador Ecosystem
+                </div>
+                {showAsDemo ? (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold tracking-wide text-amber-800 uppercase">
+                    Demo
+                  </span>
+                ) : null}
               </div>
               <div className="hidden truncate text-[11px] font-medium tracking-wide text-slate-500 uppercase sm:block">
                 AI-Powered In-Store Engagement
@@ -431,14 +450,14 @@ export function DesktopShell({ kind }: { kind: ShellKind }) {
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-2 py-1.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-white">
-                  {meta.short}
+                  {displayShort}
                 </div>
                 <div className="hidden text-left sm:block">
                   <div className="text-xs font-semibold text-slate-800">
-                    {kind === 'supervisor' ? (sv.supervisor?.name ?? cfg.brand) : cfg.brand}
+                    {kind === 'supervisor' ? (sv.supervisor?.name ?? cfg.brand) : displayBrand}
                   </div>
                   <div className="text-[10px] text-slate-500">
-                    {kind === 'supervisor' && sv.preview ? 'Head Office preview' : meta.label}
+                    {kind === 'supervisor' && sv.preview ? 'Head Office preview' : displayLabel}
                   </div>
                 </div>
               </div>
