@@ -94,12 +94,17 @@ function SetTargetSalesModal({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Reset form only when the modal opens — not when BA roster re-syncs.
   useEffect(() => {
     if (!open) return
-    setBaId((prev) => (prev && baOptions.some((b) => b.id === prev) ? prev : baOptions[0]?.id ?? ''))
     setMonth(monthInputValue())
     setTargetsByCat(Object.fromEntries(baPerformanceCategories.map((c) => [c, ''])))
     setSaveError(null)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    setBaId((prev) => (prev && baOptions.some((b) => b.id === prev) ? prev : baOptions[0]?.id ?? ''))
   }, [open, baOptions])
 
   const totalPreview = baPerformanceCategories.reduce((s, c) => {
@@ -1163,6 +1168,9 @@ export function AmbassadorsPage() {
 
   useEffect(() => {
     void syncAmbassadorsFromApi().catch(() => {})
+    // Pause roster polling while editing modals so forms are not disrupted.
+    const editing = targetOpen || uploadTargetsOpen || createOpen || bulkOpen
+    if (editing) return
     const refresh = () => {
       void syncAmbassadorsFromApi().catch(() => {})
     }
@@ -1173,7 +1181,7 @@ export function AmbassadorsPage() {
       window.removeEventListener('focus', onFocus)
       window.clearInterval(timer)
     }
-  }, [])
+  }, [targetOpen, uploadTargetsOpen, createOpen, bulkOpen])
 
   const filteredAccounts = useMemo(() => {
     const cityOf = (a: BaAccount) => {
