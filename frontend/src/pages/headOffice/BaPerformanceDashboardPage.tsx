@@ -1590,7 +1590,7 @@ export function BaPerformanceDashboardPage() {
             <BasListKpiCard
               label="Inactive BA's"
               value={cityStatus?.inactive ?? cityStatus?.inactiveBas?.length ?? '—'}
-              hint="Disabled · with reason"
+              hint="Inactive · with reason"
               rows={cityStatus?.inactiveBas ?? []}
               emptyText="No inactive BA's"
               tone="forest"

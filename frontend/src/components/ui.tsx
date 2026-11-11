@@ -94,6 +94,8 @@ export function Button({
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  // BA roster uses API value "Disabled"; show as "Inactive" in HO UI.
+  const label = status === 'Disabled' ? 'Inactive' : status
   const map: Record<string, string> = {
     Covered: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     LIVE: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -101,7 +103,7 @@ export function StatusBadge({ status }: { status: string }) {
     Certified: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Deployed: 'bg-sky-50 text-sky-700 ring-sky-200',
     'Weekly Off': 'bg-amber-50 text-amber-800 ring-amber-200',
-    Disabled: 'bg-amber-50 text-amber-800 ring-amber-200',
+    Disabled: 'bg-slate-100 text-slate-600 ring-slate-200',
     'On leave': 'bg-amber-50 text-amber-800 ring-amber-200',
     Inactive: 'bg-slate-100 text-slate-600 ring-slate-200',
     Training: 'bg-violet-50 text-violet-700 ring-violet-200',
@@ -139,10 +141,10 @@ export function StatusBadge({ status }: { status: string }) {
     <span
       className={cn(
         'inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset',
-        map[status] ?? 'bg-slate-100 text-slate-600 ring-slate-200',
+        map[status] ?? map[label] ?? 'bg-slate-100 text-slate-600 ring-slate-200',
       )}
     >
-      {status}
+      {label}
     </span>
   )
 }

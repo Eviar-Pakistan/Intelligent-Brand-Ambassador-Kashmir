@@ -360,7 +360,7 @@ class Ambassador(models.Model):
         CERTIFIED = 'Certified', 'Certified'
         REJECTED = 'Rejected', 'Rejected'
         DEPLOYED = 'Deployed', 'Deployed'
-        ON_LEAVE = 'Disabled', 'Disabled'
+        ON_LEAVE = 'Disabled', 'Inactive'
 
     code = models.CharField(
         max_length=16,
@@ -373,6 +373,12 @@ class Ambassador(models.Model):
     email = models.EmailField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=30, blank=True)
+    nic = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        help_text='National Identity Card number (optional).',
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,

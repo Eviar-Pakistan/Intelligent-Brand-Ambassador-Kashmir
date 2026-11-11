@@ -50,7 +50,7 @@ export function BaShell() {
                 {account.status === 'Deployed'
                   ? 'Deployed'
                   : account.status === 'Disabled'
-                    ? 'Disabled'
+                    ? 'Inactive'
                     : isBaCertified(account.status)
                       ? 'Certified'
                       : account.status}

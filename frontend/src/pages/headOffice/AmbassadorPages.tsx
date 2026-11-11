@@ -410,7 +410,7 @@ function CreateAmbassadorModal({
   onClose: () => void
   onCreated: (account: BaAccount) => void
 }) {
-  const fresh = () => ({ name: '', city: '', phone: '' })
+  const fresh = () => ({ name: '', city: '', phone: '', nic: '' })
   const [form, setForm] = useState(fresh)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -433,6 +433,7 @@ function CreateAmbassadorModal({
         name: form.name.trim(),
         city: form.city.trim(),
         phone: form.phone.trim(),
+        nic: form.nic.trim(),
         email: generateBaEmail(form.name),
       })
       onCreated(account)
@@ -445,7 +446,7 @@ function CreateAmbassadorModal({
     }
   }
 
-  const set = (key: 'name' | 'city' | 'phone') => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const set = (key: 'name' | 'city' | 'phone' | 'nic') => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [key]: e.target.value })
     setError(null)
   }
@@ -464,6 +465,15 @@ function CreateAmbassadorModal({
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">Phone (optional)</span>
           <input type="tel" value={form.phone} onChange={set('phone')} className={modalFieldClass} />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">NIC (optional)</span>
+          <input
+            value={form.nic}
+            onChange={set('nic')}
+            className={modalFieldClass}
+            placeholder="e.g. 35202-1234567-1"
+          />
         </label>
         <p className="text-xs text-slate-500">
           After you create the ambassador, you get a personal link. They open that link to enter their account.
@@ -853,6 +863,7 @@ function AmbassadorDetailModal({
   const [city, setCity] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [nic, setNic] = useState('')
   const [checkIn, setCheckIn] = useState('')
   const [checkOut, setCheckOut] = useState('')
   const [clearIn, setClearIn] = useState(false)
@@ -866,6 +877,7 @@ function AmbassadorDetailModal({
     setCity(account.city || '')
     setPhone(account.phone || '')
     setEmail(account.email || '')
+    setNic(account.nic || '')
     setCheckIn(clockToDatetimeLocal(account.checkIn))
     setCheckOut(clockToDatetimeLocal(account.checkOut))
     setClearIn(false)
@@ -883,6 +895,7 @@ function AmbassadorDetailModal({
         city,
         phone,
         email,
+        nic,
         clearCheckIn: clearIn,
         clearCheckOut: clearOut,
         checkedInAt: !clearIn && checkIn ? new Date(checkIn).toISOString() : undefined,
@@ -921,6 +934,7 @@ function AmbassadorDetailModal({
                     ['city', 'City', city, setCity],
                     ['phone', 'Phone', phone, setPhone],
                     ['email', 'Email', email, setEmail],
+                    ['nic', 'NIC', nic, setNic],
                   ] as const
                 ).map(([key, label, value, setter]) => (
                   <label key={key} className="block min-w-0">
@@ -1021,8 +1035,9 @@ function AmbassadorDetailModal({
               <div className="flex items-center gap-2">
                 <StatusBadge status={account.isWeeklyOffToday ? 'Weekly Off' : account.status} />
                 <span className="text-xs text-slate-500">
-                  {[account.city, account.email, account.phone].filter(Boolean).join(' · ') ||
-                    'No contact details'}
+                  {[account.city, account.email, account.phone, account.nic ? `NIC ${account.nic}` : '']
+                    .filter(Boolean)
+                    .join(' · ') || 'No contact details'}
                 </span>
               </div>
 
@@ -1146,6 +1161,7 @@ export function AmbassadorsPage() {
             code: a.code,
             name: a.name,
             phone: a.phone,
+            nic: a.nic,
             email: a.email,
             city: store?.city || a.city || '',
             storeName: a.storeName || store?.name || '',
@@ -1195,7 +1211,9 @@ export function AmbassadorsPage() {
         if (isPlaceholderBaName(a.name)) return false
         const matchTab =
           tab === 'All' ||
-          (a.status === 'Invited' ? tab === 'Pending' : a.status === tab)
+          (tab === 'Deployed' && a.status === 'Deployed') ||
+          (tab === 'Inactive' && a.status === 'Disabled') ||
+          (tab === 'Weekly Off' && Boolean(a.isWeeklyOffToday))
         const qLower = q.toLowerCase()
         const matchQ =
           !qLower ||
@@ -1287,7 +1305,7 @@ export function AmbassadorsPage() {
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput placeholder="Search ambassador..." value={q} onChange={(e) => setQ(e.target.value)} />
-        <Tabs tabs={['All', 'Certified', 'Training', 'Deployed', 'Pending']} value={tab} onChange={setTab} />
+        <Tabs tabs={['All', 'Deployed', 'Inactive', 'Weekly Off']} value={tab} onChange={setTab} />
       </div>
       <Card padding={false}>
         <TableScroll minWidth={1080}>

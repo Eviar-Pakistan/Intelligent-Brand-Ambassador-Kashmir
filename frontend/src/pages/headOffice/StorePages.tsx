@@ -772,7 +772,7 @@ function RevampBasModal({
               {(counts.attendanceKept ?? counts.attendance) > 0
                 ? `${counts.attendanceKept ?? counts.attendance} attendance day(s) stay with the old BA.`
                 : 'No attendance days on the old BA in this range.'}{' '}
-              Old BA will be Disabled. New BA takes the store if the old BA had one.
+              Old BA will be marked Inactive. New BA takes the store if the old BA had one.
             </p>
           </div>
         )}
@@ -1340,7 +1340,7 @@ function SchedulerPanel() {
                     slot.status === 'Conflict'
                       ? 'Conflict'
                       : onLeave
-                        ? 'Disabled'
+                        ? 'Inactive'
                         : slot.baId
                           ? 'Scheduled'
                           : 'Open'
@@ -1493,7 +1493,7 @@ function SchedulerPanel() {
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Choose why this BA is inactive. They will be marked Disabled and blocked from
+            Choose why this BA is inactive. They will be marked Inactive and blocked from
             check-in until activated again.
           </p>
           <label className="block space-y-1.5">
