@@ -127,6 +127,7 @@ export async function misPatchAmbassador(
     city?: string
     phone?: string
     email?: string
+    nic?: string
     clearCheckIn?: boolean
     clearCheckOut?: boolean
     checkedInAt?: string | null

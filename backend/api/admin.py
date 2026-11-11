@@ -216,6 +216,8 @@ class AmbassadorAdmin(admin.ModelAdmin):
         'id',
         'name',
         'city',
+        'phone',
+        'nic',
         'status',
         'preferred_weekly_off',
         'store',
@@ -224,7 +226,7 @@ class AmbassadorAdmin(admin.ModelAdmin):
         'created_at',
     )
     list_filter = ('status', 'city', 'store', 'preferred_weekly_off')
-    search_fields = ('code', 'name', 'email', 'phone', 'invite_token')
+    search_fields = ('code', 'name', 'email', 'phone', 'nic', 'invite_token')
     readonly_fields = ('code', 'invite_token', 'created_at', 'updated_at', 'certified_at', 'deployed_at')
     raw_id_fields = ('store', 'created_by')
 

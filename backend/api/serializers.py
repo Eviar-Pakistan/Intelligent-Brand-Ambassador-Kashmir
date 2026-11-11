@@ -663,6 +663,7 @@ class AmbassadorSerializer(serializers.ModelSerializer):
             'email',
             'city',
             'phone',
+            'nic',
             'status',
             'inactive_reason',
             'invite_token',

@@ -17,6 +17,8 @@ export type BaAccount = {
   city: string
   email: string
   phone: string
+  /** National Identity Card number (optional). */
+  nic: string
   /** Human-facing code e.g. BA-006 (seed BAs use BA-001…BA-005). */
   code: string
   createdAt: string
@@ -81,6 +83,7 @@ function demoAccounts(): BaAccount[] {
     city: a.city,
     email: `${a.id}@kashmir.demo`,
     phone: '',
+    nic: '',
     code: baCodeForId(a.id),
     createdAt: '2026-01-01T00:00:00.000Z',
     status: demoAccountStatus(a.status),
@@ -116,6 +119,7 @@ function normalizeAccount(raw: Partial<BaAccount> & { passwordHash?: string }): 
     city: raw.city ?? '',
     email: raw.email ?? '',
     phone: raw.phone ?? '',
+    nic: raw.nic ?? '',
     code: raw.code || baCodeForId(raw.id) || '',
     createdAt: raw.createdAt ?? new Date().toISOString(),
     status: raw.status ?? 'Invited',
@@ -231,7 +235,13 @@ export function baEmailInUse(email: string, exceptId?: string) {
   return !!e && accounts.some((a) => a.id !== exceptId && normEmail(a.email) === e)
 }
 
-export type BaAccountFields = { name: string; city: string; email: string; phone: string }
+export type BaAccountFields = {
+  name: string
+  city: string
+  email: string
+  phone: string
+  nic?: string
+}
 
 function toAccount(fields: BaAccountFields, code: string): BaAccount {
   return {
@@ -240,6 +250,7 @@ function toAccount(fields: BaAccountFields, code: string): BaAccount {
     city: fields.city.trim(),
     email: fields.email.trim(),
     phone: fields.phone.trim(),
+    nic: (fields.nic || '').trim(),
     code,
     createdAt: new Date().toISOString(),
     status: 'Invited',
@@ -294,6 +305,7 @@ type ApiAmbassador = {
   email?: string
   city?: string
   phone?: string
+  nic?: string
   status?: string
   invite_token?: string
   training_url?: string
@@ -400,6 +412,7 @@ function apiAmbassadorToAccount(a: ApiAmbassador, existing?: BaAccount | null): 
     city: a.city || a.store_city || '',
     email: a.email || '',
     phone: a.phone || '',
+    nic: a.nic || '',
     code: a.code || '',
     createdAt: a.created_at || existing?.createdAt || new Date().toISOString(),
     status,
@@ -535,6 +548,7 @@ export async function createBaAccountAsync(fields: BaAccountFields): Promise<BaA
       email: fields.email.trim(),
       city: fields.city.trim(),
       phone: fields.phone.trim(),
+      nic: (fields.nic || '').trim(),
     },
   })
   const account = apiAmbassadorToAccount(a)
@@ -880,6 +894,7 @@ export type BaMasterRow = {
   code?: string
   name: string
   phone?: string
+  nic?: string
   email?: string
   city?: string
   storeName?: string
@@ -889,7 +904,7 @@ export type BaMasterRow = {
   profileUrl?: string
 }
 
-/** BA Master roster Excel (fields available in the system — no CNIC / weekly off / break). */
+/** BA Master roster Excel. */
 export async function downloadBaMaster(list: BaMasterRow[]) {
   const rows = list.filter((a) => !isPlaceholderBaName(a.name))
   const XLSX = await import('xlsx')
@@ -899,6 +914,7 @@ export async function downloadBaMaster(list: BaMasterRow[]) {
       'BA Code',
       'Name',
       'Contact Number',
+      'NIC',
       'Email',
       'City',
       'Store',
@@ -912,6 +928,7 @@ export async function downloadBaMaster(list: BaMasterRow[]) {
       a.code || '',
       a.name,
       a.phone || '',
+      a.nic || '',
       a.email || '',
       a.city || '',
       a.storeName || '',
@@ -926,6 +943,7 @@ export async function downloadBaMaster(list: BaMasterRow[]) {
     { wch: 10 },
     { wch: 28 },
     { wch: 16 },
+    { wch: 18 },
     { wch: 28 },
     { wch: 18 },
     { wch: 28 },

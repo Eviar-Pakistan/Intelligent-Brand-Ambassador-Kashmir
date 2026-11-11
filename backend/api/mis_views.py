@@ -422,6 +422,7 @@ def mis_patch_ambassador(request, ambassador_id: int):
         'city': ba.city,
         'phone': ba.phone,
         'email': ba.email,
+        'nic': ba.nic,
         'checkedInAt': (
             (att.checked_in_at if att else None)
             or (shift.checked_in_at if shift else None)
@@ -436,7 +437,7 @@ def mis_patch_ambassador(request, ambassador_id: int):
     if before['checkedOutAt']:
         before['checkedOutAt'] = before['checkedOutAt'].isoformat()
 
-    for field in ('name', 'city', 'phone', 'email'):
+    for field in ('name', 'city', 'phone', 'email', 'nic'):
         if field in request.data and request.data[field] is not None:
             setattr(ba, field, str(request.data[field]).strip())
     ba.save()
@@ -498,6 +499,7 @@ def mis_patch_ambassador(request, ambassador_id: int):
         'city': ba.city,
         'phone': ba.phone,
         'email': ba.email,
+        'nic': ba.nic,
         'checkedInAt': att.checked_in_at.isoformat() if att and att.checked_in_at else None,
         'checkedOutAt': att.checked_out_at.isoformat() if att and att.checked_out_at else None,
     }
