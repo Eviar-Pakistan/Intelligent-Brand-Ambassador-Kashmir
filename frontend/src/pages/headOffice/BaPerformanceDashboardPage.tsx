@@ -1285,7 +1285,7 @@ export function BaPerformanceDashboardPage() {
           achievementLabels: rankedTopStores.map((s) => s.achievement ?? null),
         },
       ],
-    } as ChartData<'bar'>
+    } as unknown as ChartData<'bar'>
   }, [rankedTopStores, topStoresMode])
 
   const topSkusChart = useMemo<ChartData<'bar'>>(() => {
