@@ -763,7 +763,10 @@ def ba_submit_answer(request, session_id):
     answer, _created = AssessmentAnswer.objects.update_or_create(
         session=session,
         question=question,
-        defaults={'question_title': question.title},
+        defaults={
+            'ambassador_id': session.ambassador_id,
+            'question_title': question.title,
+        },
     )
     answer.audio_file.save(audio.name, audio, save=True)
 

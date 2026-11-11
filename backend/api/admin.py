@@ -246,13 +246,15 @@ class AssessmentQuestionAdmin(admin.ModelAdmin):
 class AssessmentAnswerAdmin(admin.ModelAdmin):
     list_display = (
         'id',
+        'ambassador',
         'session',
         'question',
         'communication_quality',
         'dominant_mood',
         'analyzed_at',
     )
-    raw_id_fields = ('session', 'question')
+    raw_id_fields = ('session', 'ambassador', 'question')
+    list_filter = ('ambassador',)
 
 
 @admin.register(ShiftAssignment)

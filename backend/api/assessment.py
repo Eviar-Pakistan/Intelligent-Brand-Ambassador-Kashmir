@@ -209,6 +209,7 @@ def upsert_client_answer(
         session=session,
         question=question,
         defaults={
+            'ambassador_id': session.ambassador_id,
             'question_title': question.title,
             'transcript': str(metrics.get('transcript') or ''),
             'communication_quality': _f('communication'),

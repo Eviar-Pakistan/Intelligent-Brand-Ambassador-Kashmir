@@ -827,6 +827,12 @@ class AssessmentAnswer(models.Model):
         on_delete=models.CASCADE,
         related_name='answers',
     )
+    ambassador = models.ForeignKey(
+        Ambassador,
+        on_delete=models.CASCADE,
+        related_name='assessment_answers',
+        help_text='Denormalized from session for direct filtering/reporting.',
+    )
     question = models.ForeignKey(
         AssessmentQuestion,
         on_delete=models.CASCADE,
@@ -849,6 +855,18 @@ class AssessmentAnswer(models.Model):
 
     class Meta:
         unique_together = [('session', 'question')]
+        indexes = [
+            models.Index(fields=['ambassador'], name='api_assessm_ambassa_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.session_id and not self.ambassador_id:
+            self.ambassador_id = (
+                AssessmentSession.objects.filter(pk=self.session_id)
+                .values_list('ambassador_id', flat=True)
+                .first()
+            )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'Answer {self.question.question_id} @ {self.session_id}'
