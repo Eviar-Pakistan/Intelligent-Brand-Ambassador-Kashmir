@@ -16,6 +16,12 @@ export type BaWeeklyOffPayload = {
   days: BaWeeklyOffDay[]
   offDay: string | null
   offDate: string | null
+  nextWeekStart?: string | null
+  nextWeekOffDay?: string | null
+  nextWeekOffDate?: string | null
+  preferredOffDay?: string | null
+  appliedToNextWeek?: boolean
+  appliedWeekStart?: string | null
   locked: boolean
   status: string
 }

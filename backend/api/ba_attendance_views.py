@@ -870,9 +870,26 @@ def ba_today_shift(request):
     return Response(serialize_ba_shift(shift, ambassador))
 
 
+def _upsert_weekly_off(ambassador: Ambassador, *, week_start: date, off_day: str) -> tuple[BaWeeklyOff, bool]:
+    """Create or update the BA weekly-off row for one week. Returns (row, created)."""
+    existing = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=week_start).first()
+    if existing:
+        if existing.off_day != off_day:
+            existing.off_day = off_day
+            existing.save(update_fields=['off_day', 'updated_at'])
+        return existing, False
+    row = BaWeeklyOff.objects.create(
+        ambassador=ambassador,
+        week_start=week_start,
+        off_day=off_day,
+    )
+    return row, True
+
+
 def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None = None) -> dict:
     today = timezone.localdate()
     start = week_start or week_start_monday(today)
+    next_start = start + timedelta(days=7)
     days = []
     for i, key in enumerate(DAY_KEYS):
         d = start + timedelta(days=i)
@@ -883,10 +900,12 @@ def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None 
                 'date': d.isoformat(),
                 'dateLabel': d.strftime('%d %b'),
                 'past': d < today,
-                'selectable': d >= today,
+                # Past days stay selectable; they apply to next week on save.
+                'selectable': True,
             }
         )
     row = ensure_weekly_off_for_ambassador(ambassador, week_start=start)
+    next_row = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=next_start).first()
     pref = (ambassador.preferred_weekly_off or '').strip()
     return {
         'weekStart': start.isoformat(),
@@ -895,6 +914,9 @@ def _weekly_off_week_payload(ambassador: Ambassador, *, week_start: date | None 
         'days': days,
         'offDay': row.off_day if row else None,
         'offDate': row.off_date.isoformat() if row else None,
+        'nextWeekStart': next_start.isoformat(),
+        'nextWeekOffDay': next_row.off_day if next_row else None,
+        'nextWeekOffDate': next_row.off_date.isoformat() if next_row else None,
         'preferredOffDay': pref if pref in DAY_KEYS else None,
         # Kept for older clients; BA may change the day within the same week.
         'locked': False,
@@ -909,8 +931,9 @@ def ba_weekly_off(request):
     GET  /api/ba/weekly-off/?token=…
     POST /api/ba/weekly-off/  Body: { token, offDay: 'Mon'|'Tue'|… }
          or { token, clear: true } / { token, offDay: null } to remove weekly off.
-    One day per BA per week. BA may change the day anytime this week (updates same row).
-    New calendar week → new row. Clear removes this week's off so BA can work all days.
+    One day per BA per week. All weekdays stay selectable.
+    Today/future day → this week's row; already-past day → next week's row.
+    Preferred day is always updated. Clear removes this week's off so BA can work all days.
     """
     token = request.query_params.get('token') if request.method == 'GET' else request.data.get('token')
     ambassador = _ambassador_from_token(token)
@@ -957,6 +980,7 @@ def ba_weekly_off(request):
 
     today = timezone.localdate()
     start = week_start_monday(today)
+    next_start = start + timedelta(days=7)
     try:
         day_index = DAY_KEYS.index(off_day)
     except ValueError:
@@ -964,34 +988,25 @@ def ba_weekly_off(request):
             {'detail': 'Select exactly one day (Mon–Sun).'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    off_date = start + timedelta(days=day_index)
-    if off_date < today:
-        return Response(
-            {
-                'detail': 'That day has already passed. Choose today or a later day this week.',
-                **_weekly_off_week_payload(ambassador, week_start=start),
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    this_week_date = start + timedelta(days=day_index)
+    applies_next_week = this_week_date < today
+    target_start = next_start if applies_next_week else start
 
-    existing = BaWeeklyOff.objects.filter(ambassador=ambassador, week_start=start).first()
-    created = False
-    if existing:
-        if existing.off_day != off_day:
-            existing.off_day = off_day
-            existing.save(update_fields=['off_day', 'updated_at'])
-    else:
-        BaWeeklyOff.objects.create(
-            ambassador=ambassador,
-            week_start=start,
-            off_day=off_day,
-        )
-        created = True
+    _row, created = _upsert_weekly_off(
+        ambassador,
+        week_start=target_start,
+        off_day=off_day,
+    )
+    # Keep next week aligned when BA picks a remaining day this week.
+    if not applies_next_week:
+        _upsert_weekly_off(ambassador, week_start=next_start, off_day=off_day)
 
     # Standing preference drives auto-carry into future weeks.
     set_preferred_weekly_off(ambassador, off_day)
     ambassador.refresh_from_db(fields=['preferred_weekly_off'])
     payload = _weekly_off_week_payload(ambassador, week_start=start)
+    payload['appliedToNextWeek'] = applies_next_week
+    payload['appliedWeekStart'] = target_start.isoformat()
     return Response(
         payload,
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,

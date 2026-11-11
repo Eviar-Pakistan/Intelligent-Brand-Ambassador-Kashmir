@@ -144,23 +144,19 @@ export function BaHomePage() {
   async function confirmWeeklyOff() {
     const token = account?.accessToken
     if (!token || token.startsWith('demo-') || !pickedOffDay) return
-    if (weeklyOff?.offDay && pickedOffDay === weeklyOff.offDay) return
     const pickedMeta = weeklyOff?.days.find((d) => d.day === pickedOffDay)
     const pickedPast =
       Boolean(pickedMeta) &&
-      (pickedMeta!.past === true ||
-        pickedMeta!.selectable === false ||
-        (weeklyOff?.today ? pickedMeta!.date < weeklyOff.today : false))
-    if (pickedPast) {
-      setWeeklyOffError('That day has already passed. Choose today or a later day this week.')
-      return
-    }
+      (pickedMeta!.past === true || (weeklyOff?.today ? pickedMeta!.date < weeklyOff.today : false))
+    // Already saved for the week this pick would apply to.
+    if (pickedPast && weeklyOff?.nextWeekOffDay === pickedOffDay) return
+    if (!pickedPast && weeklyOff?.offDay === pickedOffDay) return
     setWeeklyOffBusy(true)
     setWeeklyOffError(null)
     try {
       const data = await saveBaWeeklyOff(token, pickedOffDay)
       setWeeklyOff(data)
-      setPickedOffDay(data.offDay)
+      setPickedOffDay(pickedOffDay)
     } catch (err) {
       setWeeklyOffError(err instanceof Error ? err.message : 'Could not save weekly off')
     } finally {
@@ -645,8 +641,8 @@ export function BaHomePage() {
             <div className="text-sm font-bold text-slate-900">Weekly Off</div>
             <p className="mt-0.5 text-[11px] text-slate-400">
               {weeklyOff
-                ? `Week of ${weeklyOff.weekStart} · change anytime this week`
-                : 'Choose one off day for this week'}
+                ? `Week of ${weeklyOff.weekStart} · past days apply next week`
+                : 'Choose one off day — past days apply next week'}
             </p>
           </div>
           <div className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
@@ -664,25 +660,19 @@ export function BaHomePage() {
               {weeklyOff.days.map((d) => {
                 const selected = pickedOffDay === d.day
                 const isPast =
-                  d.past === true ||
-                  (d.selectable === false) ||
-                  (weeklyOff.today ? d.date < weeklyOff.today : false)
-                const disabled = weeklyOffBusy || isPast
+                  d.past === true || (weeklyOff.today ? d.date < weeklyOff.today : false)
+                const disabled = weeklyOffBusy
                 return (
                   <button
                     key={d.day}
                     type="button"
                     disabled={disabled}
-                    onClick={() => {
-                      if (!isPast) setPickedOffDay(d.day)
-                    }}
+                    onClick={() => setPickedOffDay(d.day)}
                     className={`rounded-xl px-1 py-2 text-center transition ${
                       selected
                         ? 'bg-navy-900 text-white shadow-sm'
-                        : isPast
-                          ? 'bg-slate-50 text-slate-400 ring-1 ring-slate-100'
-                          : 'bg-slate-50 text-slate-700 ring-1 ring-slate-100'
-                    } ${isPast && !selected ? 'opacity-45' : ''} ${
+                        : 'bg-slate-50 text-slate-700 ring-1 ring-slate-100'
+                    } ${isPast && !selected ? 'opacity-70' : ''} ${
                       disabled ? 'cursor-not-allowed' : 'hover:bg-slate-100'
                     }`}
                   >
@@ -695,19 +685,17 @@ export function BaHomePage() {
               })}
             </div>
             {(() => {
-              const hasSaved = Boolean(weeklyOff.offDay)
-              const dirty = Boolean(pickedOffDay) && pickedOffDay !== weeklyOff.offDay
               const pickedMeta = weeklyOff.days.find((d) => d.day === pickedOffDay)
               const pickedPast =
                 Boolean(pickedMeta) &&
                 (pickedMeta!.past === true ||
-                  pickedMeta!.selectable === false ||
                   (weeklyOff.today ? pickedMeta!.date < weeklyOff.today : false))
-              const canSave =
-                Boolean(pickedOffDay) &&
-                !pickedPast &&
-                (!hasSaved || dirty) &&
-                !weeklyOffBusy
+              const effectiveSavedDay = pickedPast
+                ? weeklyOff.nextWeekOffDay || weeklyOff.preferredOffDay || null
+                : weeklyOff.offDay
+              const hasSaved = Boolean(weeklyOff.offDay || weeklyOff.nextWeekOffDay)
+              const dirty = Boolean(pickedOffDay) && pickedOffDay !== effectiveSavedDay
+              const canSave = Boolean(pickedOffDay) && dirty && !weeklyOffBusy
               return (
                 <>
                   <button
@@ -724,7 +712,7 @@ export function BaHomePage() {
                           : 'Weekly off saved'
                         : 'Confirm weekly off'}
                   </button>
-                  {hasSaved ? (
+                  {weeklyOff.offDay ? (
                     <button
                       type="button"
                       disabled={weeklyOffBusy}
@@ -734,14 +722,15 @@ export function BaHomePage() {
                       {weeklyOffBusy ? 'Saving…' : 'Remove weekly off'}
                     </button>
                   ) : null}
-                  {hasSaved && !dirty ? (
+                  {pickedPast && pickedOffDay ? (
                     <p className="mt-2 text-xs text-slate-500">
-                      Past days are locked. Pick today or a later day to change this week. Or remove
-                      weekly off to work all 7 days.
+                      {pickedOffDay} already passed this week — confirming sets next week&apos;s{' '}
+                      {pickedOffDay} as your weekly off.
                     </p>
                   ) : (
                     <p className="mt-2 text-xs text-slate-500">
-                      Past days cannot be selected.
+                      All days are available. A past day applies to next week. Or remove this
+                      week&apos;s off to work all 7 days.
                     </p>
                   )}
                 </>
