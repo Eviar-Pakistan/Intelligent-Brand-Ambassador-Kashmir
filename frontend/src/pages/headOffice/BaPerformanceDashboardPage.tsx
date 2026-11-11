@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bar, Doughnut } from 'react-chartjs-2'
 import { ChevronDown, Download, MapPin, RotateCcw, Search } from 'lucide-react'
 import { Button, Card, CardHeader, cn, Modal, StatusBadge, TableScroll } from '../../components/ui'
@@ -693,6 +693,9 @@ export function BaPerformanceDashboardPage() {
   const [customTo, setCustomTo] = useState('')
   const [dash, setDash] = useState<BaPerformanceDashboard | null>(null)
   const [loading, setLoading] = useState(true)
+  /** Download lock while a custom From+To range fetch is in flight. */
+  const [customRangeLoading, setCustomRangeLoading] = useState(false)
+  const pendingCustomRangeRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [hoursCity, setHoursCity] = useState<string | null>(null)
@@ -737,6 +740,10 @@ export function BaPerformanceDashboardPage() {
     }
     const cacheKey = dashboardCacheKey(params)
 
+    const customBusy = !opts?.silent && pendingCustomRangeRef.current
+    if (!opts?.silent) pendingCustomRangeRef.current = false
+    if (customBusy) setCustomRangeLoading(true)
+
     let silent = !!opts?.silent
     if (!silent) {
       const cached = peekDashboardCache(cacheKey)
@@ -767,6 +774,7 @@ export function BaPerformanceDashboardPage() {
       }
     } finally {
       if (!silent) setLoading(false)
+      if (customBusy) setCustomRangeLoading(false)
     }
   }, [town, store, month, category, sku, salesPeriod, range, customFrom, customTo, targetMonth])
 
@@ -993,22 +1001,26 @@ export function BaPerformanceDashboardPage() {
     setStore(null)
   }
 
+  function armCustomRangeLoad(from: string, to: string) {
+    const nextRange = dateRangeForPreset('custom', from, to)
+    if (!nextRange) return
+    pendingCustomRangeRef.current = true
+    setCustomRangeLoading(true)
+    setTargetMonth(yearMonthFromDate(nextRange.end))
+    setMonth(monthForPreset('custom', from, to))
+    setStore(null)
+  }
+
   function handleCustomFrom(value: string) {
     setCustomFrom(value)
     setDatePreset('custom')
-    if (value && customTo) {
-      setMonth(monthForPreset('custom', value, customTo))
-      setStore(null)
-    }
+    if (value && customTo) armCustomRangeLoad(value, customTo)
   }
 
   function handleCustomTo(value: string) {
     setCustomTo(value)
     setDatePreset('custom')
-    if (customFrom && value) {
-      setMonth(monthForPreset('custom', customFrom, value))
-      setStore(null)
-    }
+    if (customFrom && value) armCustomRangeLoad(customFrom, value)
   }
 
   function handleTownChange(next: string | null) {
@@ -1038,6 +1050,7 @@ export function BaPerformanceDashboardPage() {
       const { from, to } = dateRangeForMonth(next)
       setCustomFrom(from)
       setCustomTo(to)
+      armCustomRangeLoad(from, to)
     } else {
       setCustomFrom('')
       setCustomTo('')
@@ -1056,7 +1069,7 @@ export function BaPerformanceDashboardPage() {
   }, [datePreset, customFrom, customTo, range])
 
   async function handleDownload() {
-    if (!dash || downloading) return
+    if (!dash || downloading || customRangeLoading || loading) return
     setDownloading(true)
     try {
       await downloadBaPerformanceExcel(dash, {
@@ -1458,12 +1471,12 @@ export function BaPerformanceDashboardPage() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!dash || loading || downloading}
+              disabled={!dash || loading || downloading || customRangeLoading}
               onClick={() => void handleDownload()}
               className="ml-1"
             >
               <Download size={16} className="mr-1.5" />
-              {downloading ? 'Downloading…' : 'Download'}
+              {customRangeLoading ? 'Loading…' : downloading ? 'Downloading…' : 'Download'}
             </Button>
           </div>
         </div>
@@ -1576,7 +1589,7 @@ export function BaPerformanceDashboardPage() {
               tone="sage"
             />
           </div>
-      </div>
+          </div>
 
       <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:grid-rows-[auto_auto_auto]">
         <aside className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
