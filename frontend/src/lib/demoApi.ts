@@ -370,6 +370,7 @@ function demoBaPerformance(): BaPerformanceDashboard {
         city: 'Lahore',
         checkIn: '10:15 AM',
         checkOut: '11:40 AM',
+        duration: '1h 25m',
         status: 'Completed',
       },
     ],

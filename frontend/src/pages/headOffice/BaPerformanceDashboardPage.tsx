@@ -34,7 +34,7 @@ import {
   colorsForSkuLabels,
   defaultChartOptions,
 } from '../../lib/chartjs'
-import type { ChartData, ChartOptions } from 'chart.js'
+import type { ChartData, ChartOptions, Plugin } from 'chart.js'
 
 function EmptyRow({ cols }: { cols: number }) {
   return (
@@ -1263,7 +1263,7 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
-  const topStoresChart = useMemo<ChartData<'bar'>>(() => {
+  const topStoresChart = useMemo(() => {
     const values =
       topStoresMode === 'achievement'
         ? rankedTopStores.map((s) => s.achievement ?? 0)
@@ -1272,6 +1272,7 @@ export function BaPerformanceDashboardPage() {
     const max = Math.max(...values, 1)
     const span = max - min
     const colors = values.map((v) => batteryBarColor(span <= 0 ? 1 : (v - min) / span))
+    // achievementLabels lives on the dataset so the draw plugin never uses a stale closure.
     return {
       labels: rankedTopStores.map((s) => s.store),
       datasets: [
@@ -1281,9 +1282,10 @@ export function BaPerformanceDashboardPage() {
           hoverBackgroundColor: colors,
           borderRadius: 3,
           maxBarThickness: 16,
+          achievementLabels: rankedTopStores.map((s) => s.achievement ?? null),
         },
       ],
-    }
+    } as ChartData<'bar'>
   }, [rankedTopStores, topStoresMode])
 
   const topSkusChart = useMemo<ChartData<'bar'>>(() => {
@@ -1334,9 +1336,47 @@ export function BaPerformanceDashboardPage() {
     [],
   )
 
+  const topStoresAchLabelPlugin = useMemo<Plugin<'bar'>>(
+    () => ({
+      id: 'topStoresAchLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart
+        const meta = chart.getDatasetMeta(0)
+        if (!meta?.data?.length) return
+        const labels = (
+          chart.data.datasets[0] as { achievementLabels?: Array<number | null> }
+        )?.achievementLabels
+        ctx.save()
+        ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif'
+        ctx.fillStyle = '#475569'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        meta.data.forEach((el, i) => {
+          const ach = labels?.[i]
+          if (ach == null || !Number.isFinite(Number(ach))) return
+          const { x, y } = el.getProps(['x', 'y'], true)
+          ctx.fillText(`${Math.round(Number(ach))}%`, x + 6, y)
+        })
+        ctx.restore()
+      },
+    }),
+    [],
+  )
+
   const topStoresBarOptions = useMemo<ChartOptions<'bar'>>(
     () => ({
       ...horizontalBarOptions,
+      layout: {
+        ...(typeof horizontalBarOptions.layout === 'object' ? horizontalBarOptions.layout : {}),
+        padding: {
+          ...(typeof horizontalBarOptions.layout === 'object' &&
+          horizontalBarOptions.layout &&
+          typeof horizontalBarOptions.layout.padding === 'object'
+            ? horizontalBarOptions.layout.padding
+            : {}),
+          right: 40,
+        },
+      },
       scales: {
         ...horizontalBarOptions.scales,
         x: {
@@ -1708,7 +1748,11 @@ export function BaPerformanceDashboardPage() {
               <TopStoresModeToggle value={topStoresMode} onChange={setTopStoresMode} />
             }
           >
-            <Bar data={topStoresChart} options={topStoresBarOptions} />
+            <Bar
+              data={topStoresChart}
+              options={topStoresBarOptions}
+              plugins={[topStoresAchLabelPlugin]}
+            />
           </ChartCard>
 
           <ChartCard title="Top 5 selling SKU's" chartHeight={TOP10_CHART_HEIGHT}>
@@ -1811,7 +1855,7 @@ export function BaPerformanceDashboardPage() {
             subtitle={`Store visits · ${dateRangeLabel}`}
           />
         </div>
-        <TableScroll minWidth={920} className="max-h-80 overflow-y-auto">
+        <TableScroll minWidth={1000} className="max-h-80 overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 uppercase">
               <tr>
@@ -1820,6 +1864,7 @@ export function BaPerformanceDashboardPage() {
                 <th className="px-4 py-3">Store</th>
                 <th className="px-4 py-3">Check-in</th>
                 <th className="px-4 py-3">Check-out</th>
+                <th className="px-4 py-3">Duration</th>
                 <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
@@ -1868,6 +1913,9 @@ export function BaPerformanceDashboardPage() {
                     <td className="px-4 py-3 tabular-nums text-slate-600 whitespace-nowrap">
                       {row.checkOut}
                     </td>
+                    <td className="px-4 py-3 tabular-nums whitespace-nowrap text-slate-700">
+                      {row.duration || '—'}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         {inMap ? (
@@ -1906,7 +1954,7 @@ export function BaPerformanceDashboardPage() {
                   </tr>
                 )
               })}
-              {supervisorAttendanceTable.length === 0 && <EmptyRow cols={7} />}
+              {supervisorAttendanceTable.length === 0 && <EmptyRow cols={8} />}
             </tbody>
           </table>
         </TableScroll>

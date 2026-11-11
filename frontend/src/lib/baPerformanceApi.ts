@@ -83,6 +83,8 @@ export type SupervisorAttendanceRowLive = {
   city: string
   checkIn: string
   checkOut: string
+  /** Elapsed visit time e.g. "0h 12m"; "—" when still open. */
+  duration?: string
   status: 'Open' | 'Completed' | null
   checkInLat?: number | null
   checkInLng?: number | null
@@ -281,6 +283,7 @@ export async function downloadBaPerformanceExcel(
         City: r.city,
         'Check In': r.checkIn,
         'Check Out': r.checkOut,
+        Duration: r.duration ?? '',
         Status: r.status ?? '',
       })),
     ),

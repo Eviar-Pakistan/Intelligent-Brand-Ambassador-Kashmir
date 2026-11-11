@@ -140,6 +140,20 @@ def _format_clock(minutes: int | None) -> str:
     return f'{h24 % 12 or 12:02d}:{mm:02d} {"AM" if h24 < 12 else "PM"}'
 
 
+def _format_duration(checked_in_at, checked_out_at) -> str:
+    """Elapsed visit time as 'Xh Ym'; open visits → '—'."""
+    if not checked_in_at or not checked_out_at:
+        return '—'
+    delta = checked_out_at - checked_in_at
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        return '—'
+    total_minutes = total_seconds // 60
+    hours = total_minutes // 60
+    mins = total_minutes % 60
+    return f'{hours}h {mins}m'
+
+
 def _sales_num(sales: dict, *keys: str) -> float:
     total = 0.0
     for k in keys:
@@ -717,6 +731,7 @@ def _supervisor_visits_block(
                 'checkOut': _format_clock(
                     _minutes_of_day(v.checked_out_at) if v.checked_out_at else None
                 ),
+                'duration': _format_duration(v.checked_in_at, v.checked_out_at),
                 'status': 'Open' if open_visit else 'Completed',
                 'checkInLat': v.check_in_lat,
                 'checkInLng': v.check_in_lng,
