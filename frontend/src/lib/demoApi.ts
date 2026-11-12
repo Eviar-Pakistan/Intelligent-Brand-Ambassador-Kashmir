@@ -462,6 +462,52 @@ export function resolveDemoApiResponse(
     return demoSupervisorsPayload()
   }
 
+  if (clean.includes('/api/ho/ai-optimization/run')) {
+    return {
+      week_start: todayYmd(),
+      week_end: todayYmd(),
+      week_label: 'Demo week',
+      can_run: false,
+      message: 'Already run for this week. You can run again next Monday.',
+      recommendations: [
+        {
+          id: 1,
+          pattern: 'High interceptions / low productive calls',
+          store: 'Carrefour DHA — Lahore',
+          store_id: 12,
+          sales: 420.5,
+          interceptions: 86,
+          productive_calls: 14,
+          achievement_pct: 48,
+          attendance_pct: 86,
+          missing_checkouts: 1,
+          supervisor_visits: 1,
+          top_category: 'Kashmir Cooking Oil',
+          trialist: 6,
+          non_productive: 12,
+          note: '',
+          action: 'Retrain BA on objection handling and reinforce health comparison script.',
+          severity: 'high',
+        },
+      ],
+      created_at: new Date().toISOString(),
+      model_name: 'demo',
+    }
+  }
+
+  if (clean.includes('/api/ho/ai-optimization')) {
+    return {
+      week_start: todayYmd(),
+      week_end: todayYmd(),
+      week_label: 'Demo week',
+      can_run: true,
+      message: null,
+      recommendations: [],
+      created_at: null,
+      model_name: '',
+    }
+  }
+
   if (clean.includes('/api/intelligence/ba-performance')) {
     return demoBaPerformance()
   }

@@ -52,6 +52,7 @@ const headOfficeNav: NavItem[] = [
   { to: '/ho/complaints', label: 'Insights / Complaint Center', icon: MessageSquareWarning, section: 'Operations' },
   { to: '/ho/interceptions', label: 'Interceptions', icon: UserRoundSearch, section: 'Operations' },
   { to: '/ho/mis-audit-log', label: 'MIS Audit Log', icon: ScrollText, section: 'Operations' },
+  { to: '/ho/optimization', label: 'AI Optimization', icon: Sparkles, section: 'Intelligence' },
   { to: '/ho/incentives', label: 'Incentives', icon: Banknote, section: 'Intelligence' },
 ]
 

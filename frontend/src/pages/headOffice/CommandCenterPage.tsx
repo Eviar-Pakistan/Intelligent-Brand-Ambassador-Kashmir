@@ -9,9 +9,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { aiRecommendations, faqs } from '../../data/mock'
+import { faqs } from '../../data/mock'
 import { Card, CardHeader, KpiCard, ProgressBar, StatusBadge } from '../../components/ui'
-import { MapPin, Sparkles, Zap } from 'lucide-react'
+import { Loader2, MapPin, Sparkles, Zap } from 'lucide-react'
 import {
   fetchCommandCenterLive,
   operationsFromManager,
@@ -20,12 +20,20 @@ import {
   type CommandCenterLive,
   type InsightRow,
 } from '../../lib/intelligenceApi'
-import { isApiAuthenticated } from '../../lib/api'
+import {
+  fetchAiOptimization,
+  recommendationContextLine,
+  runAiOptimization,
+  type AiOptimizationResponse,
+  type AiRecommendation,
+} from '../../lib/aiOptimizationApi'
+import { ApiError, isApiAuthenticated } from '../../lib/api'
 
 export function CommandCenterPage() {
   const [live, setLive] = useState<CommandCenterLive | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [aiRecs, setAiRecs] = useState<AiRecommendation[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -40,8 +48,14 @@ export function CommandCenterPage() {
           }
           return
         }
-        const data = await fetchCommandCenterLive()
-        if (!cancelled) setLive(data)
+        const [data, ai] = await Promise.all([
+          fetchCommandCenterLive(),
+          fetchAiOptimization().catch(() => null),
+        ])
+        if (!cancelled) {
+          setLive(data)
+          setAiRecs(ai?.recommendations ?? [])
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Could not load dashboard')
@@ -270,7 +284,7 @@ export function CommandCenterPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title="AI Recommendations"
-            subtitle="Demo patterns (not from API yet)"
+            subtitle={aiRecs.length ? 'Last completed week' : 'Run analysis from AI Optimization'}
             action={
               <Link to="/ho/optimization" className="text-xs font-semibold text-brand-600">
                 View all
@@ -278,18 +292,28 @@ export function CommandCenterPage() {
             }
           />
           <div className="space-y-3">
-            {aiRecommendations.map((r) => (
-              <div key={r.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                <div className="flex items-start gap-2">
-                  <Zap size={15} className="mt-0.5 text-warning" />
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{r.pattern}</div>
-                    <div className="text-xs text-slate-500">{r.store}</div>
-                    <p className="mt-1 text-xs text-slate-600">{r.action}</p>
+            {aiRecs.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No saved analysis yet.{' '}
+                <Link to="/ho/optimization" className="font-semibold text-brand-600">
+                  Open AI Optimization
+                </Link>{' '}
+                to run this week&apos;s analysis.
+              </p>
+            ) : (
+              aiRecs.slice(0, 3).map((r) => (
+                <div key={r.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex items-start gap-2">
+                    <Zap size={15} className="mt-0.5 text-warning" />
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{r.pattern}</div>
+                      <div className="text-xs text-slate-500">{r.store}</div>
+                      <p className="mt-1 text-xs text-slate-600">{r.action}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
 
@@ -359,50 +383,185 @@ function MiniBars({ rows }: { rows: { label?: string; name?: string; value: numb
 }
 
 export function OptimizationPage() {
+  const [data, setData] = useState<AiOptimizationResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError(null)
+      try {
+        if (!isApiAuthenticated()) {
+          if (!cancelled) {
+            setData(null)
+            setError('Sign in to Head Office to load AI Optimization.')
+          }
+          return
+        }
+        const res = await fetchAiOptimization()
+        if (!cancelled) setData(res)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not load AI Optimization')
+          setData(null)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleRun() {
+    if (!data?.can_run || running) return
+    setRunning(true)
+    setError(null)
+    try {
+      const res = await runAiOptimization()
+      setData(res)
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'AI analysis failed'
+      setError(message)
+      if (err instanceof ApiError && err.status === 400 && err.body && typeof err.body === 'object') {
+        const body = err.body as Partial<AiOptimizationResponse>
+        if (Array.isArray(body.recommendations)) {
+          setData((prev) => ({
+            week_start: body.week_start ?? prev?.week_start ?? '',
+            week_end: body.week_end ?? prev?.week_end ?? '',
+            week_label: body.week_label ?? prev?.week_label ?? '',
+            can_run: body.can_run ?? false,
+            message: body.message ?? 'Already run for this week. You can run again next Monday.',
+            recommendations: body.recommendations,
+            created_at: body.created_at ?? prev?.created_at ?? null,
+            model_name: body.model_name ?? prev?.model_name,
+          }))
+        }
+      }
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const recommendations = data?.recommendations ?? []
+  const canRun = Boolean(data?.can_run) && !running
+  const lockedMessage =
+    data?.message ||
+    (!data?.can_run && data
+      ? 'Already run for this week. You can run again next Monday.'
+      : null)
+
   return (
     <div className="space-y-5">
-      <div>
-        <div className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
-          <Sparkles size={13} /> Demo recommendations
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+            <Sparkles size={13} /> Weekly AI analysis
+          </div>
+          <h2 className="mt-3 text-xl font-bold text-slate-900">
+            {data?.week_label ? `Week of ${data.week_label}` : 'Weekly Recommendations'}
+          </h2>
+          <p className="text-sm text-slate-500">
+            Pattern detection across sales, interceptions, productive calls, attendance, and
+            achievement for the last completed Monday–Sunday week.
+          </p>
         </div>
-        <h2 className="mt-3 text-xl font-bold text-slate-900">Today&apos;s Recommendations</h2>
-        <p className="text-sm text-slate-500">
-          Pattern detection across engagement, conversion, foot traffic, and sales.
-        </p>
+        <div className="shrink-0 space-y-2 sm:text-right">
+          <button
+            type="button"
+            disabled={!canRun || loading}
+            onClick={() => void handleRun()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {running ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Running analysis…
+              </>
+            ) : (
+              'Run analysis'
+            )}
+          </button>
+          {lockedMessage ? (
+            <p className="max-w-xs text-xs text-slate-500 sm:ml-auto">{lockedMessage}</p>
+          ) : null}
+        </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {aiRecommendations.map((r) => (
-          <Card key={r.id} className="animate-fade-up">
-            <div className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-900">
-              <Zap size={16} className="text-warning" />
-              {r.pattern}
-            </div>
-            <div className="text-sm text-slate-600">{r.store}</div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-xl bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Engagement</div>
-                <div className="font-bold">{r.engagement}%</div>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Conversion</div>
-                <div className="font-bold">{r.conversion}%</div>
-              </div>
-            </div>
-            <p className="mt-3 text-sm text-slate-700">
-              <span className="font-semibold">Recommendation: </span>
-              {r.action}
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Link
-                to="/ho/stores/12"
-                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50"
-              >
-                View Store
-              </Link>
-            </div>
-          </Card>
-        ))}
-      </div>
+
+      {error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : recommendations.length === 0 ? (
+        <Card>
+          <p className="text-sm text-slate-600">
+            No recommendations saved for this week yet. Click <span className="font-semibold">Run analysis</span>{' '}
+            to generate them (requires OpenAI API key on the server).
+          </p>
+        </Card>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {recommendations.map((r) => {
+            const context = recommendationContextLine(r)
+            return (
+              <Card key={r.id} className="animate-fade-up">
+                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-900">
+                  <Zap size={16} className="text-warning" />
+                  {r.pattern}
+                </div>
+                <div className="text-sm text-slate-600">{r.store}</div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Sales (LTR/KG)</div>
+                    <div className="font-bold">{r.sales}</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Interceptions</div>
+                    <div className="font-bold">{r.interceptions}</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Productive calls</div>
+                    <div className="font-bold">{r.productive_calls}</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Achievement</div>
+                    <div className="font-bold">{r.achievement_pct}%</div>
+                  </div>
+                </div>
+                {context ? <p className="mt-2 text-xs text-slate-500">{context}</p> : null}
+                <p className="mt-3 text-sm text-slate-700">
+                  <span className="font-semibold">Recommendation: </span>
+                  {r.action}
+                </p>
+                {r.store_id ? (
+                  <div className="mt-4 flex gap-2">
+                    <Link
+                      to={`/ho/stores/${r.store_id}`}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50"
+                    >
+                      View Store
+                    </Link>
+                  </div>
+                ) : null}
+              </Card>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

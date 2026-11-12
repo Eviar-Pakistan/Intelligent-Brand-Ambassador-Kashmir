@@ -1264,3 +1264,30 @@ class MisAuditLog(models.Model):
 
     def __str__(self):
         return f'{self.action} · {self.summary[:60]}'
+
+
+class AiOptimizationRun(models.Model):
+    """
+    One weekly AI Optimization analysis for the last completed Mon–Sun week.
+    Unique on week_start so Run can only succeed once per week.
+    """
+
+    week_start = models.DateField(unique=True, db_index=True)
+    week_end = models.DateField()
+    recommendations = models.JSONField(default=list, blank=True)
+    facts_snapshot = models.JSONField(default=dict, blank=True)
+    model_name = models.CharField(max_length=80, blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ai_optimization_runs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-week_start']
+
+    def __str__(self):
+        return f'AI Optimization {self.week_start}–{self.week_end}'

@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    AiOptimizationRun,
     Ambassador,
     AmbassadorComplaint,
     AssessmentAnswer,
@@ -339,3 +340,12 @@ class MisAuditLogAdmin(admin.ModelAdmin):
     list_filter = ('action', 'created_at')
     search_fields = ('summary', 'mis_user__email')
     readonly_fields = ('created_at',)
+
+
+@admin.register(AiOptimizationRun)
+class AiOptimizationRunAdmin(admin.ModelAdmin):
+    list_display = ('id', 'week_start', 'week_end', 'model_name', 'created_by', 'created_at')
+    list_filter = ('week_start',)
+    search_fields = ('model_name',)
+    readonly_fields = ('created_at',)
+    raw_id_fields = ('created_by',)

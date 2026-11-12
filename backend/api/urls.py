@@ -65,6 +65,7 @@ from .mis_views import (
     mis_swap_bas,
     mis_swap_candidates,
 )
+from .ai_optimization import ai_optimization_get, ai_optimization_run
 from .views import (
     ConsumerViewSet,
     AmbassadorComplaintViewSet,
@@ -104,6 +105,8 @@ urlpatterns = [
     path('intelligence/question-insights/', intelligence_question_insights, name='intelligence-question-insights'),
     path('intelligence/store-map/', intelligence_store_map, name='intelligence-store-map'),
     path('intelligence/leaderboard/', intelligence_leaderboard, name='intelligence-leaderboard'),
+    path('ho/ai-optimization/', ai_optimization_get, name='ho-ai-optimization'),
+    path('ho/ai-optimization/run/', ai_optimization_run, name='ho-ai-optimization-run'),
     path('manager/overview/', manager_overview, name='manager-overview'),
     path('platform-settings/', platform_settings, name='platform-settings'),
     path('incentive-kpi/', incentive_kpi_settings, name='incentive-kpi'),
