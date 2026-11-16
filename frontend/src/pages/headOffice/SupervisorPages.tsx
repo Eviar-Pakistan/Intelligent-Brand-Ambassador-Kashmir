@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Eye, KeyRound, Pencil, Plus, Trash2, Download } from 'lucide-react'
+import { ClipboardCheck, Eye, KeyRound, Pencil, Plus, Trash2, Download } from 'lucide-react'
 import { Avatar, Button, Card, Modal, PageHeader, PasswordField, TableScroll } from '../../components/ui'
 import { stores } from '../../data/mock'
 import { useCreatedStores } from '../../lib/storeRegistry'
+import { ApiError } from '../../lib/api'
+import { misCreateSupervisorVisit } from '../../lib/misApi'
 import {
   assignStores,
   createSupervisor,
@@ -337,6 +339,190 @@ function CredentialsModal({ credentials, onClose }: { credentials: Credentials |
   )
 }
 
+function todayIso() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** MIS: add supervisor check-in and/or check-out for any date (no GPS/photo). */
+function ManualVisitModal({
+  open,
+  onClose,
+  supervisors,
+}: {
+  open: boolean
+  onClose: () => void
+  supervisors: Supervisor[]
+}) {
+  useCreatedStores()
+  const [supervisorId, setSupervisorId] = useState('')
+  const [storeId, setStoreId] = useState('')
+  const [date, setDate] = useState(todayIso)
+  const [checkInTime, setCheckInTime] = useState('')
+  const [checkOutTime, setCheckOutTime] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const selected = supervisors.find((s) => s.id === supervisorId) ?? null
+  const assignedStores = useMemo(() => {
+    if (!selected) return []
+    const idSet = new Set(selected.storeIds)
+    return stores.filter((s) => idSet.has(s.id))
+  }, [selected])
+
+  useEffect(() => {
+    if (!open) return
+    setSupervisorId('')
+    setStoreId('')
+    setDate(todayIso())
+    setCheckInTime('')
+    setCheckOutTime('')
+    setError(null)
+    setSuccess(null)
+  }, [open])
+
+  useEffect(() => {
+    setStoreId('')
+  }, [supervisorId])
+
+  async function save() {
+    setError(null)
+    setSuccess(null)
+    if (!supervisorId) return setError('Select a supervisor.')
+    if (!storeId) return setError('Select a store.')
+    if (!date) return setError('Select a date.')
+    if (!checkInTime && !checkOutTime) {
+      return setError('Enter check-in time, check-out time, or both.')
+    }
+    setSaving(true)
+    try {
+      const res = await misCreateSupervisorVisit({
+        supervisorId,
+        storeId,
+        date,
+        checkInTime: checkInTime || undefined,
+        checkOutTime: checkOutTime || undefined,
+      })
+      setSuccess(
+        `Saved visit #${res.id} for ${res.supervisorName} at ${res.storeName} (${res.date}).`,
+      )
+      setCheckInTime('')
+      setCheckOutTime('')
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not save visit',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Manual supervisor visit" size="md">
+      <div className="space-y-4 text-sm">
+        <p className="text-slate-600">
+          Add check-in and/or check-out for any date without GPS or photo. Only stores assigned to
+          the selected supervisor are listed.
+        </p>
+        <label className="block">
+          <span className="mb-1.5 block font-semibold text-slate-800">Supervisor</span>
+          <select
+            className={fieldClass}
+            value={supervisorId}
+            onChange={(e) => setSupervisorId(e.target.value)}
+          >
+            <option value="">Select supervisor…</option>
+            {supervisors.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block font-semibold text-slate-800">Store</span>
+          <select
+            className={fieldClass}
+            value={storeId}
+            onChange={(e) => setStoreId(e.target.value)}
+            disabled={!selected}
+          >
+            <option value="">
+              {!selected
+                ? 'Select a supervisor first…'
+                : assignedStores.length === 0
+                  ? 'No stores assigned'
+                  : 'Select store…'}
+            </option>
+            {assignedStores.map((s) => (
+              <option key={s.id} value={s.id}>
+                #{s.id} {s.name} · {s.city}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block font-semibold text-slate-800">Date</span>
+          <input
+            type="date"
+            className={fieldClass}
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block font-semibold text-slate-800">Check-in time</span>
+            <input
+              type="time"
+              className={fieldClass}
+              value={checkInTime}
+              onChange={(e) => setCheckInTime(e.target.value)}
+            />
+            <span className="mt-1 block text-xs text-slate-400">Optional</span>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block font-semibold text-slate-800">Check-out time</span>
+            <input
+              type="time"
+              className={fieldClass}
+              value={checkOutTime}
+              onChange={(e) => setCheckOutTime(e.target.value)}
+            />
+            <span className="mt-1 block text-xs text-slate-400">Optional</span>
+          </label>
+        </div>
+        {error ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
+            {success}
+          </div>
+        ) : null}
+        <div className="flex flex-col gap-2 sm:flex-row-reverse">
+          <Button disabled={saving} onClick={() => void save()}>
+            {saving ? 'Saving…' : 'Save visit'}
+          </Button>
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function EditStoresModal({ supervisor, onClose }: { supervisor: Supervisor | null; onClose: () => void }) {
   const [draft, setDraft] = useState<{ id: string; ids: number[] } | null>(null)
   // start from the supervisor's current stores each time a different one is opened
@@ -386,9 +572,11 @@ function usePreview() {
 
 export function SupervisorsPage() {
   const base = useRoleBase()
+  const isMis = base === '/mis'
   const supervisors = useSupervisorsSync()
   useCreatedStores()
   const [addOpen, setAddOpen] = useState(false)
+  const [manualVisitOpen, setManualVisitOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [overviews, setOverviews] = useState<Record<string, SupervisorOverview>>({})
@@ -426,6 +614,15 @@ export function SupervisorsPage() {
         description="Create supervisors, give them a login and assign the stores they oversee"
         actions={
           <>
+            {isMis ? (
+              <Button
+                variant="secondary"
+                disabled={supervisors.length === 0}
+                onClick={() => setManualVisitOpen(true)}
+              >
+                <ClipboardCheck size={15} /> Manual visit
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               disabled={supervisors.length === 0}
@@ -509,6 +706,11 @@ export function SupervisorsPage() {
       </Card>
 
       <AddSupervisorModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={setCredentials} />
+      <ManualVisitModal
+        open={manualVisitOpen}
+        onClose={() => setManualVisitOpen(false)}
+        supervisors={supervisors}
+      />
       <EditStoresModal supervisor={supervisors.find((s) => s.id === editing) ?? null} onClose={() => setEditing(null)} />
       <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
     </div>

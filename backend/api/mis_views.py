@@ -16,7 +16,16 @@ from rest_framework.response import Response
 
 from .ba_revamp import apply_revamp, parse_revamp_dates, plan_revamp
 from .mis_audit import is_ho_or_admin, is_mis_user, log_mis_action, require_mis
-from .models import Ambassador, BaAttendanceDay, BaDailyReport, MisAuditLog, ShiftAssignment, Store, Supervisor
+from .models import (
+    Ambassador,
+    BaAttendanceDay,
+    BaDailyReport,
+    MisAuditLog,
+    ShiftAssignment,
+    Store,
+    Supervisor,
+    SupervisorStoreVisit,
+)
 from .sales_report import normalize_sales_json
 from .serializers import StoreSerializer, SupervisorSerializer
 
@@ -964,4 +973,135 @@ def mis_revamp_bas(request):
         store=store,
     )
     return Response(result)
+
+
+def _parse_local_clock(day: date, raw_time: str | None):
+    """Parse HH:MM or HH:MM:SS as local (Asia/Karachi) wall time → aware datetime."""
+    text = str(raw_time or '').strip()
+    if not text:
+        return None
+    for fmt in ('%H:%M:%S', '%H:%M'):
+        try:
+            t = datetime.strptime(text, fmt).time()
+            return timezone.make_aware(datetime.combine(day, t))
+        except ValueError:
+            continue
+    return False  # invalid format
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mis_create_supervisor_visit(request):
+    """
+    POST /api/mis/supervisor-visits/
+    Manual supervisor visit (no GPS / photo).
+
+    Body:
+      supervisorId, storeId, date (YYYY-MM-DD),
+      checkInTime? (HH:MM local), checkOutTime? (HH:MM local)
+    At least one of checkInTime / checkOutTime required.
+    Store must be assigned to the supervisor.
+    """
+    err = require_mis(request)
+    if err:
+        return err
+
+    try:
+        supervisor_id = int(request.data.get('supervisorId') or request.data.get('supervisor_id'))
+    except (TypeError, ValueError):
+        return Response({'detail': 'supervisorId is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        store_id = int(request.data.get('storeId') or request.data.get('store_id'))
+    except (TypeError, ValueError):
+        return Response({'detail': 'storeId is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    day_raw = request.data.get('date')
+    try:
+        day = date.fromisoformat(str(day_raw)[:10])
+    except (TypeError, ValueError):
+        return Response({'detail': 'date must be YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    cin = _parse_local_clock(day, request.data.get('checkInTime') or request.data.get('check_in_time'))
+    cout = _parse_local_clock(day, request.data.get('checkOutTime') or request.data.get('check_out_time'))
+    if cin is False:
+        return Response({'detail': 'Invalid checkInTime. Use HH:MM.'}, status=status.HTTP_400_BAD_REQUEST)
+    if cout is False:
+        return Response({'detail': 'Invalid checkOutTime. Use HH:MM.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not cin and not cout:
+        return Response(
+            {'detail': 'Enter check-in time, check-out time, or both.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if cin and cout and cout < cin:
+        return Response(
+            {'detail': 'Check-out time must be on or after check-in time.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    supervisor = Supervisor.objects.select_related('user').filter(pk=supervisor_id).first()
+    if not supervisor:
+        return Response({'detail': 'Supervisor not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if not supervisor.stores.filter(pk=store_id).exists():
+        return Response(
+            {'detail': 'Store is not assigned to this supervisor.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    store = Store.objects.filter(pk=store_id).first()
+    if not store:
+        return Response({'detail': 'Store not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Creating an open visit (check-in only) must not leave two opens.
+    if cin and not cout:
+        open_visit = (
+            SupervisorStoreVisit.objects.filter(
+                supervisor=supervisor,
+                checked_out_at__isnull=True,
+                checked_in_at__isnull=False,
+            )
+            .select_related('store')
+            .first()
+        )
+        if open_visit:
+            return Response(
+                {
+                    'detail': (
+                        f'{supervisor.name} already has an open visit at {open_visit.store.name}. '
+                        'Add a check-out time, or close that visit first.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+    visit = SupervisorStoreVisit.objects.create(
+        supervisor=supervisor,
+        store=store,
+        checked_in_at=cin,
+        checked_out_at=cout,
+        source=SupervisorStoreVisit.Source.MIS_MANUAL,
+    )
+
+    after = {
+        'id': visit.id,
+        'supervisorId': supervisor.id,
+        'supervisorName': supervisor.name,
+        'storeId': store.id,
+        'storeName': store.name,
+        'date': day.isoformat(),
+        'checkedInAt': visit.checked_in_at.isoformat() if visit.checked_in_at else None,
+        'checkedOutAt': visit.checked_out_at.isoformat() if visit.checked_out_at else None,
+        'source': visit.source,
+    }
+    log_mis_action(
+        user=request.user,
+        action=MisAuditLog.Action.CREATE_SUPERVISOR_VISIT,
+        summary=(
+            f'Manual visit for {supervisor.name} at {store.name} ({day.isoformat()})'
+            f' · in={timezone.localtime(cin).strftime("%H:%M") if cin else "—"}'
+            f' · out={timezone.localtime(cout).strftime("%H:%M") if cout else "—"}'
+        ),
+        before={},
+        after=after,
+        store=store,
+    )
+    return Response(after, status=status.HTTP_201_CREATED)
 

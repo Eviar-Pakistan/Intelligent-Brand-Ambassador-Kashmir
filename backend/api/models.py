@@ -675,7 +675,14 @@ class SupervisorStoreVisit(models.Model):
     """
     Supervisor physical store visit: face-gated check-in (GPS + photo), GPS check-out.
     One open (not checked-out) visit per supervisor at a time; history is append-only.
+
+    App path still requires GPS + photo (enforced in supervisor_visit_views).
+    MIS manual rows may omit GPS/photo and may set check-in and/or check-out only.
     """
+
+    class Source(models.TextChoices):
+        APP = 'app', 'Supervisor app'
+        MIS_MANUAL = 'mis_manual', 'MIS manual'
 
     supervisor = models.ForeignKey(
         Supervisor,
@@ -687,20 +694,30 @@ class SupervisorStoreVisit(models.Model):
         on_delete=models.CASCADE,
         related_name='supervisor_visits',
     )
-    checked_in_at = models.DateTimeField(db_index=True)
+    checked_in_at = models.DateTimeField(null=True, blank=True, db_index=True)
     checked_out_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    check_in_lat = models.FloatField()
-    check_in_lng = models.FloatField()
+    check_in_lat = models.FloatField(null=True, blank=True)
+    check_in_lng = models.FloatField(null=True, blank=True)
     check_in_accuracy_m = models.FloatField(null=True, blank=True)
     check_out_lat = models.FloatField(null=True, blank=True)
     check_out_lng = models.FloatField(null=True, blank=True)
     check_out_accuracy_m = models.FloatField(null=True, blank=True)
-    check_in_photo = models.ImageField(upload_to=supervisor_visit_photo_upload_to)
+    check_in_photo = models.ImageField(
+        upload_to=supervisor_visit_photo_upload_to,
+        blank=True,
+        null=True,
+    )
+    source = models.CharField(
+        max_length=20,
+        choices=Source.choices,
+        default=Source.APP,
+        db_index=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-checked_in_at']
+        ordering = ['-checked_in_at', '-id']
         indexes = [
             models.Index(fields=['supervisor', 'checked_out_at']),
             models.Index(fields=['supervisor', 'store', 'checked_in_at']),
@@ -713,7 +730,8 @@ class SupervisorStoreVisit(models.Model):
 
     @property
     def is_open(self) -> bool:
-        return self.checked_out_at is None
+        # Open = checked in and not yet checked out (checkout-only MIS rows are closed).
+        return self.checked_in_at is not None and self.checked_out_at is None
 
 
 class BaIncentivePayout(models.Model):
@@ -1222,6 +1240,7 @@ class MisAuditLog(models.Model):
         EDIT_AMBASSADOR = 'edit_ambassador', 'Edit ambassador'
         EDIT_STORE = 'edit_store', 'Edit store'
         EDIT_SUPERVISOR_STORES = 'edit_supervisor_stores', 'Edit supervisor stores'
+        CREATE_SUPERVISOR_VISIT = 'create_supervisor_visit', 'Create supervisor visit'
         SWAP_BAS = 'swap_bas', 'Swap BAs'
         REVAMP_BAS = 'revamp_bas', 'Remap BAs'
 

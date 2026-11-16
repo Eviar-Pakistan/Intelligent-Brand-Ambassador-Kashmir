@@ -85,7 +85,8 @@ export type SupervisorAttendanceRowLive = {
   checkOut: string
   /** Elapsed visit time e.g. "0h 12m"; "—" when still open. */
   duration?: string
-  status: 'Open' | 'Completed' | null
+  status: 'Open' | 'Completed' | 'MIS' | null
+  source?: string
   checkInLat?: number | null
   checkInLng?: number | null
   checkOutLat?: number | null

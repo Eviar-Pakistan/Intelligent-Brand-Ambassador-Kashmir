@@ -157,6 +157,38 @@ export async function misPatchSupervisorStores(
   })
 }
 
+export type MisSupervisorVisitResult = {
+  id: number
+  supervisorId: number
+  supervisorName: string
+  storeId: number
+  storeName: string
+  date: string
+  checkedInAt: string | null
+  checkedOutAt: string | null
+  source: string
+}
+
+/** MIS-only: create supervisor visit without GPS/photo for any date. */
+export async function misCreateSupervisorVisit(body: {
+  supervisorId: number | string
+  storeId: number | string
+  date: string
+  checkInTime?: string
+  checkOutTime?: string
+}): Promise<MisSupervisorVisitResult> {
+  return apiRequest<MisSupervisorVisitResult>('/api/mis/supervisor-visits/', {
+    method: 'POST',
+    body: {
+      supervisorId: Number(body.supervisorId),
+      storeId: Number(body.storeId),
+      date: body.date,
+      checkInTime: body.checkInTime || undefined,
+      checkOutTime: body.checkOutTime || undefined,
+    },
+  })
+}
+
 export async function fetchMisSwapCandidates(month: string): Promise<MisSwapCandidate[]> {
   if (!isApiAuthenticated()) return []
   const data = await apiRequest<{ results: MisSwapCandidate[] }>(

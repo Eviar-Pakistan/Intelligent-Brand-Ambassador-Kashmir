@@ -701,11 +701,11 @@ def _supervisor_visits_block(
     end_dt = timezone.make_aware(datetime.combine(date_to + timedelta(days=1), datetime.min.time()))
     qs = (
         SupervisorStoreVisit.objects.filter(
-            checked_in_at__gte=start_dt,
-            checked_in_at__lt=end_dt,
+            Q(checked_in_at__gte=start_dt, checked_in_at__lt=end_dt)
+            | Q(checked_out_at__gte=start_dt, checked_out_at__lt=end_dt)
         )
         .select_related('supervisor', 'supervisor__user', 'store')
-        .order_by('-checked_in_at', '-id')
+        .order_by('-checked_in_at', '-checked_out_at', '-id')
     )
     if store_ids is not None:
         qs = qs.filter(store_id__in=store_ids)
@@ -716,9 +716,19 @@ def _supervisor_visits_block(
 
     rows: list[dict] = []
     for v in qs:
-        cin_local = timezone.localtime(v.checked_in_at)
+        anchor = v.checked_in_at or v.checked_out_at
+        if not anchor:
+            continue
+        cin_local = timezone.localtime(anchor)
         cin_day = cin_local.date()
-        open_visit = v.checked_out_at is None
+        open_visit = v.is_open
+        source = getattr(v, 'source', None) or 'app'
+        if open_visit:
+            status_label = 'Open'
+        elif source == SupervisorStoreVisit.Source.MIS_MANUAL:
+            status_label = 'MIS'
+        else:
+            status_label = 'Completed'
         rows.append(
             {
                 'id': v.id,
@@ -727,12 +737,17 @@ def _supervisor_visits_block(
                 'supervisor': (v.supervisor.name if v.supervisor_id else '') or '—',
                 'store': v.store.name if v.store_id else '—',
                 'city': (v.store.city if v.store_id else None) or '—',
-                'checkIn': _format_clock(_minutes_of_day(v.checked_in_at)),
+                'checkIn': _format_clock(
+                    _minutes_of_day(v.checked_in_at) if v.checked_in_at else None
+                ),
                 'checkOut': _format_clock(
                     _minutes_of_day(v.checked_out_at) if v.checked_out_at else None
                 ),
-                'duration': _format_duration(v.checked_in_at, v.checked_out_at),
-                'status': 'Open' if open_visit else 'Completed',
+                'duration': _format_duration(v.checked_in_at, v.checked_out_at)
+                if v.checked_in_at
+                else '—',
+                'status': status_label,
+                'source': source,
                 'checkInLat': v.check_in_lat,
                 'checkInLng': v.check_in_lng,
                 'checkOutLat': v.check_out_lat,

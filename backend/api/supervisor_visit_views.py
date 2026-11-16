@@ -147,7 +147,7 @@ def supervisor_me_visits(request):
         serialize_visit(request, v)
         for v in qs.filter(checked_in_at__date=day)[:100]
     ]
-    open_visit = qs.filter(checked_out_at__isnull=True).first()
+    open_visit = qs.filter(checked_in_at__isnull=False, checked_out_at__isnull=True).first()
     return Response(
         {
             'date': day.isoformat(),
@@ -213,7 +213,11 @@ def supervisor_me_visit_check_in(request):
         with transaction.atomic():
             open_visit = (
                 SupervisorStoreVisit.objects.select_for_update()
-                .filter(supervisor=profile, checked_out_at__isnull=True)
+                .filter(
+                    supervisor=profile,
+                    checked_in_at__isnull=False,
+                    checked_out_at__isnull=True,
+                )
                 .select_related('store')
                 .first()
             )
@@ -234,12 +238,17 @@ def supervisor_me_visit_check_in(request):
                 check_in_lat=lat,
                 check_in_lng=lng,
                 check_in_accuracy_m=accuracy,
+                source=SupervisorStoreVisit.Source.APP,
             )
             visit.check_in_photo = photo
             visit.save()
     except IntegrityError:
         open_visit = (
-            SupervisorStoreVisit.objects.filter(supervisor=profile, checked_out_at__isnull=True)
+            SupervisorStoreVisit.objects.filter(
+                supervisor=profile,
+                checked_in_at__isnull=False,
+                checked_out_at__isnull=True,
+            )
             .select_related('store')
             .first()
         )
@@ -290,7 +299,9 @@ def supervisor_me_visit_check_out(request):
                 return Response({'detail': 'Visit not found.'}, status=status.HTTP_404_NOT_FOUND)
         else:
             visit = (
-                qs.filter(checked_out_at__isnull=True).select_related('store').first()
+                qs.filter(checked_in_at__isnull=False, checked_out_at__isnull=True)
+                .select_related('store')
+                .first()
             )
             if not visit:
                 return Response(
