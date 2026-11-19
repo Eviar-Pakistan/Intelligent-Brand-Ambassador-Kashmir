@@ -40,21 +40,18 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [supervisorOptions, setSupervisorOptions] = useState<SupervisorLoginOption[]>([])
-  const [loadingOptions, setLoadingOptions] = useState(true)
+  const [loadingOptions, setLoadingOptions] = useState(false)
 
   useEffect(() => {
+    if (mode !== 'supervisor') return
     let cancelled = false
     setLoadingOptions(true)
+    setEmail('')
     void fetchSupervisorLoginOptions()
       .then((rows) => {
         if (cancelled) return
         setSupervisorOptions(rows)
-        setEmail((prev) => {
-          if (mode === 'supervisor' && rows.length && !rows.some((r) => r.email === prev)) {
-            return rows[0].email
-          }
-          return prev
-        })
+        setEmail(rows[0]?.email ?? '')
       })
       .finally(() => {
         if (!cancelled) setLoadingOptions(false)
@@ -84,15 +81,12 @@ export function LoginPage() {
   function switchMode(next: LoginMode) {
     setMode(next)
     setError(null)
+    setPassword('')
     if (next === 'headOffice') {
       setEmail(brand.loginEmail)
-      setPassword('')
-    } else if (supervisorOptions.length) {
-      setEmail(supervisorOptions[0].email)
-      setPassword('')
     } else {
+      // Keep empty until supervisor list finishes loading (shows Loading…).
       setEmail('')
-      setPassword('')
     }
   }
 
@@ -295,27 +289,29 @@ export function LoginPage() {
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-700">Your email</span>
                 <select
-                  value={email}
-                  required
+                  value={loadingOptions ? '' : email}
+                  required={!loadingOptions}
                   disabled={loadingOptions || supervisorOptions.length === 0}
                   onChange={(e) => {
                     setEmail(e.target.value)
                     setError(null)
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-wait disabled:bg-slate-50 disabled:text-slate-500"
                 >
-                  {loadingOptions && <option value="">Loading supervisors…</option>}
-                  {!loadingOptions && supervisorOptions.length === 0 && (
+                  {loadingOptions ? (
+                    <option value="">Loading supervisors…</option>
+                  ) : supervisorOptions.length === 0 ? (
                     <option value="">No supervisors yet — ask Head Office</option>
+                  ) : (
+                    <>
+                      {!email && <option value="">Select email</option>}
+                      {supervisorOptions.map((opt) => (
+                        <option key={opt.email} value={opt.email}>
+                          {opt.email}
+                        </option>
+                      ))}
+                    </>
                   )}
-                  {!loadingOptions && supervisorOptions.length > 0 && !email && (
-                    <option value="">Select email</option>
-                  )}
-                  {supervisorOptions.map((opt) => (
-                    <option key={opt.email} value={opt.email}>
-                      {opt.email}
-                    </option>
-                  ))}
                 </select>
                 <p className="mt-1.5 text-xs text-slate-400">
                   Pick the auto-generated email Head Office created for you, then enter your password.
@@ -362,9 +358,13 @@ export function LoginPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={busy || (mode === 'supervisor' && (!email || supervisorOptions.length === 0))}
+              disabled={
+                busy ||
+                (mode === 'supervisor' &&
+                  (loadingOptions || !email || supervisorOptions.length === 0))
+              }
             >
-              {busy ? 'Signing in…' : 'Sign In'}
+              {busy ? 'Signing in…' : loadingOptions && mode === 'supervisor' ? 'Loading…' : 'Sign In'}
             </Button>
           </form>
         </div>
