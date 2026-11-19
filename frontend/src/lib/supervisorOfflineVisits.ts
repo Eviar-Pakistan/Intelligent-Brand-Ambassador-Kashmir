@@ -43,7 +43,9 @@ function notify() {
 
 export function subscribeOfflineVisits(listener: Listener) {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 function openDb(): Promise<IDBDatabase> {

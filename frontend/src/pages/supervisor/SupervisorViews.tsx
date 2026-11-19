@@ -536,7 +536,6 @@ export function SupervisorStoreCards({
                       }
                       onClick={() => {
                         setActionError(null)
-                        setOfflineNotice(null)
                         setCheckInStore({ id: s.id, name: s.name, city: s.city })
                       }}
                     >
