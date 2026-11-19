@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
+import { getSharedFaceDetector, isFaceDetectorReady } from '../lib/faceCheckAssets'
 import { Button, Modal } from './ui'
-
-const WASM_ROOT =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite'
+import type { FaceDetector } from '@mediapipe/tasks-vision'
 
 type Props = {
   open: boolean
@@ -52,12 +48,12 @@ export function FaceCheckInModal({
     setFaceOk(false)
     setError(null)
 
-    const stop = () => {
+    const stopCamera = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = 0
       streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
-      detectorRef.current?.close()
+      // Keep shared MediaPipe detector in memory for offline re-open.
       detectorRef.current = null
     }
 
@@ -73,6 +69,7 @@ export function FaceCheckInModal({
             const result = detector.detectForVideo(video, now)
             const hasFace = (result.detections?.length ?? 0) > 0
             setFaceOk(hasFace)
+            if (hasFace) setError(null)
           } catch {
             // keep last faceOk
           }
@@ -87,26 +84,10 @@ export function FaceCheckInModal({
           setError('This browser cannot use the camera. Open in Chrome or Edge.')
           return
         }
-        const vision = await FilesetResolver.forVisionTasks(WASM_ROOT)
+
+        // Reuse in-memory detector when possible (works offline after first online load).
+        const detector = await getSharedFaceDetector()
         if (cancelled) return
-        let detector: FaceDetector
-        try {
-          detector = await FaceDetector.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-            runningMode: 'VIDEO',
-            minDetectionConfidence: 0.55,
-          })
-        } catch {
-          detector = await FaceDetector.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
-            runningMode: 'VIDEO',
-            minDetectionConfidence: 0.55,
-          })
-        }
-        if (cancelled) {
-          detector.close()
-          return
-        }
         detectorRef.current = detector
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -127,17 +108,21 @@ export function FaceCheckInModal({
         rafRef.current = requestAnimationFrame(loop)
       } catch (e) {
         if (cancelled) return
-        const msg =
-          e instanceof Error && /permission|notallowed|denied/i.test(e.message)
-            ? 'Camera permission denied. Allow camera access and try again.'
-            : 'Could not start face check. Allow camera access and try again.'
+        const raw = e instanceof Error ? e.message : ''
+        const msg = /permission|notallowed|denied/i.test(raw)
+          ? 'Camera permission denied. Allow camera access and try again.'
+          : isFaceDetectorReady()
+            ? 'Could not start the camera. Allow camera access and try again.'
+            : !navigator.onLine || /failed to fetch|networkerror|load/i.test(raw)
+              ? 'Face check files are not ready on this device. Stay online after login until face check loads, then try again.'
+              : 'Could not start face check. Allow camera access and try again.'
         setError(msg)
       }
     })()
 
     return () => {
       cancelled = true
-      stop()
+      stopCamera()
     }
   }, [open])
 
@@ -190,7 +175,7 @@ export function FaceCheckInModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={!faceOk || busy || !!error}>
+          <Button onClick={handleConfirm} disabled={!faceOk || busy || (!!error && !faceOk)}>
             {busy ? 'Checking in…' : confirmLabel}
           </Button>
         </div>
