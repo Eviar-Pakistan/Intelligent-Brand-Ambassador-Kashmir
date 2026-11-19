@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "sync:mediapipe": "node scripts/sync-mediapipe-assets.mjs",
+    "postinstall": "node scripts/sync-mediapipe-assets.mjs",
+    "prebuild": "node scripts/sync-mediapipe-assets.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",

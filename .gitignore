@@ -13,6 +13,10 @@ dist/
 dist-ssr/
 frontend/dist/
 
+# Generated MediaPipe assets (copied/downloaded by frontend/scripts/sync-mediapipe-assets.mjs)
+frontend/public/mediapipe/wasm/
+frontend/public/mediapipe/models/
+
 # Python
 **/__pycache__/
 **/*.py[cod]
@@ -20,6 +24,8 @@ frontend/dist/
 backend/.venv/
 backend/**/*.sqlite3
 backend/db.sqlite3
+backend/sqlite_to_mysql.json
+backend/2oct updated kashmir db
 backend/media/
 
 # Logs

@@ -1,7 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { DesktopShell } from '../../components/AppShell'
 import { Card, PageHeader } from '../../components/ui'
+import { prefetchFaceCheckAssets } from '../../lib/faceCheckAssets'
 import { fetchSupervisorStockMatrix } from '../../lib/stocksApi'
 import { useSupervisorSession } from '../../lib/supervisors'
 import { StockMatrixPanel } from '../headOffice/StocksPage'
@@ -15,7 +16,14 @@ import {
 
 /** Only a signed-in supervisor (or a Head Office preview of one) gets into the portal. */
 export function SupervisorGate() {
-  const { supervisor } = useSupervisorSession()
+  const { supervisor, preview } = useSupervisorSession()
+
+  // Warm face-check WASM/model while online so Store Characteristics works after net drops.
+  useEffect(() => {
+    if (!supervisor || preview) return
+    void prefetchFaceCheckAssets()
+  }, [supervisor, preview])
+
   if (!supervisor) return <Navigate to="/login" replace />
   return <DesktopShell kind="supervisor" />
 }

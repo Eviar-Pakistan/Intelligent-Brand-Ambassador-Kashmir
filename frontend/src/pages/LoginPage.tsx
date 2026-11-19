@@ -26,6 +26,7 @@ import {
   exitDemoMode,
   isDemoHoCredentials,
 } from '../lib/demoMode'
+import { prefetchFaceCheckAssets } from '../lib/faceCheckAssets'
 
 type LoginMode = 'headOffice' | 'supervisor'
 
@@ -120,6 +121,7 @@ export function LoginPage() {
           const supervisor = await loginSupervisorWithApi(email, password)
           if (supervisor) {
             setRole('supervisor')
+            void prefetchFaceCheckAssets()
             navigate(roleMeta.supervisor.home)
             return
           }
@@ -136,6 +138,7 @@ export function LoginPage() {
             logoutApi()
             setRole('supervisor')
             signIn(supervisor.id)
+            void prefetchFaceCheckAssets()
             navigate(roleMeta.supervisor.home)
             return
           }
@@ -185,6 +188,7 @@ export function LoginPage() {
           if (supervisor) {
             exitDemoMode()
             setRole('supervisor')
+            void prefetchFaceCheckAssets()
             navigate(roleMeta.supervisor.home)
             return
           }
@@ -202,6 +206,7 @@ export function LoginPage() {
           exitDemoMode()
           setRole('supervisor')
           signIn(supervisor.id)
+          void prefetchFaceCheckAssets()
           navigate(roleMeta.supervisor.home)
           return
         }
