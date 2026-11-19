@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, FileSpreadsheet, MapPin } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { CloudOff, Download, FileSpreadsheet, MapPin } from 'lucide-react'
 import {
   Avatar,
   Button,
@@ -16,6 +17,12 @@ import {
 import { calculateSupervisorIncentive, formatPkr } from '../../lib/incentives'
 import { useKpiConfigSync } from '../../lib/kpiConfig'
 import { findCreatedStore, useCreatedStores } from '../../lib/storeRegistry'
+import {
+  getOpenOfflineVisit,
+  listOfflineVisits,
+  subscribeOfflineVisits,
+  type OfflinePendingVisit,
+} from '../../lib/supervisorOfflineVisits'
 import {
   checkInWithGeo,
   checkOutWithGeo,
@@ -284,10 +291,27 @@ export function SupervisorStoreCards({
   const canVisit = mode === 'me'
 
   const [openVisit, setOpenVisit] = useState<SupervisorStoreVisit | null>(null)
+  const [openOffline, setOpenOffline] = useState<OfflinePendingVisit | null>(null)
+  const [offlineCount, setOfflineCount] = useState(0)
   const [todayVisits, setTodayVisits] = useState<SupervisorStoreVisit[]>([])
-  const [checkInStore, setCheckInStore] = useState<{ id: number; name: string } | null>(null)
+  const [checkInStore, setCheckInStore] = useState<{ id: number; name: string; city?: string } | null>(
+    null,
+  )
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  const reloadOffline = useCallback(() => {
+    if (!canVisit) return
+    void Promise.all([getOpenOfflineVisit(), listOfflineVisits()])
+      .then(([open, all]) => {
+        setOpenOffline(open)
+        setOfflineCount(all.length)
+      })
+      .catch(() => {
+        setOpenOffline(null)
+        setOfflineCount(0)
+      })
+  }, [canVisit])
 
   const reloadVisits = useCallback(() => {
     if (!canVisit) return
@@ -303,17 +327,27 @@ export function SupervisorStoreCards({
 
   useEffect(() => {
     reloadVisits()
-  }, [reloadVisits])
+    reloadOffline()
+    return subscribeOfflineVisits(reloadOffline)
+  }, [reloadVisits, reloadOffline])
 
   const handleFaceConfirmed = async (photo: Blob) => {
     if (!checkInStore) return
     setBusy(true)
     setActionError(null)
     try {
-      const visit = await checkInWithGeo(checkInStore.id, photo)
-      setOpenVisit(visit)
+      const result = await checkInWithGeo(checkInStore.id, photo, {
+        storeName: checkInStore.name,
+        storeCity: checkInStore.city,
+      })
       setCheckInStore(null)
-      reloadVisits()
+      if (result.mode === 'online') {
+        setOpenVisit(result.visit)
+        reloadVisits()
+      } else {
+        setOpenOffline(result.pending)
+        reloadOffline()
+      }
     } catch (err) {
       setActionError(visitApiErrorMessage(err, 'Check-in failed.'))
     } finally {
@@ -325,15 +359,31 @@ export function SupervisorStoreCards({
     setBusy(true)
     setActionError(null)
     try {
-      await checkOutWithGeo(visitId)
-      setOpenVisit(null)
-      reloadVisits()
+      const result = await checkOutWithGeo(visitId, {
+        openVisit: openVisit || undefined,
+        storeId: openVisit?.storeId ?? openOffline?.storeId,
+        storeName: openVisit?.storeName ?? openOffline?.storeName,
+        storeCity: openVisit?.storeCity ?? openOffline?.storeCity,
+      })
+      if (result.mode === 'online') {
+        setOpenVisit(null)
+        setOpenOffline(null)
+        reloadVisits()
+        reloadOffline()
+      } else {
+        setOpenVisit(null)
+        setOpenOffline(result.pending.checkOutAt ? null : result.pending)
+        reloadOffline()
+      }
     } catch (err) {
       setActionError(visitApiErrorMessage(err, 'Check-out failed.'))
     } finally {
       setBusy(false)
     }
   }
+
+  const activeStoreId = openVisit?.storeId ?? openOffline?.storeId ?? null
+  const hasOpen = Boolean(openVisit || openOffline)
 
   if (loading) return <LoadingState label="Loading stores…" />
 
@@ -347,17 +397,45 @@ export function SupervisorStoreCards({
 
   return (
     <div className="space-y-4">
-      {canVisit && openVisit ? (
+      {canVisit && offlineCount > 0 ? (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {offlineCount} offline visit{offlineCount === 1 ? '' : 's'} on this device
+                </div>
+                <div className="text-xs text-slate-500">
+                  Submit them when internet is available.
+                </div>
+              </div>
+            </div>
+            <Link
+              to="/supervisor/offline"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50"
+            >
+              Open Offline
+            </Link>
+          </div>
+        </Card>
+      ) : null}
+
+      {canVisit && (openVisit || openOffline) ? (
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
                 Currently checked in
+                {openOffline && !openVisit ? ' · offline' : ''}
               </div>
               <div className="mt-0.5 font-semibold text-slate-900">
-                {openVisit.storeName}
+                {openVisit?.storeName || openOffline?.storeName}
                 <span className="ml-2 text-xs font-normal text-slate-500">
-                  since {formatVisitTime(openVisit.checkedInAt)}
+                  since{' '}
+                  {openVisit
+                    ? formatVisitTime(openVisit.checkedInAt)
+                    : formatVisitTime(openOffline?.checkInAt)}
                 </span>
               </div>
             </div>
@@ -365,7 +443,7 @@ export function SupervisorStoreCards({
               variant="danger"
               size="sm"
               disabled={busy}
-              onClick={() => void handleCheckOut(openVisit.id)}
+              onClick={() => void handleCheckOut(openVisit?.id)}
             >
               {busy ? 'Checking out…' : 'Check out'}
             </Button>
@@ -382,7 +460,7 @@ export function SupervisorStoreCards({
       <div className="grid gap-4 lg:grid-cols-2">
         {stores.map((s) => {
           const details = findCreatedStore(s.id)
-          const isHere = openVisit?.storeId === s.id
+          const isHere = activeStoreId === s.id
           const storeVisitsToday = todayVisits.filter((v) => v.storeId === s.id)
           return (
             <Card key={s.id}>
@@ -450,18 +528,19 @@ export function SupervisorStoreCards({
                   ) : (
                     <Button
                       className="w-full"
-                      disabled={busy || !!openVisit}
+                      disabled={busy || hasOpen}
                       title={
-                        openVisit
-                          ? `Check out of ${openVisit.storeName} first`
+                        hasOpen
+                          ? `Check out of ${openVisit?.storeName || openOffline?.storeName} first`
                           : undefined
                       }
                       onClick={() => {
                         setActionError(null)
-                        setCheckInStore({ id: s.id, name: s.name })
+                        setOfflineNotice(null)
+                        setCheckInStore({ id: s.id, name: s.name, city: s.city })
                       }}
                     >
-                      {openVisit ? 'Finish other visit first' : 'Check in'}
+                      {hasOpen ? 'Finish other visit first' : 'Check in'}
                     </Button>
                   )}
                 </div>

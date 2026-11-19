@@ -21,6 +21,7 @@ import {
   Package,
   UserRoundSearch,
   ScrollText,
+  CloudOff,
   type LucideIcon,
 } from 'lucide-react'
 import { roleMeta, useDemo, useRole, type Role } from '../context/AppContext'
@@ -90,6 +91,7 @@ const supervisorNav: NavItem[] = [
   { to: '/supervisor/stores', label: 'Store Characteristics', icon: Store, section: 'My stores' },
   { to: '/supervisor/bas', label: 'BA Performance', icon: Users, section: 'My stores' },
   { to: '/supervisor/attendance', label: 'BA Attendance', icon: ClipboardCheck, section: 'My stores' },
+  { to: '/supervisor/offline', label: 'Offline', icon: CloudOff, section: 'My stores' },
   { to: '/supervisor/stocks', label: 'Stocks', icon: Package, section: 'My stores' },
 ]
 
@@ -156,6 +158,7 @@ const titles: Record<string, string> = {
   '/supervisor/stores': 'Store Characteristics',
   '/supervisor/bas': 'BA Performance',
   '/supervisor/attendance': 'BA Attendance',
+  '/supervisor/offline': 'Offline',
   '/supervisor/stocks': 'Stocks',
   '/ho/deployment': 'Intelligent Deployment',
   '/ho/complaints': 'Insights / Complaint Center',

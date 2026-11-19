@@ -32,6 +32,8 @@ type RequestOptions = {
   token?: string | null
   formData?: FormData
   auth?: boolean
+  /** Abort the request after this many ms (e.g. supervisor visit online attempt). */
+  timeoutMs?: number
   /** Internal: skip refresh retry to avoid loops */
   _retried?: boolean
 }
@@ -196,11 +198,29 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
     body = JSON.stringify(options.body)
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: options.method || (options.body || options.formData ? 'POST' : 'GET'),
-    headers,
-    body,
-  })
+  const controller =
+    typeof options.timeoutMs === 'number' && options.timeoutMs > 0 ? new AbortController() : null
+  const timer =
+    controller && options.timeoutMs
+      ? window.setTimeout(() => controller.abort(), options.timeoutMs)
+      : null
+
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: options.method || (options.body || options.formData ? 'POST' : 'GET'),
+      headers,
+      body,
+      signal: controller?.signal,
+    })
+  } catch (err) {
+    if (timer) window.clearTimeout(timer)
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError('Request timed out. Check your internet connection.', 408, null)
+    }
+    throw err
+  }
+  if (timer) window.clearTimeout(timer)
 
   const text = await res.text()
   let data: unknown = null

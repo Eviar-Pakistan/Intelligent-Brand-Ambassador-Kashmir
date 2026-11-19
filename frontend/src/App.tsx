@@ -26,6 +26,7 @@ import {
   SupervisorStoresPage,
 } from './pages/supervisor/SupervisorPortal'
 import { SupervisorBaAttendancePage } from './pages/supervisor/SupervisorBaAttendancePage'
+import { SupervisorOfflinePage } from './pages/supervisor/SupervisorOfflinePage'
 import { ShopperStoreEntry } from './pages/shopper/ShopperStoreEntry'
 import {
   ConsumersPage,
@@ -195,6 +196,7 @@ export default function App() {
               <Route path="stores" element={<SupervisorStoresPage />} />
               <Route path="bas" element={<SupervisorBasPage />} />
               <Route path="attendance" element={<SupervisorBaAttendancePage />} />
+              <Route path="offline" element={<SupervisorOfflinePage />} />
               <Route path="stocks" element={<SupervisorStocksPage />} />
             </Route>
 

@@ -41,6 +41,7 @@ from .supervisor_views import (
 from .supervisor_visit_views import (
     supervisor_me_visit_check_in,
     supervisor_me_visit_check_out,
+    supervisor_me_visit_offline_sync,
     supervisor_me_visits,
 )
 from .incentive_views import (
@@ -135,6 +136,11 @@ urlpatterns = [
         'supervisor/me/visits/check-out/',
         supervisor_me_visit_check_out,
         name='supervisor-me-visit-check-out',
+    ),
+    path(
+        'supervisor/me/visits/offline-sync/',
+        supervisor_me_visit_offline_sync,
+        name='supervisor-me-visit-offline-sync',
     ),
     path('shopper/store/<slug:slug>/', shopper_store_lookup, name='shopper-store-lookup'),
     path(

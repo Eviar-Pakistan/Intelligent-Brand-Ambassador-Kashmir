@@ -683,6 +683,7 @@ class SupervisorStoreVisit(models.Model):
     class Source(models.TextChoices):
         APP = 'app', 'Supervisor app'
         MIS_MANUAL = 'mis_manual', 'MIS manual'
+        OFFLINE_SYNC = 'offline_sync', 'Offline sync'
 
     supervisor = models.ForeignKey(
         Supervisor,

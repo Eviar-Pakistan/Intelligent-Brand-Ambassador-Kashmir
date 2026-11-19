@@ -334,3 +334,192 @@ def supervisor_me_visit_check_out(request):
         )
 
     return Response(serialize_visit(request, visit))
+
+
+def _parse_client_datetime(raw) -> datetime | None:
+    text = str(raw or '').strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt)
+    return dt
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def supervisor_me_visit_offline_sync(request):
+    """
+    POST /api/supervisor/me/visits/offline-sync/
+
+    Sync a visit captured offline. No geofence re-check — client already validated
+    range at capture time. Accepts client timestamps + GPS (+ photo for new visits).
+
+    Body (multipart):
+      storeId (required for new visits)
+      visitId? — if set, only applies check-out to that open visit
+      checkedInAt, checkInLat, checkInLng, checkInAccuracy?, photo?
+      checkedOutAt?, checkOutLat?, checkOutLng?, checkOutAccuracy?
+    """
+    profile, err = _supervisor_profile_or_error(request)
+    if err:
+        return err
+
+    visit_raw = request.data.get('visitId') or request.data.get('visit_id')
+    cin = _parse_client_datetime(request.data.get('checkedInAt') or request.data.get('checked_in_at'))
+    cout = _parse_client_datetime(request.data.get('checkedOutAt') or request.data.get('checked_out_at'))
+
+    # ── Checkout-only for an existing server visit ─────────────────────────
+    if visit_raw not in (None, ''):
+        try:
+            visit_id = int(visit_raw)
+        except (TypeError, ValueError):
+            return Response({'detail': 'visitId must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+        visit = (
+            SupervisorStoreVisit.objects.filter(supervisor=profile, pk=visit_id)
+            .select_related('store')
+            .first()
+        )
+        if not visit:
+            return Response({'detail': 'Visit not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if visit.checked_out_at is not None:
+            return Response(
+                {'detail': 'This visit is already checked out.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not cout:
+            return Response({'detail': 'checkedOutAt is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        out_lat, out_lat_err = _parse_float(
+            request.data.get('checkOutLat') or request.data.get('check_out_lat'),
+            'checkOutLat',
+        )
+        if out_lat_err:
+            return Response({'detail': out_lat_err}, status=status.HTTP_400_BAD_REQUEST)
+        out_lng, out_lng_err = _parse_float(
+            request.data.get('checkOutLng') or request.data.get('check_out_lng'),
+            'checkOutLng',
+        )
+        if out_lng_err:
+            return Response({'detail': out_lng_err}, status=status.HTTP_400_BAD_REQUEST)
+        visit.checked_out_at = cout
+        visit.check_out_lat = out_lat
+        visit.check_out_lng = out_lng
+        visit.check_out_accuracy_m = _optional_float(
+            request.data.get('checkOutAccuracy') or request.data.get('check_out_accuracy')
+        )
+        if visit.source == SupervisorStoreVisit.Source.APP:
+            visit.source = SupervisorStoreVisit.Source.OFFLINE_SYNC
+        visit.save()
+        return Response(serialize_visit(request, visit))
+
+    # ── New visit from offline queue ───────────────────────────────────────
+    store_raw = request.data.get('storeId') or request.data.get('store_id')
+    try:
+        store_id = int(store_raw)
+    except (TypeError, ValueError):
+        return Response({'detail': 'storeId is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not profile.stores.filter(pk=store_id).exists():
+        return Response(
+            {'detail': 'Store is not assigned to you.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    try:
+        store = Store.objects.get(pk=store_id)
+    except Store.DoesNotExist:
+        return Response({'detail': 'Store not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not cin:
+        return Response({'detail': 'checkedInAt is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    in_lat, in_lat_err = _parse_float(
+        request.data.get('checkInLat') or request.data.get('check_in_lat'),
+        'checkInLat',
+    )
+    if in_lat_err:
+        return Response({'detail': in_lat_err}, status=status.HTTP_400_BAD_REQUEST)
+    in_lng, in_lng_err = _parse_float(
+        request.data.get('checkInLng') or request.data.get('check_in_lng'),
+        'checkInLng',
+    )
+    if in_lng_err:
+        return Response({'detail': in_lng_err}, status=status.HTTP_400_BAD_REQUEST)
+
+    photo = request.FILES.get('photo') or request.FILES.get('image')
+    if not photo:
+        return Response({'detail': 'photo is required for a new offline visit.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if cout and cout < cin:
+        return Response(
+            {'detail': 'Check-out time must be on or after check-in time.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    out_lat = out_lng = out_acc = None
+    if cout:
+        out_lat, out_lat_err = _parse_float(
+            request.data.get('checkOutLat') or request.data.get('check_out_lat'),
+            'checkOutLat',
+        )
+        if out_lat_err:
+            return Response({'detail': out_lat_err}, status=status.HTTP_400_BAD_REQUEST)
+        out_lng, out_lng_err = _parse_float(
+            request.data.get('checkOutLng') or request.data.get('check_out_lng'),
+            'checkOutLng',
+        )
+        if out_lng_err:
+            return Response({'detail': out_lng_err}, status=status.HTTP_400_BAD_REQUEST)
+        out_acc = _optional_float(
+            request.data.get('checkOutAccuracy') or request.data.get('check_out_accuracy')
+        )
+
+    try:
+        with transaction.atomic():
+            if not cout:
+                open_visit = (
+                    SupervisorStoreVisit.objects.select_for_update()
+                    .filter(
+                        supervisor=profile,
+                        checked_in_at__isnull=False,
+                        checked_out_at__isnull=True,
+                    )
+                    .select_related('store')
+                    .first()
+                )
+                if open_visit:
+                    return Response(
+                        {
+                            'detail': (
+                                f'Check out of {open_visit.store.name} before syncing another open visit.'
+                            ),
+                            'openVisit': serialize_visit(request, open_visit),
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+            visit = SupervisorStoreVisit(
+                supervisor=profile,
+                store=store,
+                checked_in_at=cin,
+                checked_out_at=cout,
+                check_in_lat=in_lat,
+                check_in_lng=in_lng,
+                check_in_accuracy_m=_optional_float(
+                    request.data.get('checkInAccuracy') or request.data.get('check_in_accuracy')
+                ),
+                check_out_lat=out_lat,
+                check_out_lng=out_lng,
+                check_out_accuracy_m=out_acc,
+                source=SupervisorStoreVisit.Source.OFFLINE_SYNC,
+            )
+            visit.check_in_photo = photo
+            visit.save()
+    except IntegrityError:
+        return Response(
+            {'detail': 'Could not sync visit (conflict with an open visit).'},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return Response(serialize_visit(request, visit), status=status.HTTP_201_CREATED)
