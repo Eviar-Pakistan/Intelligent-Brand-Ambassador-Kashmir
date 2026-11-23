@@ -1001,6 +1001,10 @@ def mis_create_supervisor_visit(request):
       checkInTime? (HH:MM local), checkOutTime? (HH:MM local)
     At least one of checkInTime / checkOutTime required.
     Store must be assigned to the supervisor.
+
+    If the supervisor already has an open visit at the selected store and a
+    check-out time is provided, that open visit is updated (closed) instead of
+    creating a second row. Otherwise a new visit is created when needed.
     """
     err = require_mis(request)
     if err:
@@ -1050,27 +1054,100 @@ def mis_create_supervisor_visit(request):
     if not store:
         return Response({'detail': 'Store not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Creating an open visit (check-in only) must not leave two opens.
-    if cin and not cout:
-        open_visit = (
-            SupervisorStoreVisit.objects.filter(
-                supervisor=supervisor,
-                checked_out_at__isnull=True,
-                checked_in_at__isnull=False,
-            )
-            .select_related('store')
-            .first()
+    open_visit = (
+        SupervisorStoreVisit.objects.filter(
+            supervisor=supervisor,
+            checked_out_at__isnull=True,
+            checked_in_at__isnull=False,
         )
-        if open_visit:
+        .select_related('store')
+        .first()
+    )
+
+    # Close existing open visit when checkout is provided for that store.
+    if open_visit and cout:
+        if open_visit.store_id != store.id:
             return Response(
                 {
                     'detail': (
                         f'{supervisor.name} already has an open visit at {open_visit.store.name}. '
-                        'Add a check-out time, or close that visit first.'
+                        'Select that store and enter check-out time to close it, '
+                        'or close that visit first.'
                     )
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+        if open_visit.checked_in_at and cout < open_visit.checked_in_at:
+            return Response(
+                {
+                    'detail': (
+                        'Check-out time must be on or after the existing check-in '
+                        f'({timezone.localtime(open_visit.checked_in_at).strftime("%H:%M")}).'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        before = {
+            'id': open_visit.id,
+            'storeId': open_visit.store_id,
+            'storeName': open_visit.store.name,
+            'checkedInAt': open_visit.checked_in_at.isoformat() if open_visit.checked_in_at else None,
+            'checkedOutAt': None,
+            'source': open_visit.source,
+        }
+        open_visit.checked_out_at = cout
+        open_visit.save(update_fields=['checked_out_at', 'updated_at'])
+
+        after = {
+            'id': open_visit.id,
+            'supervisorId': supervisor.id,
+            'supervisorName': supervisor.name,
+            'storeId': open_visit.store_id,
+            'storeName': open_visit.store.name,
+            'date': day.isoformat(),
+            'checkedInAt': open_visit.checked_in_at.isoformat() if open_visit.checked_in_at else None,
+            'checkedOutAt': open_visit.checked_out_at.isoformat() if open_visit.checked_out_at else None,
+            'source': open_visit.source,
+            'updated': True,
+        }
+        log_mis_action(
+            user=request.user,
+            action=MisAuditLog.Action.CREATE_SUPERVISOR_VISIT,
+            summary=(
+                f'Closed open visit #{open_visit.id} for {supervisor.name} at {open_visit.store.name}'
+                f' ({day.isoformat()})'
+                f' · out={timezone.localtime(cout).strftime("%H:%M")}'
+            ),
+            before=before,
+            after=after,
+            store=open_visit.store,
+        )
+        return Response(after, status=status.HTTP_200_OK)
+
+    # Creating an open visit (check-in only) must not leave two opens.
+    if open_visit and cin and not cout:
+        return Response(
+            {
+                'detail': (
+                    f'{supervisor.name} already has an open visit at {open_visit.store.name}. '
+                    'Add a check-out time on that store, or close that visit first.'
+                )
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    # Open at another store while trying to create a full/new visit without closing it.
+    if open_visit and cin and cout:
+        return Response(
+            {
+                'detail': (
+                    f'{supervisor.name} already has an open visit at {open_visit.store.name}. '
+                    'Close that visit first (select that store + check-out time).'
+                )
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
 
     visit = SupervisorStoreVisit.objects.create(
         supervisor=supervisor,
@@ -1090,6 +1167,7 @@ def mis_create_supervisor_visit(request):
         'checkedInAt': visit.checked_in_at.isoformat() if visit.checked_in_at else None,
         'checkedOutAt': visit.checked_out_at.isoformat() if visit.checked_out_at else None,
         'source': visit.source,
+        'updated': False,
     }
     log_mis_action(
         user=request.user,

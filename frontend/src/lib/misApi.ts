@@ -167,6 +167,8 @@ export type MisSupervisorVisitResult = {
   checkedInAt: string | null
   checkedOutAt: string | null
   source: string
+  /** True when an existing open visit was closed instead of creating a new row. */
+  updated?: boolean
 }
 
 /** MIS-only: create supervisor visit without GPS/photo for any date. */

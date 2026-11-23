@@ -408,7 +408,9 @@ function ManualVisitModal({
         checkOutTime: checkOutTime || undefined,
       })
       setSuccess(
-        `Saved visit #${res.id} for ${res.supervisorName} at ${res.storeName} (${res.date}).`,
+        res.updated
+          ? `Closed open visit #${res.id} for ${res.supervisorName} at ${res.storeName} (${res.date}).`
+          : `Created visit #${res.id} for ${res.supervisorName} at ${res.storeName} (${res.date}).`,
       )
       setCheckInTime('')
       setCheckOutTime('')
@@ -429,8 +431,9 @@ function ManualVisitModal({
     <Modal open={open} onClose={onClose} title="Manual supervisor visit" size="md">
       <div className="space-y-4 text-sm">
         <p className="text-slate-600">
-          Add check-in and/or check-out for any date without GPS or photo. Only stores assigned to
-          the selected supervisor are listed.
+          Add check-in and/or check-out for any date without GPS or photo. If the supervisor is
+          already checked in at the selected store, entering a check-out time closes that open
+          visit. Otherwise a new visit is created. Only assigned stores are listed.
         </p>
         <label className="block">
           <span className="mb-1.5 block font-semibold text-slate-800">Supervisor</span>
