@@ -15,6 +15,7 @@ import {
   TableScroll,
 } from '../../components/ui'
 import { calculateSupervisorIncentive, formatPkr } from '../../lib/incentives'
+import { useSupervisorPackagesSync } from '../../lib/supervisorPackages'
 import { useKpiConfigSync } from '../../lib/kpiConfig'
 import { findCreatedStore, useCreatedStores } from '../../lib/storeRegistry'
 import {
@@ -673,12 +674,13 @@ export function SupervisorBaTable({
 
 export function SupervisorIncentiveCard({ supervisor }: { supervisor: Supervisor }) {
   const config = useKpiConfigSync()
+  useSupervisorPackagesSync()
   useCreatedStores()
   const pay = calculateSupervisorIncentive(supervisor, config)
 
   return (
     <Card>
-      <CardHeader title="Supervisor package" subtitle="Monthly package from Head Office KPIs" />
+      <CardHeader title="Supervisor package" subtitle="Monthly package from Head Office (custom or KPI defaults)" />
       <div className="mt-1 text-2xl font-black">{formatPkr(pay.totalPkr)}</div>
       <div className="mt-3 space-y-2 text-sm">
         <PayRow label="Sup salary" value={formatPkr(pay.salary)} />
