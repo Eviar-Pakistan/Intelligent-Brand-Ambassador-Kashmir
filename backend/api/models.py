@@ -601,6 +601,54 @@ class IncentiveKpiSettings(models.Model):
         return self.sup_salary + self.sup_fuel_da + self.sup_discipline + self.sup_mobile
 
 
+class SupervisorPackage(models.Model):
+    """
+    Per-supervisor monthly package amounts (HO Incentives).
+    When missing, UI/calc falls back to IncentiveKpiSettings supervisor defaults.
+    """
+
+    supervisor = models.OneToOneField(
+        'Supervisor',
+        on_delete=models.CASCADE,
+        related_name='package',
+    )
+    salary = models.PositiveIntegerField(help_text='Gross / base salary PKR')
+    fuel_da = models.PositiveIntegerField(help_text='Fuel / DA PKR')
+    discipline = models.PositiveIntegerField(help_text='Attendance / discipline allowance PKR')
+    mobile = models.PositiveIntegerField(help_text='Mobile / data allowance PKR')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervisor_package_updates',
+    )
+
+    class Meta:
+        verbose_name = 'Supervisor package'
+        verbose_name_plural = 'Supervisor packages'
+
+    def __str__(self):
+        return f'Package · supervisor {self.supervisor_id} · {self.total}'
+
+    @property
+    def total(self) -> int:
+        return int(self.salary) + int(self.fuel_da) + int(self.discipline) + int(self.mobile)
+
+    def as_dict(self) -> dict:
+        return {
+            'supervisorId': self.supervisor_id,
+            'salary': self.salary,
+            'fuelDa': self.fuel_da,
+            'discipline': self.discipline,
+            'mobile': self.mobile,
+            'total': self.total,
+            'isCustom': True,
+            'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Supervisor(models.Model):
     """
     Field supervisor: Django user (user_type=Supervisor) overseeing assigned stores

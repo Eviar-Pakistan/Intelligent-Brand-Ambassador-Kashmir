@@ -6,6 +6,7 @@
 import { ambassadors, baRanking } from '../data/mock'
 import { apiRequest, isApiAuthenticated } from './api'
 import { getKpiConfig, type KpiConfig } from './kpiConfig'
+import { getSupervisorPackage } from './supervisorPackages'
 import { getSupervisors, supervisorOverview, type Supervisor } from './supervisors'
 
 export type PayoutStatus = 'Pending' | 'Approved' | 'Paid'
@@ -284,16 +285,17 @@ export type SupervisorIncentive = {
   totalPkr: number
 }
 
-/** Supervisor monthly package from KPI settings (fixed components). */
+/** Supervisor monthly package from per-supervisor package or global KPI defaults. */
 export function calculateSupervisorIncentive(
   supervisor: Supervisor,
   config: KpiConfig = getKpiConfig(),
 ): SupervisorIncentive {
   const overview = supervisorOverview(supervisor)
-  const salary = config.supSalary
-  const fuelDa = config.supFuelDa
-  const discipline = config.supDiscipline
-  const mobile = config.supMobile
+  const pkg = getSupervisorPackage(supervisor.id)
+  const salary = pkg ? pkg.salary : config.supSalary
+  const fuelDa = pkg ? pkg.fuelDa : config.supFuelDa
+  const discipline = pkg ? pkg.discipline : config.supDiscipline
+  const mobile = pkg ? pkg.mobile : config.supMobile
   const incentive = fuelDa + discipline + mobile
   return {
     supervisorId: supervisor.id,

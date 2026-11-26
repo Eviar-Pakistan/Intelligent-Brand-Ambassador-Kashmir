@@ -20,6 +20,7 @@ from .models import (
     Store,
     StoreReward,
     Supervisor,
+    SupervisorPackage,
     SupervisorStoreVisit,
     SurveyQuestion,
     TrainingVideo,
@@ -175,6 +176,13 @@ class BaIncentivePayoutAdmin(admin.ModelAdmin):
     search_fields = ('ambassador__name', 'ambassador__code')
     raw_id_fields = ('ambassador', 'updated_by')
     readonly_fields = ('created_at', 'updated_at', 'approved_at', 'paid_at')
+
+
+@admin.register(SupervisorPackage)
+class SupervisorPackageAdmin(admin.ModelAdmin):
+    list_display = ('supervisor', 'salary', 'fuel_da', 'discipline', 'mobile', 'updated_at')
+    search_fields = ('supervisor__user__email', 'supervisor__user__first_name', 'supervisor__user__last_name')
+    readonly_fields = ('updated_at',)
 
 
 @admin.register(Supervisor)

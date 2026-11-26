@@ -50,6 +50,9 @@ from .incentive_views import (
     incentives_approve,
     incentives_mark_paid,
     incentives_overview,
+    supervisor_package_reset,
+    supervisor_package_upsert,
+    supervisor_packages_list,
 )
 from .ba_targets_views import BaTargetViewSet, ba_my_targets, ba_targets_bulk
 from .mis_views import (
@@ -112,6 +115,17 @@ urlpatterns = [
     path('manager/overview/', manager_overview, name='manager-overview'),
     path('platform-settings/', platform_settings, name='platform-settings'),
     path('incentive-kpi/', incentive_kpi_settings, name='incentive-kpi'),
+    path('supervisor-packages/', supervisor_packages_list, name='supervisor-packages'),
+    path(
+        'supervisor-packages/<int:supervisor_id>/',
+        supervisor_package_upsert,
+        name='supervisor-package-upsert',
+    ),
+    path(
+        'supervisor-packages/<int:supervisor_id>/reset/',
+        supervisor_package_reset,
+        name='supervisor-package-reset',
+    ),
     path('incentives/overview/', incentives_overview, name='incentives-overview'),
     path('incentives/approve/', incentives_approve, name='incentives-approve'),
     path('incentives/mark-paid/', incentives_mark_paid, name='incentives-mark-paid'),

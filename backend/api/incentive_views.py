@@ -14,7 +14,7 @@ from .incentives import (
     incentive_for_ambassador,
     set_payout_statuses,
 )
-from .models import BaIncentivePayout, IncentiveKpiSettings
+from .models import BaIncentivePayout, IncentiveKpiSettings, Supervisor, SupervisorPackage
 from .serializers import IncentiveKpiSettingsSerializer
 
 
@@ -33,6 +33,138 @@ def incentive_kpi_settings(request):
     serializer.is_valid(raise_exception=True)
     serializer.save(updated_by=request.user)
     return Response(IncentiveKpiSettingsSerializer(cfg).data)
+
+
+def _resolved_supervisor_package(supervisor: Supervisor, defaults: IncentiveKpiSettings) -> dict:
+    try:
+        pkg = supervisor.package
+    except SupervisorPackage.DoesNotExist:
+        pkg = None
+    if pkg is not None:
+        row = pkg.as_dict()
+        row['supervisorName'] = supervisor.name
+        row['city'] = supervisor.city or ''
+        return row
+    salary = int(defaults.sup_salary)
+    fuel = int(defaults.sup_fuel_da)
+    discipline = int(defaults.sup_discipline)
+    mobile = int(defaults.sup_mobile)
+    return {
+        'supervisorId': supervisor.id,
+        'supervisorName': supervisor.name,
+        'city': supervisor.city or '',
+        'salary': salary,
+        'fuelDa': fuel,
+        'discipline': discipline,
+        'mobile': mobile,
+        'total': salary + fuel + discipline + mobile,
+        'isCustom': False,
+        'updatedAt': None,
+    }
+
+
+def _parse_nonneg_int(raw, field: str):
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, f'{field} must be a whole number.'
+    if value < 0:
+        return None, f'{field} cannot be negative.'
+    return value, None
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supervisor_packages_list(request):
+    """
+    GET /api/supervisor-packages/
+    All supervisors with custom package or global KPI defaults.
+    """
+    defaults = IncentiveKpiSettings.get_solo()
+    rows = (
+        Supervisor.objects.select_related('package', 'user')
+        .filter(user__is_active=True)
+        .order_by('user__first_name', 'user__last_name', 'user__email')
+    )
+    return Response(
+        {'results': [_resolved_supervisor_package(s, defaults) for s in rows]}
+    )
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def supervisor_package_upsert(request, supervisor_id: int):
+    """
+    PUT/PATCH /api/supervisor-packages/<supervisor_id>/
+    Create or update a custom package for one supervisor.
+    Body: { salary, fuelDa, discipline, mobile }
+    """
+    supervisor = (
+        Supervisor.objects.select_related('package', 'user').filter(pk=supervisor_id).first()
+    )
+    if not supervisor:
+        return Response({'detail': 'Supervisor not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    data = request.data if isinstance(request.data, dict) else {}
+    defaults = IncentiveKpiSettings.get_solo()
+    try:
+        existing = supervisor.package
+    except SupervisorPackage.DoesNotExist:
+        existing = None
+
+    salary_raw = data.get('salary', existing.salary if existing else defaults.sup_salary)
+    fuel_raw = data.get('fuelDa', data.get('fuel_da', existing.fuel_da if existing else defaults.sup_fuel_da))
+    disc_raw = data.get(
+        'discipline',
+        existing.discipline if existing else defaults.sup_discipline,
+    )
+    mobile_raw = data.get('mobile', existing.mobile if existing else defaults.sup_mobile)
+
+    salary, err = _parse_nonneg_int(salary_raw, 'salary')
+    if err:
+        return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
+    fuel, err = _parse_nonneg_int(fuel_raw, 'fuelDa')
+    if err:
+        return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
+    discipline, err = _parse_nonneg_int(disc_raw, 'discipline')
+    if err:
+        return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
+    mobile, err = _parse_nonneg_int(mobile_raw, 'mobile')
+    if err:
+        return Response({'detail': err}, status=status.HTTP_400_BAD_REQUEST)
+
+    pkg, _created = SupervisorPackage.objects.update_or_create(
+        supervisor=supervisor,
+        defaults={
+            'salary': salary,
+            'fuel_da': fuel,
+            'discipline': discipline,
+            'mobile': mobile,
+            'updated_by': request.user,
+        },
+    )
+    row = pkg.as_dict()
+    row['supervisorName'] = supervisor.name
+    row['city'] = supervisor.city or ''
+    return Response(row)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def supervisor_package_reset(request, supervisor_id: int):
+    """
+    DELETE /api/supervisor-packages/<supervisor_id>/
+    Remove custom package so global KPI defaults apply again.
+    """
+    supervisor = Supervisor.objects.filter(pk=supervisor_id).first()
+    if not supervisor:
+        return Response({'detail': 'Supervisor not found.'}, status=status.HTTP_404_NOT_FOUND)
+    deleted, _ = SupervisorPackage.objects.filter(supervisor=supervisor).delete()
+    defaults = IncentiveKpiSettings.get_solo()
+    # Re-fetch with select_related for consistent payload
+    supervisor = Supervisor.objects.select_related('package', 'user').get(pk=supervisor_id)
+    row = _resolved_supervisor_package(supervisor, defaults)
+    return Response({'deleted': bool(deleted), 'package': row})
 
 
 @api_view(['GET'])
