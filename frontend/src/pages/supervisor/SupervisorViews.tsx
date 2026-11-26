@@ -15,8 +15,8 @@ import {
   TableScroll,
 } from '../../components/ui'
 import { calculateSupervisorIncentive, formatPkr } from '../../lib/incentives'
-import { useSupervisorPackagesSync } from '../../lib/supervisorPackages'
-import { useKpiConfigSync } from '../../lib/kpiConfig'
+import { refreshKpiConfigFromApi, useKpiConfig } from '../../lib/kpiConfig'
+import { syncSupervisorPackagesFromApi } from '../../lib/supervisorPackages'
 import { findCreatedStore, useCreatedStores } from '../../lib/storeRegistry'
 import {
   getOpenOfflineVisit,
@@ -673,23 +673,39 @@ export function SupervisorBaTable({
 }
 
 export function SupervisorIncentiveCard({ supervisor }: { supervisor: Supervisor }) {
-  const config = useKpiConfigSync()
-  useSupervisorPackagesSync()
+  const config = useKpiConfig()
   useCreatedStores()
-  const pay = calculateSupervisorIncentive(supervisor, config)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setReady(false)
+    void (async () => {
+      await Promise.all([
+        refreshKpiConfigFromApi().catch(() => {}),
+        syncSupervisorPackagesFromApi().catch(() => {}),
+      ])
+      if (!cancelled) setReady(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [supervisor.id])
+
+  const pay = ready ? calculateSupervisorIncentive(supervisor, config) : null
 
   return (
     <Card>
       <CardHeader title="Supervisor package" subtitle="Monthly package from Head Office (custom or KPI defaults)" />
-      <div className="mt-1 text-2xl font-black">{formatPkr(pay.totalPkr)}</div>
+      <div className="mt-1 text-2xl font-black">{formatPkr(pay?.totalPkr ?? 0)}</div>
       <div className="mt-3 space-y-2 text-sm">
-        <PayRow label="Sup salary" value={formatPkr(pay.salary)} />
-        <PayRow label="Fuel/DA" value={formatPkr(pay.fuelDa)} />
-        <PayRow label="Discipline/Attendance" value={formatPkr(pay.discipline)} />
-        <PayRow label="Mobile/Data" value={formatPkr(pay.mobile)} />
+        <PayRow label="Sup salary" value={formatPkr(pay?.salary ?? 0)} />
+        <PayRow label="Fuel/DA" value={formatPkr(pay?.fuelDa ?? 0)} />
+        <PayRow label="Discipline/Attendance" value={formatPkr(pay?.discipline ?? 0)} />
+        <PayRow label="Mobile/Data" value={formatPkr(pay?.mobile ?? 0)} />
         <div className="flex items-center justify-between border-t border-slate-100 pt-2 font-bold text-slate-900">
           <span>Total</span>
-          <span className="text-brand-700">{formatPkr(pay.totalPkr)}</span>
+          <span className="text-brand-700">{formatPkr(pay?.totalPkr ?? 0)}</span>
         </div>
       </div>
     </Card>
