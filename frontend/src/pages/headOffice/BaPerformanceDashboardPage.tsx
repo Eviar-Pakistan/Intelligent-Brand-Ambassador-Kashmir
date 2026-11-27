@@ -17,6 +17,8 @@ import {
 } from '../../data/baPerformance'
 import {
   downloadBaPerformanceExcel,
+  downloadRegionWiseExcel,
+  downloadStorePerformanceExcel,
   fetchBaPerformanceDashboard,
   type ActiveBaRow,
   type BaPerformanceDashboard,
@@ -698,8 +700,11 @@ export function BaPerformanceDashboardPage() {
   const pendingCustomRangeRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [regionDownloading, setRegionDownloading] = useState(false)
+  const [storeDownloading, setStoreDownloading] = useState(false)
   const [hoursCity, setHoursCity] = useState<string | null>(null)
   const [targetMonth, setTargetMonth] = useState<string>(() => yearMonthFromDate(new Date()))
+  const [targetBaQuery, setTargetBaQuery] = useState('')
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
 
   const range = useMemo(
@@ -923,6 +928,16 @@ export function BaPerformanceDashboardPage() {
   const isSingleDay = (dash?.range.days ?? 0) === 1
   const targetVsAchievement = dash?.targetVsAchievement
   const targetRows = targetVsAchievement?.rows ?? []
+  const filteredTargetRows = useMemo(() => {
+    const q = targetBaQuery.trim().toLowerCase()
+    if (!q) return targetRows
+    return targetRows.filter((row) => {
+      const name = String(row.ambassador ?? '').toLowerCase()
+      const storeName = String(row.store ?? '').toLowerCase()
+      const city = String(row.city ?? '').toLowerCase()
+      return name.includes(q) || storeName.includes(q) || city.includes(q)
+    })
+  }, [targetRows, targetBaQuery])
   const weeklyOff = dash?.weeklyOff
   const weeklyOffRows = weeklyOff?.rows ?? []
 
@@ -1067,6 +1082,43 @@ export function BaPerformanceDashboardPage() {
     }
     return label
   }, [datePreset, customFrom, customTo, range])
+
+  function exportDateParams() {
+    const from = range ? dateInputValue(range.start) : customFrom || null
+    const to = range ? dateInputValue(range.end) : customTo || null
+    return {
+      from: from && to ? from : dash?.range?.from || null,
+      to: from && to ? to : dash?.range?.to || null,
+      town,
+      store,
+    }
+  }
+
+  async function handleRegionWiseDownload() {
+    if (regionDownloading || storeDownloading || downloading || customRangeLoading || loading) return
+    setRegionDownloading(true)
+    setError(null)
+    try {
+      await downloadRegionWiseExcel(exportDateParams())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Region wise download failed.')
+    } finally {
+      setRegionDownloading(false)
+    }
+  }
+
+  async function handleStorePerformanceDownload() {
+    if (regionDownloading || storeDownloading || downloading || customRangeLoading || loading) return
+    setStoreDownloading(true)
+    setError(null)
+    try {
+      await downloadStorePerformanceExcel(exportDateParams())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Store performance download failed.')
+    } finally {
+      setStoreDownloading(false)
+    }
+  }
 
   async function handleDownload() {
     if (!dash || downloading || customRangeLoading || loading) return
@@ -1511,9 +1563,46 @@ export function BaPerformanceDashboardPage() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!dash || loading || downloading || customRangeLoading}
-              onClick={() => void handleDownload()}
+              disabled={
+                loading ||
+                customRangeLoading ||
+                regionDownloading ||
+                storeDownloading ||
+                downloading
+              }
+              onClick={() => void handleRegionWiseDownload()}
               className="ml-1"
+            >
+              <Download size={16} className="mr-1.5" />
+              {regionDownloading ? 'Downloading…' : 'Region wise'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                loading ||
+                customRangeLoading ||
+                regionDownloading ||
+                storeDownloading ||
+                downloading
+              }
+              onClick={() => void handleStorePerformanceDownload()}
+            >
+              <Download size={16} className="mr-1.5" />
+              {storeDownloading ? 'Downloading…' : 'Store performance'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={
+                !dash ||
+                loading ||
+                downloading ||
+                customRangeLoading ||
+                regionDownloading ||
+                storeDownloading
+              }
+              onClick={() => void handleDownload()}
             >
               <Download size={16} className="mr-1.5" />
               {customRangeLoading ? 'Loading…' : downloading ? 'Downloading…' : 'Download'}
@@ -2041,20 +2130,31 @@ export function BaPerformanceDashboardPage() {
                 : 'BA targets from Ambassadors · sales from checkout forms'
             }
             action={
-              <label className="flex items-center gap-2 text-xs">
-                <span className="font-medium text-slate-500">Month</span>
-                <select
-                  value={targetMonth}
-                  onChange={(e) => setTargetMonth(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-brand-500"
-                >
-                  {targetMonthOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                  <Search size={13} className="shrink-0 text-slate-400" />
+                  <input
+                    value={targetBaQuery}
+                    onChange={(e) => setTargetBaQuery(e.target.value)}
+                    placeholder="Search BA..."
+                    className="w-28 bg-transparent text-xs font-medium text-slate-700 outline-none placeholder:text-slate-400 sm:w-36"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <span className="font-medium text-slate-500">Month</span>
+                  <select
+                    value={targetMonth}
+                    onChange={(e) => setTargetMonth(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-brand-500"
+                  >
+                    {targetMonthOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             }
           />
         </div>
@@ -2070,7 +2170,7 @@ export function BaPerformanceDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {targetRows.map((row) => (
+              {filteredTargetRows.map((row) => (
                 <tr key={row.ambassadorId} className="border-t border-slate-100">
                   <td className="px-4 py-3 font-medium text-slate-900">{row.ambassador}</td>
                   <td className="px-4 py-3 text-slate-600">
@@ -2084,7 +2184,7 @@ export function BaPerformanceDashboardPage() {
                   </td>
                 </tr>
               ))}
-              {targetRows.length === 0 && <EmptyRow cols={5} />}
+              {filteredTargetRows.length === 0 && <EmptyRow cols={5} />}
             </tbody>
           </table>
         </TableScroll>

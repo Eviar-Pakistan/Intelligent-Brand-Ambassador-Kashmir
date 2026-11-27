@@ -381,6 +381,25 @@ class StoreRewardViewSet(viewsets.ModelViewSet):
         return qs
 
 
+def _parse_ba_perf_dates(q):
+    """Parse from/to query params → (date_from, date_to) or (None, Response error)."""
+    date_from = None
+    date_to = None
+    raw_from = q.get('from')
+    raw_to = q.get('to')
+    if raw_from:
+        try:
+            date_from = date.fromisoformat(str(raw_from)[:10])
+        except ValueError:
+            return None, None, Response({'detail': 'Invalid from date.'}, status=status.HTTP_400_BAD_REQUEST)
+    if raw_to:
+        try:
+            date_to = date.fromisoformat(str(raw_to)[:10])
+        except ValueError:
+            return None, None, Response({'detail': 'Invalid to date.'}, status=status.HTTP_400_BAD_REQUEST)
+    return date_from, date_to, None
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def intelligence_ba_performance(request):
@@ -390,20 +409,9 @@ def intelligence_ba_performance(request):
     Query: town, store, month, from, to, category, sku, sales_period, target_month
     """
     q = request.query_params
-    date_from = None
-    date_to = None
-    raw_from = q.get('from')
-    raw_to = q.get('to')
-    if raw_from:
-        try:
-            date_from = date.fromisoformat(str(raw_from)[:10])
-        except ValueError:
-            return Response({'detail': 'Invalid from date.'}, status=status.HTTP_400_BAD_REQUEST)
-    if raw_to:
-        try:
-            date_to = date.fromisoformat(str(raw_to)[:10])
-        except ValueError:
-            return Response({'detail': 'Invalid to date.'}, status=status.HTTP_400_BAD_REQUEST)
+    date_from, date_to, err = _parse_ba_perf_dates(q)
+    if err is not None:
+        return err
 
     return Response(
         build_ba_performance_dashboard(
@@ -417,6 +425,54 @@ def intelligence_ba_performance(request):
             sales_period=(q.get('sales_period') or 'mom'),
             target_month=(q.get('target_month') or None),
             request=request,
+        )
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def intelligence_ba_performance_region_export(request):
+    """
+    GET /api/intelligence/ba-performance/region-wise-export/
+    Tapal-style Region wise sheets: Summary, Target vs Achievement, Interception and Sales.
+    Query: from, to, town, store
+    """
+    from .performance_report_exports import build_region_wise_export
+
+    q = request.query_params
+    date_from, date_to, err = _parse_ba_perf_dates(q)
+    if err is not None:
+        return err
+    return Response(
+        build_region_wise_export(
+            date_from=date_from,
+            date_to=date_to,
+            town=(q.get('town') or None),
+            store_name=(q.get('store') or None),
+        )
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def intelligence_ba_performance_store_export(request):
+    """
+    GET /api/intelligence/ba-performance/store-performance-export/
+    Tapal-style Store Performance + SKU Wise sheets (KG only; units blank).
+    Query: from, to, town, store
+    """
+    from .performance_report_exports import build_store_performance_export
+
+    q = request.query_params
+    date_from, date_to, err = _parse_ba_perf_dates(q)
+    if err is not None:
+        return err
+    return Response(
+        build_store_performance_export(
+            date_from=date_from,
+            date_to=date_to,
+            town=(q.get('town') or None),
+            store_name=(q.get('store') or None),
         )
     )
 

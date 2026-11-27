@@ -391,3 +391,197 @@ export async function downloadBaPerformanceExcel(
       : `ba_performance_${from}_to_${to}.xlsx`
   XLSX.writeFile(wb, name)
 }
+
+export type PerformanceExportParams = {
+  from?: string | null
+  to?: string | null
+  town?: string | null
+  store?: string | null
+}
+
+function exportQuery(params: PerformanceExportParams) {
+  const qs = new URLSearchParams()
+  if (params.from) qs.set('from', params.from)
+  if (params.to) qs.set('to', params.to)
+  if (params.town) qs.set('town', params.town)
+  if (params.store) qs.set('store', params.store)
+  const q = qs.toString()
+  return q ? `?${q}` : ''
+}
+
+type RegionWiseExportPayload = {
+  range: { from: string; to: string }
+  summary: Record<string, unknown>[]
+  targetVsAchievement: Record<string, unknown>[]
+  interceptionAndSales: Record<string, unknown>[]
+}
+
+type StorePerformanceExportPayload = {
+  range: { from: string; to: string }
+  periodLabel: string
+  storePerformance: Record<string, unknown>[]
+  skuWise: Record<string, unknown>[]
+}
+
+const INTERCEPTION_SALES_HEADERS = [
+  'Supervisor ID',
+  'BA',
+  'Customer',
+  'Contact',
+  'City',
+  'Region',
+  'Store',
+  'Date',
+  'Interception',
+  'Conversion',
+  'CompanyName',
+  'Brand',
+  'SKU',
+  'SKU Count',
+  'Store 2',
+  'Week',
+  'Month',
+] as const
+
+const SUMMARY_HEADERS = [
+  'Month',
+  'Target',
+  'Achievement',
+  'Tar vs Ach',
+  'Total Interception',
+  'Retained',
+  'Conversion',
+  'Non-Productive',
+  'Total Sale',
+] as const
+
+const TVA_HEADERS = [
+  'CITY',
+  'STORE',
+  'MONTH',
+  'YEAR',
+  'BRAND',
+  'SKU',
+  'Weeks',
+  'Weekly Target',
+] as const
+
+function sheetFromRows(
+  XLSX: typeof import('xlsx'),
+  headers: readonly string[],
+  rows: Record<string, unknown>[] | undefined,
+) {
+  const aoa: unknown[][] = [headers.slice()]
+  for (const row of rows ?? []) {
+    aoa.push(headers.map((h) => row[h] ?? ''))
+  }
+  return XLSX.utils.aoa_to_sheet(aoa)
+}
+
+/** Tapal-style Region wise workbook (3 sheets). */
+export async function downloadRegionWiseExcel(params: PerformanceExportParams) {
+  if (!isApiAuthenticated()) throw new Error('Sign in required')
+  const data = await apiRequest<RegionWiseExportPayload>(
+    `/api/intelligence/ba-performance/region-wise-export/${exportQuery(params)}`,
+  )
+  const XLSX = await import('xlsx')
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(
+    wb,
+    sheetFromRows(XLSX, SUMMARY_HEADERS, data.summary),
+    'Summary',
+  )
+  XLSX.utils.book_append_sheet(
+    wb,
+    sheetFromRows(XLSX, TVA_HEADERS, data.targetVsAchievement),
+    'Target vs Achievement Data',
+  )
+  // Always keep Tapal column headers even when there are no User Interception rows.
+  XLSX.utils.book_append_sheet(
+    wb,
+    sheetFromRows(XLSX, INTERCEPTION_SALES_HEADERS, data.interceptionAndSales),
+    'Interception and Sales Data',
+  )
+  const from = data.range?.from || params.from || 'start'
+  const to = data.range?.to || params.to || 'end'
+  XLSX.writeFile(
+    wb,
+    from === to ? `Region_wise_${from}.xlsx` : `Region_wise_${from}_to_${to}.xlsx`,
+  )
+}
+
+/** Tapal-style Store Performance workbook (Store Performance + SKU Wise). */
+export async function downloadStorePerformanceExcel(params: PerformanceExportParams) {
+  if (!isApiAuthenticated()) throw new Error('Sign in required')
+  const data = await apiRequest<StorePerformanceExportPayload>(
+    `/api/intelligence/ba-performance/store-performance-export/${exportQuery(params)}`,
+  )
+  const XLSX = await import('xlsx')
+  const wb = XLSX.utils.book_new()
+  const period = data.periodLabel || ''
+
+  const storeAoA: (string | number | null | undefined)[][] = [
+    ['City', 'Town', 'Store', period, '', '', '', '', ''],
+    [
+      '',
+      '',
+      '',
+      'Unit Target Assigned',
+      'Unit Target Achieved',
+      '% Achievement in Units',
+      'KG Targets Assigned',
+      'KG Target Achieved',
+      '% Achievement in KG',
+    ],
+    ...(data.storePerformance ?? []).map((r) => [
+      String(r.City ?? ''),
+      String(r.Town ?? ''),
+      String(r.Store ?? ''),
+      r['Unit Target Assigned'] as number | null,
+      r['Unit Target Achieved'] as number | null,
+      r['% Achievement in Units'] as number | null,
+      r['KG Targets Assigned'] as number | null,
+      r['KG Target Achieved'] as number | null,
+      r['% Achievement in KG'] as number | null,
+    ]),
+  ]
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(storeAoA), 'Store Performance')
+
+  const skuAoA: (string | number | null | undefined)[][] = [
+    ['City', 'Town', 'Store', 'SKU Name', period, '', '', '', '', ''],
+    [
+      '',
+      '',
+      '',
+      '',
+      'Unit Target Assigned',
+      'Unit Target Achieved',
+      '% Achievement in Units',
+      'KG Targets Assigned',
+      'KG Target Achieved',
+      '% Achievement in KG',
+    ],
+    ...(data.skuWise ?? []).map((r) => [
+      String(r.City ?? ''),
+      String(r.Town ?? ''),
+      String(r.Store ?? ''),
+      String(r['SKU Name'] ?? ''),
+      r['Unit Target Assigned'] as number | null,
+      r['Unit Target Achieved'] as number | null,
+      r['% Achievement in Units'] as number | null,
+      r['KG Targets Assigned'] as number | null,
+      r['KG Target Achieved'] as number | null,
+      r['% Achievement in KG'] as number | null,
+    ]),
+  ]
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(skuAoA), 'SKU Wise')
+
+  const from = data.range?.from || params.from || 'start'
+  const to = data.range?.to || params.to || 'end'
+  XLSX.writeFile(
+    wb,
+    from === to
+      ? `Store_Performance_${from}.xlsx`
+      : `Store_Performance_${from}_to_${to}.xlsx`,
+  )
+}

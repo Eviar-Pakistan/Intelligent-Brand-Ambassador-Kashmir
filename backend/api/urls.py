@@ -79,6 +79,8 @@ from .views import (
     StoreViewSet,
     SurveyQuestionViewSet,
     intelligence_ba_performance,
+    intelligence_ba_performance_region_export,
+    intelligence_ba_performance_store_export,
     intelligence_leaderboard,
     intelligence_overview,
     intelligence_question_insights,
@@ -107,6 +109,16 @@ router.register('supervisors', SupervisorViewSet, basename='supervisor')
 urlpatterns = [
     path('intelligence/overview/', intelligence_overview, name='intelligence-overview'),
     path('intelligence/ba-performance/', intelligence_ba_performance, name='intelligence-ba-performance'),
+    path(
+        'intelligence/ba-performance/region-wise-export/',
+        intelligence_ba_performance_region_export,
+        name='intelligence-ba-performance-region-export',
+    ),
+    path(
+        'intelligence/ba-performance/store-performance-export/',
+        intelligence_ba_performance_store_export,
+        name='intelligence-ba-performance-store-export',
+    ),
     path('intelligence/question-insights/', intelligence_question_insights, name='intelligence-question-insights'),
     path('intelligence/store-map/', intelligence_store_map, name='intelligence-store-map'),
     path('intelligence/leaderboard/', intelligence_leaderboard, name='intelligence-leaderboard'),
